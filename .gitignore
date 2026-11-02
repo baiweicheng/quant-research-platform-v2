@@ -1,0 +1,26 @@
+# Local project discussions, planning, and agent discovery instructions.
+/.project-context/
+/AGENTS.md
+
+# macOS filesystem metadata.
+.DS_Store
+
+# Local tools, environments, generated output, and private runtime data.
+/.cache/
+/.tools/
+/.venv/
+/var/
+.env
+.env.*
+!.env.example
+__pycache__/
+.pytest_cache/
+.hypothesis/
+.ruff_cache/
+.coverage
+htmlcov/
+*.egg-info/
+/web/node_modules/
+/web/dist/
+/web/coverage/
+/web/tsconfig.tsbuildinfo
