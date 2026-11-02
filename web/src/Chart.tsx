@@ -56,6 +56,7 @@ export default function PerformanceChart({
         areaStyle: { color: "#98a5a0", opacity: 0 },
       });
     chart.setOption({
+      textStyle: { fontSize: 14 },
       animation: false,
       aria: {
         enabled: true,
@@ -66,6 +67,7 @@ export default function PerformanceChart({
       grid: { left: 12, right: 28, top: 20, bottom: 36, containLabel: true },
       tooltip: {
         trigger: "axis",
+        textStyle: { fontSize: 14 },
         valueFormatter: (value: unknown) => `${Number(value).toFixed(2)}%`,
       },
       xAxis: {
@@ -73,6 +75,8 @@ export default function PerformanceChart({
         data: rows.map((row) => row.session),
         boundaryGap: false,
         axisLabel: {
+          fontSize: 14,
+          hideOverlap: true,
           color: "#718078",
           formatter: (value: string) => shortDate(value).replace(/, \d{4}/, ""),
         },
@@ -82,7 +86,7 @@ export default function PerformanceChart({
       yAxis: {
         type: "value",
         position: "right",
-        axisLabel: { formatter: "{value}%", color: "#718078" },
+        axisLabel: { formatter: "{value}%", color: "#718078", fontSize: 14 },
         splitLine: { lineStyle: { color: "#edf1ee" } },
       },
       series,
