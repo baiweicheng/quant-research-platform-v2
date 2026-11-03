@@ -130,7 +130,13 @@ export function MetricStrip({
       <div>
         <span>
           {account ? "Account return" : "Strategy return"}
-          <Help text="Change in portfolio value over the selected period, including modeled costs and dividend entitlements." />
+          <Help
+            text={
+              account
+                ? "Daily broker equity return, adjusted for recorded external cash flows using an end-of-day approximation."
+                : "Change in portfolio value over the selected period, including modeled costs and dividend entitlements."
+            }
+          />
         </span>
         <strong
           className={
@@ -141,7 +147,9 @@ export function MetricStrip({
         </strong>
         <small>
           {account
-            ? "Available after paper trading begins"
+            ? metrics?.return != null
+              ? "Daily flow-adjusted estimate"
+              : "Available after paper trading begins"
             : "After modeled costs"}
         </small>
       </div>
@@ -153,7 +161,9 @@ export function MetricStrip({
         <strong>{points(metrics?.difference)}</strong>
         <small>
           {account
-            ? "No account history yet"
+            ? metrics?.benchmark_return != null
+              ? `SPY ${percent(metrics.benchmark_return, true)}`
+              : "No comparable account history yet"
             : `SPY ${percent(metrics?.benchmark_return, true)}`}
         </small>
       </div>

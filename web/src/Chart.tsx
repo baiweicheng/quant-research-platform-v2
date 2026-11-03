@@ -23,9 +23,11 @@ echarts.use([
 export default function PerformanceChart({
   run,
   period,
+  label = "Backtest",
 }: {
-  run: Run;
+  run: Pick<Run, "curve" | "windows"> & { strategy: { name: string } };
   period: Period;
+  label?: string;
 }) {
   const element = useRef<HTMLDivElement>(null);
   useEffect(() => {
@@ -61,7 +63,7 @@ export default function PerformanceChart({
       aria: {
         enabled: true,
         label: {
-          description: `Backtest performance for ${run.strategy.name}. Return ${percent(run.windows[period].metrics.return)}. Data is also summarized above the chart.`,
+          description: `${label} performance for ${run.strategy.name}. Return ${percent(run.windows[period].metrics.return)}. Data is also summarized above the chart.`,
         },
       },
       grid: { left: 12, right: 28, top: 20, bottom: 36, containLabel: true },
@@ -97,13 +99,13 @@ export default function PerformanceChart({
       observer.disconnect();
       chart.dispose();
     };
-  }, [run, period]);
+  }, [run, period, label]);
   return (
     <div
       className="chart"
       ref={element}
       role="img"
-      aria-label={`${run.strategy.name} backtest performance${run.windows[period].metrics.benchmark_return === null ? "" : " compared with SPY"}; statistics above chart`}
+      aria-label={`${run.strategy.name} ${label.toLowerCase()} performance${run.windows[period].metrics.benchmark_return === null ? "" : " compared with SPY"}; statistics above chart`}
     />
   );
 }

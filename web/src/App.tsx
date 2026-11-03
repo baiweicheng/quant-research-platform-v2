@@ -28,6 +28,7 @@ import {
 import { ImportDialog, StrategyDialog, TaskDialog } from "./dialogs";
 import Research from "./Research";
 import MarketData from "./MarketData";
+import PaperWorkspace, { PaperPerformance, PaperWeekly } from "./Paper";
 import {
   FundamentalDetails,
   FundamentalsPanel,
@@ -119,7 +120,7 @@ export default function App() {
           <div className="environment">
             <span className="status-dot" />
             Local <span className="environment-divider" />
-            <Badge>Research</Badge>
+            <Badge>{state?.account.connected ? "Paper" : "Research"}</Badge>
           </div>
         </div>
       </header>
@@ -285,74 +286,93 @@ function Overview({
         </div>
         <div className="portfolio-value">
           <span>
-            Planning capital <Badge>USD</Badge>
+            {state.account.connected
+              ? "Paper portfolio value"
+              : "Planning capital"}{" "}
+            <Badge>USD</Badge>
           </span>
-          <strong>{money(state.account.planning_capital)}</strong>
-          <small>Research only · No brokerage account connected</small>
+          <strong>
+            {money(
+              state.account.snapshot?.equity ?? state.account.planning_capital,
+            )}
+          </strong>
+          <small>
+            {state.account.connected
+              ? `Paper · ${state.account.snapshot?.source ?? "Alpaca"} · last synced ${new Date(state.account.snapshot!.checked_at).toLocaleString()}`
+              : "Research only · No brokerage account connected"}
+          </small>
         </div>
       </div>
-      <section className="card overview-performance">
-        <MetricStrip account />
-        <div className="performance-empty">
-          <span className="empty-chart-icon">
-            <Activity size={25} />
-          </span>
-          <div>
-            <h3>A clear view of performance, when it begins.</h3>
-            <p>
-              Account returns will appear here after paper trading is connected.
-              Explore strategy performance in Research today.
-            </p>
-          </div>
-          <button className="button small secondary" onClick={onResearch}>
-            Explore research <ArrowUpRight size={14} />
-          </button>
-        </div>
-      </section>
-      <div className="overview-grid">
-        <section className="weekly-card">
-          <div className="weekly-overline">
-            <span className="eyebrow">YOUR NEXT STEP</span>
-            <Badge tone="light">
-              {latest ? "Review prepared" : "Start with a clear plan"}
-            </Badge>
-          </div>
-          <div className="weekly-title">
-            <span className="weekly-icon">
-              <Leaf size={24} />
+      {state.account.connected ? (
+        <PaperPerformance />
+      ) : (
+        <section className="card overview-performance">
+          <MetricStrip account />
+          <div className="performance-empty">
+            <span className="empty-chart-icon">
+              <Activity size={25} />
             </span>
-            <h2>
-              {latest
-                ? "Your allocation, ready to explore."
-                : "Make room for a good decision."}
-            </h2>
-          </div>
-          <p>
-            {latest
-              ? `Your ${latest.strategy.name} review is saved. Inspect the targets, cash allocation and exclusions before taking the next step.`
-              : "Bring your data and a research idea together. One preparation task validates the inputs, calculates signals, and builds a target allocation."}
-          </p>
-          <div className="weekly-steps">
-            <span>
-              <Check size={13} />
-              Validate data
-            </span>
-            <ChevronRight size={13} />
-            <span>Calculate signals</span>
-            <ChevronRight size={13} />
-            <span>Build targets</span>
-          </div>
-          <div className="weekly-bottom">
-            <button
-              className="button light"
-              onClick={latest ? onPortfolio : onPrepare}
-            >
-              {latest ? "View allocation review" : "Prepare weekly review"}
-              <ArrowRight size={16} />
+            <div>
+              <h3>A clear view of performance, when it begins.</h3>
+              <p>
+                Account returns will appear here after paper trading is
+                connected. Explore strategy performance in Research today.
+              </p>
+            </div>
+            <button className="button small secondary" onClick={onResearch}>
+              Explore research <ArrowUpRight size={14} />
             </button>
-            <span>Read-only · No orders submitted</span>
           </div>
         </section>
+      )}
+      <div className="overview-grid">
+        {state.account.connected ? (
+          <PaperWeekly onPortfolio={onPortfolio} />
+        ) : (
+          <section className="weekly-card">
+            <div className="weekly-overline">
+              <span className="eyebrow">YOUR NEXT STEP</span>
+              <Badge tone="light">
+                {latest ? "Review prepared" : "Start with a clear plan"}
+              </Badge>
+            </div>
+            <div className="weekly-title">
+              <span className="weekly-icon">
+                <Leaf size={24} />
+              </span>
+              <h2>
+                {latest
+                  ? "Your allocation, ready to explore."
+                  : "Make room for a good decision."}
+              </h2>
+            </div>
+            <p>
+              {latest
+                ? `Your ${latest.strategy.name} review is saved. Inspect the targets, cash allocation and exclusions before taking the next step.`
+                : "Bring your data and a research idea together. One preparation task validates the inputs, calculates signals, and builds a target allocation."}
+            </p>
+            <div className="weekly-steps">
+              <span>
+                <Check size={13} />
+                Validate data
+              </span>
+              <ChevronRight size={13} />
+              <span>Calculate signals</span>
+              <ChevronRight size={13} />
+              <span>Build targets</span>
+            </div>
+            <div className="weekly-bottom">
+              <button
+                className="button light"
+                onClick={latest ? onPortfolio : onPrepare}
+              >
+                {latest ? "View allocation review" : "Prepare weekly review"}
+                <ArrowRight size={16} />
+              </button>
+              <span>Read-only · No orders submitted</span>
+            </div>
+          </section>
+        )}
         <section className="card readiness">
           <div className="card-header">
             <div>
@@ -429,10 +449,12 @@ function Overview({
           </span>
           <h3>Move forward deliberately.</h3>
           <p>
-            Paper trading, explicit strategy approval, and manual or automatic
-            rebalancing arrive in the execution milestone.
+            Paper trading includes strategy-version approval, manual or
+            automatic rebalancing, order reconciliation and cash safeguards.
           </p>
-          <Badge>Coming later</Badge>
+          <button className="text-link" onClick={onPortfolio}>
+            Open paper workspace <ArrowRight size={15} />
+          </button>
         </div>
       </div>
     </>
@@ -628,6 +650,44 @@ function Portfolio({
   onPrepare: () => void;
 }) {
   const location = useLocation();
+  const [tab, setTab] = useState(
+    new URLSearchParams(location.search).has("review") ? "research" : "paper",
+  );
+  return (
+    <>
+      <div className="subnav" role="tablist" aria-label="Portfolio sections">
+        <button
+          role="tab"
+          aria-selected={tab === "paper"}
+          onClick={() => setTab("paper")}
+        >
+          Paper portfolio
+        </button>
+        <button
+          role="tab"
+          aria-selected={tab === "research"}
+          onClick={() => setTab("research")}
+        >
+          Research allocations
+        </button>
+      </div>
+      {tab === "paper" ? (
+        <PaperWorkspace state={state} />
+      ) : (
+        <ResearchAllocations state={state} onPrepare={onPrepare} />
+      )}
+    </>
+  );
+}
+
+function ResearchAllocations({
+  state,
+  onPrepare,
+}: {
+  state: State;
+  onPrepare: () => void;
+}) {
+  const location = useLocation();
   const [selected, setSelected] = useState(
     new URLSearchParams(location.search).get("review") ?? "",
   );
@@ -659,8 +719,8 @@ function Portfolio({
         <div>
           <Badge>Research only</Badge>
           <p>
-            No account connected. These are research targets, not held positions
-            or broker orders.
+            Research targets use planning capital. Actual account holdings and
+            orders appear in Paper portfolio.
           </p>
         </div>
       </div>
@@ -701,10 +761,9 @@ function Portfolio({
         </>
       )}
       <Notice>
-        Trading is not connected in this research milestone. Strategy-version
-        approval, account reconciliation, and both manual and automatic
-        rebalancing will be implemented together in the paper-trading release.
-        Preparing this review grants no approval.
+        These are read-only research allocations. Use Paper portfolio for
+        account reconciliation, explicit approvals and actual paper orders.
+        Preparing a research review grants no trading approval.
       </Notice>
     </>
   );
@@ -834,6 +893,7 @@ function ActivityPage({
   onReview: (id: string) => void;
   onData: () => void;
 }) {
+  const navigate = useNavigate();
   return (
     <>
       <div className="page-heading">
@@ -885,6 +945,10 @@ function ActivityPage({
                         fundamentals: "Add SEC fundamentals",
                         backtest: "Run backtest",
                         review: "Prepare allocation review",
+                        validation: "Evaluate frozen research protocol",
+                        paper_sync: "Reconcile paper account",
+                        paper_prepare: "Prepare weekly paper review",
+                        paper_cancel: "Cancel Aperture paper orders",
                       }[job.kind] ?? job.kind}
                     </h3>
                     <Badge
@@ -925,19 +989,27 @@ function ActivityPage({
                   <button
                     className="button small secondary"
                     onClick={() =>
-                      job.kind === "backtest"
-                        ? onResearch(job.result_id ?? "")
-                        : job.kind === "review"
-                          ? onReview(job.result_id ?? "")
-                          : onData()
+                      job.kind.startsWith("paper_")
+                        ? navigate("/portfolio")
+                        : job.kind === "validation"
+                          ? navigate("/research?section=validation")
+                          : job.kind === "backtest"
+                            ? onResearch(job.result_id ?? "")
+                            : job.kind === "review"
+                              ? onReview(job.result_id ?? "")
+                              : onData()
                     }
                   >
                     Open{" "}
-                    {job.kind === "backtest"
-                      ? "research"
-                      : job.kind === "review"
-                        ? "review"
-                        : "data"}
+                    {job.kind.startsWith("paper_")
+                      ? "paper portfolio"
+                      : job.kind === "validation"
+                        ? "validation"
+                        : job.kind === "backtest"
+                          ? "research"
+                          : job.kind === "review"
+                            ? "review"
+                            : "data"}
                     <ArrowRight size={14} />
                   </button>
                 )}

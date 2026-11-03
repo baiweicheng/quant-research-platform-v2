@@ -129,7 +129,12 @@ export type State = {
   jobs: Job[];
   runs: RunSummary[];
   reviews: ReviewSummary[];
-  account: { connected: false; planning_capital: string; mode: string };
+  account: {
+    connected: boolean;
+    planning_capital: string;
+    mode: string;
+    snapshot?: import("./Paper").PaperSnapshot | null;
+  };
 };
 export const PERIODS = ["1W", "1M", "3M", "6M", "YTD", "1Y", "All"] as const;
 export type Period = (typeof PERIODS)[number];

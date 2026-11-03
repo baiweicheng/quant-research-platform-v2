@@ -1,8 +1,8 @@
 # Aperture
 
-A local quantitative research workspace for weekly, long-only US equity strategies. Built from scratch with a React/TypeScript interface and a Python calculation worker.
+A local research and paper-trading workspace for weekly, long-only US equity strategies. Built from scratch with a React/TypeScript interface and a Python calculation worker.
 
-This first milestone is a **research application**. It does not connect to a broker, approve a strategy, submit paper/live orders, or show fabricated account performance.
+Includes captured market/SEC inputs, reproducible backtests and research validation, and version-approved manual/automatic **Alpaca paper trading**. Live trading is unavailable. Each strategy, policy and account needs explicit approval; building or backtesting a strategy never activates it.
 
 ## Run on a Mac
 
@@ -27,11 +27,13 @@ For frontend development, run `npm --prefix web run dev` alongside the Python se
 2. Open **Research**, inspect a strategy’s explanation, and run a backtest. Default dates leave room for signal warm-up.
 3. Follow progress in **Activity**, then open the completed result. Try every chart period, inspect simulated fills, and export the full result.
 4. Run the other price strategy with identical inputs. Select both experiments to compare.
-5. Select **Prepare weekly review**. Saved data must cover the latest completed session. Inspect the read-only allocation in **Portfolio**. No orders or strategy approvals are created.
+5. Use **Portfolio → Research allocations → Prepare weekly review** to inspect read-only targets. Saved data must cover the latest completed session. Research reviews never submit orders.
+6. Use **Research → Validation** for a frozen hypothesis, chronological windows, sensitivity trials and a one-time final-test reservation.
+7. For actual paper operation, follow the account/approval sequence below. Practice symbols cannot be traded.
 
 The app opens empty. Practice data is never silently loaded. Account metrics remain unavailable until actual paper-account history exists.
 
-## Supported in this milestone
+## Supported workflows
 
 - Immutable CSV datasets with source fingerprints, idempotent imports, validation, and retained submitted CSV content.
 - Authenticated Alpaca SIP history, split/dividend normalization, per-stock coverage and captured source responses through the Data interface.
@@ -40,11 +42,27 @@ The app opens empty. Practice data is never silently loaded. Account metrics rem
 - Filing-versioned SEC annual fundamentals, stock-level coverage/exclusions, profitability, quality value and technical/fundamental Value + Momentum strategies. Historical decision audits link back to original filings.
 - Calendar-aware after-close decisions and following-session opening-price simulation, fractional quantities, explicit costs, split/dividend accounting and no borrowing.
 - Saved backtests, comparison, SPY benchmark, common chart periods, and read-only current allocation reviews.
+- Frozen research protocols, forward windows, cost/allocation/frequency sensitivity, trial audits, exposure labels and once-only final-test release.
+- Paper account reconciliation, immutable reviews and explicit strategy/policy approvals; manual and automatic weekly modes.
+- Cash-constrained fractional limit orders, durable client references, partial/rejected/uncertain-order handling, stop/cancel controls and restart reconciliation.
+- Actual broker holdings/equity, daily cash-flow-adjusted estimates and SPY comparison with explicit simulator limits.
 - Approved Weekly Focus layout, responsive top navigation, empty/error states and explanations.
 
 For real research, download market data in Data, then add SEC fundamentals to create a combined snapshot. Select that snapshot when running a fundamental or blended strategy. Review factor values, filing availability and exclusions under “Why these stocks?” in the result. Annual US-GAAP support is deliberately limited; unsupported inputs are excluded. See the research contract before interpreting results.
 
-AI-assisted discovery, stronger research validation, strategy approvals, broker reconciliation and both manual/automatic paper execution remain future milestones. Real-money trading requires a later readiness review and explicit authorization.
+AI-assisted discovery and broader operational reliability/automation remain future milestones. Real-money trading requires a separate later readiness review and explicit authorization.
+
+## Start paper trading deliberately
+
+1. Configure paper keys/contact below, then **Portfolio → Paper portfolio → Refresh paper account**. The app reads the actual account; it never resets its balance. Use a dedicated long-only USD paper account.
+2. Save the strategy, stock universe, history start, risk policy and mode. Manual is selected initially. Suggested limits remain proposals until explicitly approved.
+3. Review research, validation and data limits. Record explicit paper approval with the exact displayed strategy/version phrase and a rationale. Automatic operation needs its separate permission checkbox.
+4. Select **Prepare weekly paper review**. This single task reconciles the account, refreshes prices/actions and required SEC filings, calculates signals and freezes proposed targets/orders.
+5. In manual mode, inspect the specific review and separately approve its following-session paper rebalance. Keep Aperture running through orders/fills and any conservative T+1/bank-holiday funding wait. Regular-hours DAY limit orders can remain unfilled; acceptance is not completion.
+6. Use **Stop future submissions**, **Stop & cancel Aperture orders**, account refresh and the order lifecycle table when anything needs attention. Cancellation can race fills and never reverses a fill.
+7. A new paper account has a separate identity/baseline and inherits no strategy approval. Update its keys privately and refresh/reapprove before use.
+
+See [paper execution](docs/PAPER_TRADING.md) and [research validation](docs/RESEARCH_VALIDATION.md) for exact boundaries. Automatic mode runs only while the local worker is alive; it does not wake a stopped Mac or guarantee hosting. Alpaca paper does not credit dividends, while SPY includes them; the account comparison gap includes this simulator difference. Daily cash-flow adjustment uses an end-of-day approximation, not exact intraday time-weighted returns.
 
 ## Accuracy boundaries
 

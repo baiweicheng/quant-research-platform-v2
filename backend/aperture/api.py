@@ -1,4 +1,4 @@
-"""Local API: bounded inputs, persisted jobs, and no broker capabilities."""
+"""Local API: bounded inputs, persisted research and approved PAPER operations."""
 
 from contextlib import asynccontextmanager
 from datetime import date
@@ -52,6 +52,30 @@ class ProtocolRequest(TaskRequest):
 
 class EvaluationRequest(BaseModel):
     phase: Literal["development", "holdout"]
+    acknowledge: bool = False
+
+
+class PaperConfigRequest(BaseModel):
+    strategy_id: str = Field(max_length=40)
+    mode: Literal["manual", "automatic"] = "manual"
+    symbols: list[str] = Field(min_length=1, max_length=100)
+    data_start: date
+    positions: int = Field(default=25, ge=1, le=100)
+    max_weight: str = Field(default="0.05", max_length=20)
+    sector_cap: str = Field(default="0.25", max_length=20)
+    cash_reserve: str = Field(default="0.02", max_length=20)
+    max_drift: str = Field(default="0.03", max_length=20)
+
+
+class PaperApprovalRequest(BaseModel):
+    config_hash: str = Field(max_length=64)
+    confirmation: str = Field(max_length=100)
+    rationale: str = Field(min_length=10, max_length=2000)
+    acknowledge_limits: bool
+    allow_automatic: bool = False
+
+
+class RebalanceApprovalRequest(BaseModel):
     acknowledge: bool = False
 
 
@@ -110,6 +134,7 @@ def create_app(
 
     @app.get("/api/state")
     def state():
+        snapshot = store.preference("paper_snapshot")
         return {
             "version": __version__,
             "datasets": store.datasets(),
@@ -118,9 +143,10 @@ def create_app(
             "runs": store.results("backtest"),
             "reviews": store.results("review"),
             "account": {
-                "connected": False,
+                "connected": bool(snapshot),
                 "planning_capital": "100000",
-                "mode": "research",
+                "mode": "paper" if snapshot else "research",
+                "snapshot": snapshot,
             },
         }
 
@@ -165,6 +191,62 @@ def create_app(
         from .experiments import retire
 
         return retire(store, identifier)
+
+    @app.get("/api/paper")
+    def paper_state():
+        from .paper import public_state
+
+        return public_state(store)
+
+    @app.post("/api/paper/config")
+    def paper_config(payload: PaperConfigRequest):
+        from .paper import save_configuration
+
+        return save_configuration(store, payload.model_dump(mode="json"))
+
+    @app.post("/api/paper/approval")
+    def paper_approval(payload: PaperApprovalRequest):
+        from .paper import approve_strategy
+
+        return approve_strategy(store, payload.model_dump())
+
+    @app.post("/api/paper/revoke")
+    def paper_revoke():
+        from .paper import revoke
+
+        revoke(store)
+        return {"revoked": True}
+
+    @app.post("/api/paper/actions/{kind}", status_code=202)
+    def paper_action(kind: Literal["sync", "prepare", "cancel", "stop", "resume"]):
+        from .paper import configuration, stop, resume
+
+        if kind == "stop":
+            stop(store)
+            return {"stopped": True}
+        if kind == "resume":
+            return resume(store)
+        settings().headers()
+        if kind == "cancel":
+            stop(store)
+        cfg = configuration(store)
+        if kind == "prepare" and not cfg:
+            raise ResearchError(
+                "Save your paper strategy, universe and risk settings first."
+            )
+        return store.enqueue(
+            "paper_" + kind, {"config_hash": cfg["hash"] if cfg else None}
+        )
+
+    @app.post("/api/paper/plans/{identifier}/approve")
+    def approve_rebalance(identifier: str, payload: RebalanceApprovalRequest):
+        from .paper import schedule
+
+        if not payload.acknowledge:
+            raise ResearchError(
+                "Acknowledge the specific paper orders and execution bounds before approving this rebalance."
+            )
+        return schedule(store, identifier)
 
     @app.get("/api/providers")
     def providers():
@@ -283,6 +365,16 @@ def create_app(
                     "Starting capital must be between $100 and $1 billion."
                 )
         return store.enqueue(kind, payload.model_dump(mode="json"))
+
+    @app.post("/api/paper/plans/{identifier}/retry-quote")
+    def retry_paper_quote(identifier: str, payload: RebalanceApprovalRequest):
+        from .paper import retry_quote
+
+        if not payload.acknowledge:
+            raise ResearchError(
+                "Acknowledge the same frozen plan before retrying its quote check."
+            )
+        return retry_quote(store, identifier)
 
     if web_path and Path(web_path).is_dir():
         app.mount("/", StaticFiles(directory=web_path, html=True), name="web")

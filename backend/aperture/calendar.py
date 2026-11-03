@@ -33,6 +33,10 @@ def close_time(session: date) -> datetime:
     return calendar().session_close(str(session)).to_pydatetime()
 
 
+def open_time(session: date) -> datetime:
+    return calendar().session_open(str(session)).to_pydatetime()
+
+
 def available_time(session: date) -> datetime:
     # A conservative EOD publication convention, retained in every imported bar.
     return close_time(session) + timedelta(minutes=15)
@@ -59,3 +63,49 @@ def decision_sessions(days: list[date], frequency: str) -> set[date]:
         key = day.isocalendar()[:2] if frequency == "weekly" else (day.year, day.month)
         groups[key] = day
     return {days[0], *groups.values()}
+
+
+@lru_cache(maxsize=16)
+def federal_bank_holidays(year: int) -> frozenset[date]:
+    """Conservative funding calendar: federal holidays in addition to XNYS closes."""
+
+    def nth(month, weekday, n):
+        first = date(year, month, 1)
+        return first + timedelta(days=(weekday - first.weekday()) % 7 + 7 * (n - 1))
+
+    fixed = []
+    for y in (year - 1, year, year + 1):
+        for month, day in ((1, 1), (6, 19), (7, 4), (11, 11), (12, 25)):
+            d = date(y, month, day)
+            fixed.append(
+                d - timedelta(days=1)
+                if d.weekday() == 5
+                else d + timedelta(days=1)
+                if d.weekday() == 6
+                else d
+            )
+    memorial = date(year, 5, 31)
+    memorial -= timedelta(days=memorial.weekday())
+    return frozenset(
+        [d for d in fixed if d.year == year]
+        + [
+            nth(1, 0, 3),
+            nth(2, 0, 3),
+            memorial,
+            nth(9, 0, 1),
+            nth(10, 0, 2),
+            nth(11, 3, 4),
+        ]
+    )
+
+
+def settlement_session(traded: date) -> date:
+    """At least T+1, excluding exchange closes AND federal bank holidays.
+
+    This can reserve cash longer than actual settlement, never deliberately
+    early. Broker-specific restrictions remain authoritative.
+    """
+    day = next_session(traded)
+    while day in federal_bank_holidays(day.year):
+        day = next_session(day)
+    return day

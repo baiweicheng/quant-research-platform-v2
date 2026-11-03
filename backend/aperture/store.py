@@ -59,6 +59,9 @@ class Store:
                     created_at TEXT NOT NULL, summary TEXT NOT NULL, body BLOB);
             """)
         self.path.chmod(0o600)
+        from .paper import initialize
+
+        initialize(self)
 
     @contextmanager
     def connect(self):

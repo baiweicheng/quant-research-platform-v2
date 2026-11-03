@@ -4,7 +4,7 @@ import argparse
 import fcntl
 import logging
 import time
-from datetime import date
+from datetime import date, datetime, timezone
 from pathlib import Path
 
 from . import __version__, calendar
@@ -21,6 +21,48 @@ LOG = logging.getLogger(__name__)
 def execute(store: Store, job: dict):
     payload = job["payload"]
     update = lambda value, message: store.progress(job["id"], value, message)
+    if job["kind"].startswith("paper_"):
+        from .paper import (
+            Broker,
+            reconcile,
+            prepare,
+            cancel_pending,
+            schedule,
+            configuration,
+            approval,
+        )
+
+        broker = Broker()
+        try:
+            if job["kind"] == "paper_sync":
+                reconcile(store, broker, performance=True)
+                body = {
+                    "completion_message": "Paper account, orders and daily performance refreshed. No orders submitted."
+                }
+            elif job["kind"] == "paper_cancel":
+                cancel_pending(store, broker)
+                body = {
+                    "completion_message": "Cancellation requests reconciled. Inspect remaining broker orders in Portfolio."
+                }
+            elif job["kind"] == "paper_prepare":
+                body = prepare(store, job, update, broker)
+                if job["payload"].get("automatic"):
+                    cfg = configuration(store)
+                    allowed = approval(store)
+                    if (
+                        cfg
+                        and cfg["mode"] == "automatic"
+                        and not cfg["paused"]
+                        and allowed
+                        and allowed["allow_automatic"]
+                    ):
+                        schedule(store, body["plan_id"])
+            else:
+                raise ResearchError("Unknown paper task.")
+            store.finish(job, body)
+        finally:
+            broker.close()
+        return
     if job["kind"] == "validation":
         from .experiments import execute as evaluate
 
@@ -185,6 +227,8 @@ def process_one(store: Store) -> bool:
     try:
         execute(store, job)
     except ResearchError as error:
+        if job["kind"].startswith("paper_"):
+            store.set_preference("paper_error", str(error))
         store.fail(job["id"], str(error))
     except Exception:
         LOG.exception("Task %s failed", job["id"])
@@ -209,7 +253,27 @@ def main():
             raise SystemExit("A worker is already running for this database.")
         store = Store(args.db)
         store.recover()
+        last_tick = 0.0
         while True:
+            if time.monotonic() - last_tick >= 5:
+                from .paper import tick
+
+                store.set_preference(
+                    "worker_seen",
+                    datetime.now(timezone.utc).isoformat(),
+                )
+                try:
+                    tick(store)
+                except Exception:
+                    LOG.exception("Paper reconciliation failed")
+                    from .paper import stop
+
+                    stop(store)
+                    store.set_preference(
+                        "paper_error",
+                        "The paper worker encountered an unexpected error. Stop execution and inspect the local log before resuming.",
+                    )
+                last_tick = time.monotonic()
             if not process_one(store):
                 time.sleep(0.5)
 

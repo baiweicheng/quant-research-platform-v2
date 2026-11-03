@@ -105,7 +105,7 @@ export default function Validation({ state }: { state: State }) {
     create.mutate({ ...values, capital: "100000" });
   }
   return (
-    <>
+    <div className="validation-workspace">
       <section className="card">
         <div className="card-header">
           <div>
@@ -393,6 +393,6 @@ export default function Validation({ state }: { state: State }) {
       {result.data && (
         <RunDetail run={result.data} period={period} setPeriod={setPeriod} />
       )}
-    </>
+    </div>
   );
 }

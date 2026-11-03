@@ -30,7 +30,11 @@ export default function Research({
   const location = useLocation();
   const requestedRun = new URLSearchParams(location.search).get("run") ?? "";
   const [section, setSection] = useState<"library" | "results" | "validation">(
-    requestedRun ? "results" : "library",
+    new URLSearchParams(location.search).get("section") === "validation"
+      ? "validation"
+      : requestedRun
+        ? "results"
+        : "library",
   );
   const [selected, setSelected] = useState(requestedRun);
   const [compare, setCompare] = useState<string[]>([]);
