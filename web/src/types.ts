@@ -21,6 +21,22 @@ export type Dataset = {
   digest: string;
   warnings: string[];
   created_at: string;
+  metadata?: {
+    provider?: string;
+    feed?: string;
+    retrieved_at?: string;
+    action_count?: number;
+    coverage?: {
+      symbol: string;
+      rows: number;
+      expected: number;
+      missing_count: number;
+      missing_examples: string[];
+      start: string;
+      end: string;
+    }[];
+    [key: string]: unknown;
+  };
 };
 export type Job = {
   id: string;

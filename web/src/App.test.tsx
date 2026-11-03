@@ -289,3 +289,76 @@ it("reads a selected CSV file and completes import", async () => {
   await waitFor(() => expect(done).toHaveBeenCalled());
   expect(JSON.parse(fetch.mock.calls[0][1].body).csv).toBe(csv);
 });
+
+it("downloads a custom stock list from the interface without exposing credentials", async () => {
+  const fetch = vi.fn(async (path: string) => ({
+    ok: true,
+    json: async () =>
+      path === "/api/providers"
+        ? {
+            alpaca_configured: true,
+            sec_configured: true,
+            latest_session: "2025-12-31",
+            first_session: "2016-01-04",
+            watchlist: {
+              name: "My stocks",
+              symbols: ["AAPL", "SPY"],
+              start: "2022-01-03",
+            },
+          }
+        : state,
+  }));
+  vi.stubGlobal("fetch", fetch);
+  render(wrapper(<App />));
+  await userEvent.click(await screen.findByRole("link", { name: "Data" }));
+  const downloadButton = await screen.findByRole("button", {
+    name: "Download & validate",
+  });
+  await waitFor(() => expect(downloadButton).toBeEnabled());
+  fireEvent.change(screen.getByLabelText("Stock symbols"), {
+    target: { value: "AAPL, CUSTOM" },
+  });
+  await userEvent.click(downloadButton);
+  await screen.findByRole("heading", { name: "Your work, kept in view." });
+  const call = vi
+    .mocked(globalThis.fetch)
+    .mock.calls.find((call) => call[0] === "/api/downloads")!;
+  expect(JSON.parse(String(call[1]?.body))).toMatchObject({
+    symbols: ["AAPL", "CUSTOM"],
+    start: "2022-01-03",
+    end: "2025-12-31",
+  });
+  expect(String(call[1]?.body)).not.toMatch(/secret|api_key/i);
+});
+
+it("opens Data for a completed download rather than treating it as a portfolio review", async () => {
+  vi.stubGlobal(
+    "fetch",
+    vi
+      .fn()
+      .mockResolvedValue({
+        ok: true,
+        json: async () => ({
+          ...state,
+          jobs: [
+            {
+              id: "download",
+              kind: "download",
+              state: "complete",
+              progress: 100,
+              message: "Saved bars",
+              created_at: "2025-12-31T12:00:00Z",
+              updated_at: "2025-12-31T12:00:00Z",
+              result_id: "snapshot",
+            },
+          ],
+        }),
+      }),
+  );
+  render(wrapper(<App />));
+  await userEvent.click(await screen.findByRole("link", { name: "Activity" }));
+  await userEvent.click(screen.getByRole("button", { name: "Open data" }));
+  expect(
+    screen.getByRole("heading", { name: "Good research starts here." }),
+  ).toBeVisible();
+});

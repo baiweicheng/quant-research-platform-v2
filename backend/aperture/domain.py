@@ -83,6 +83,7 @@ class Dataset:
     sectors: dict[str, str]
     source: str
     digest: str
+    metadata: dict = field(default_factory=dict)
 
 
 @dataclass(frozen=True)

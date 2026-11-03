@@ -34,13 +34,14 @@ The app opens empty. Practice data is never silently loaded. Account metrics rem
 ## Supported in this milestone
 
 - Immutable CSV datasets with source fingerprints, idempotent imports, validation, and retained submitted CSV content.
+- Authenticated Alpaca SIP history, split/dividend normalization, per-stock coverage and captured source responses through the Data interface.
 - A persisted background queue, visible progress, atomic saved results, duplicate task protection, and interrupted-task recovery.
 - 12–1 momentum and defensive low-volatility strategies; shared stock/sector/cash allocation rules.
 - Calendar-aware after-close decisions and following-session opening-price simulation, fractional quantities, explicit costs, split/dividend accounting and no borrowing.
 - Saved backtests, comparison, SPY benchmark, common chart periods, and read-only current allocation reviews.
 - Approved Weekly Focus layout, responsive top navigation, empty/error states and explanations.
 
-Point-in-time fundamentals, the quality/value/hybrid strategies, vendor download connectors, AI-assisted discovery, strategy approvals, broker reconciliation and both manual/automatic paper execution remain future milestones. None are represented as working features. Real-money trading requires a later readiness review and explicit authorization.
+Alpaca market-data downloads are now available under Data. Point-in-time fundamentals, the quality/value/hybrid strategies, AI-assisted discovery, strategy approvals, broker reconciliation and both manual/automatic paper execution remain future milestones. None are represented as working features. Real-money trading requires a later readiness review and explicit authorization.
 
 ## Accuracy boundaries
 
@@ -63,3 +64,9 @@ The backend suite includes independent accounting examples, future-price perturb
 ## Local data and backups
 
 Application state and submitted imports are local and Git-ignored. Stop Aperture before copying the entire `var/` directory for a consistent backup, and keep it private. Exported results include provenance and the full simulation ledger, but are not a full database backup. No telemetry or remote analytics is configured.
+
+## Provider setup
+
+Copy `.env.example` to ignored `.env` and set `ALPACA_API_KEY`, `ALPACA_SECRET_KEY` with **paper** keys. Set `SEC_USER_AGENT` to a descriptive name and your contact email for SEC requests. Keys are read locally, are never sent to the browser, and must never be committed. In Data, test the connection, edit the watchlist/date range and select Download & validate. The default watchlist is a manageable research starting point, not a buy recommendation or historical index universe.
+
+See [milestone validation](docs/MILESTONES.md) for actual provider checks, coverage limits and subsequent build stages.

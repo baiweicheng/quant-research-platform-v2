@@ -16,6 +16,8 @@ from . import __version__
 from .domain import STRATEGIES, ResearchError, decimal, strategy
 from .ingest import MAX_BYTES, TEMPLATE, parse_csv
 from .store import Store
+from .config import settings
+from .providers import DEFAULT_SYMBOLS, validate_symbols
 
 
 class ImportRequest(BaseModel):
@@ -31,6 +33,13 @@ class TaskRequest(BaseModel):
     start: date | None = None
     end: date | None = None
     capital: str = Field(default="100000", max_length=20)
+
+
+class DownloadRequest(BaseModel):
+    name: str = Field(default="US stock watchlist", min_length=1, max_length=100)
+    symbols: list[str] = Field(min_length=1, max_length=100)
+    start: date
+    end: date
 
 
 def create_app(
@@ -105,6 +114,52 @@ def create_app(
     @app.get("/api/results/{identifier}")
     def result(identifier: str):
         return store.result(identifier)
+
+    @app.get("/api/providers")
+    def providers():
+        from .calendar import latest_complete
+
+        cfg = settings()
+        return {
+            "alpaca_configured": cfg.configured,
+            "sec_configured": "@" in cfg.sec_agent,
+            "latest_session": str(latest_complete()),
+            "first_session": "2016-01-04",
+            "watchlist": store.preference(
+                "watchlist",
+                {
+                    "name": "US stock watchlist",
+                    "symbols": DEFAULT_SYMBOLS,
+                    "start": "2022-01-03",
+                },
+            ),
+        }
+
+    @app.post("/api/providers/check", status_code=202)
+    def check_provider():
+        settings().headers()
+        return store.enqueue("connection", {})
+
+    @app.post("/api/downloads", status_code=202)
+    def queue_download(payload: DownloadRequest):
+        settings().headers()
+        data = payload.model_dump(mode="json")
+        data["symbols"] = validate_symbols(data["symbols"])
+        from .calendar import latest_complete
+
+        if (
+            payload.start < date(2016, 1, 4)
+            or payload.end > latest_complete()
+            or payload.start >= payload.end
+        ):
+            raise ResearchError(
+                "Choose a valid completed-session period from 2016 onward, with the end after the start."
+            )
+        store.set_preference(
+            "watchlist",
+            {"name": data["name"], "symbols": data["symbols"], "start": data["start"]},
+        )
+        return store.enqueue("download", data)
 
     @app.get("/api/template.csv")
     def template():

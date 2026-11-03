@@ -27,6 +27,7 @@ import {
 } from "./components";
 import { ImportDialog, StrategyDialog, TaskDialog } from "./dialogs";
 import Research from "./Research";
+import MarketData from "./MarketData";
 import type { Review, State, Strategy } from "./types";
 
 const tabs = [
@@ -192,6 +193,7 @@ export default function App() {
                 state={state}
                 onResearch={(id) => navigate(`/research?run=${id}`)}
                 onReview={(id) => navigate(`/portfolio?review=${id}`)}
+                onData={() => navigate("/data")}
               />
             )}
             {route === "/data" && (
@@ -456,6 +458,7 @@ function DataPage({
           Import CSV
         </button>
       </div>
+      <MarketData />
       <div className="data-start card">
         <span className="soft-icon">
           <Database size={23} />
@@ -518,7 +521,9 @@ function DataPage({
                     >
                       {dataset.kind === "synthetic"
                         ? "Synthetic practice"
-                        : "Imported · as-traded declared"}
+                        : dataset.metadata?.provider === "alpaca"
+                          ? "Downloaded · Alpaca SIP"
+                          : "Imported · as-traded declared"}
                     </Badge>
                   </div>
                   <p>
@@ -544,6 +549,34 @@ function DataPage({
                 <details className="details">
                   <summary>Coverage, symbols & limitations</summary>
                   <p>{dataset.symbols.join(" · ")}</p>
+                  {dataset.metadata?.coverage && (
+                    <div className="table-scroll">
+                      <table>
+                        <thead>
+                          <tr>
+                            <th>Stock</th>
+                            <th>Bars</th>
+                            <th>Missing sessions</th>
+                            <th>Coverage</th>
+                          </tr>
+                        </thead>
+                        <tbody>
+                          {dataset.metadata.coverage.map((row) => (
+                            <tr key={row.symbol}>
+                              <td>{row.symbol}</td>
+                              <td>
+                                {row.rows} / {row.expected}
+                              </td>
+                              <td>{row.missing_count}</td>
+                              <td>
+                                {row.start} – {row.end}
+                              </td>
+                            </tr>
+                          ))}
+                        </tbody>
+                      </table>
+                    </div>
+                  )}
                   {dataset.warnings.map((w) => (
                     <p key={w}>{w}</p>
                   ))}
@@ -567,10 +600,10 @@ function DataPage({
         <div className="card education">
           <h3>What about automatic downloads?</h3>
           <p>
-            Provider connectors and point-in-time fundamentals are the next data
-            milestone. Today, imports require verified as-traded prices with
-            separate actions. Do not assume Yahoo’s or another provider’s
-            default historical prices meet this contract.
+            Alpaca downloads run in a background task and preserve source
+            responses. Point-in-time fundamentals use a separate SEC pipeline.
+            Yahoo was evaluated as a possible cross-check; its default adjusted
+            history is not substituted into the as-traded ledger.
           </p>
         </div>
       </div>
@@ -771,10 +804,12 @@ function ActivityPage({
   state,
   onResearch,
   onReview,
+  onData,
 }: {
   state: State;
   onResearch: (id: string) => void;
   onReview: (id: string) => void;
+  onData: () => void;
 }) {
   return (
     <>
@@ -822,6 +857,8 @@ function ActivityPage({
                     <h3>
                       {{
                         practice: "Prepare practice data",
+                        download: "Download market data",
+                        connection: "Check paper/data access",
                         backtest: "Run backtest",
                         review: "Prepare allocation review",
                       }[job.kind] ?? job.kind}
@@ -866,10 +903,17 @@ function ActivityPage({
                     onClick={() =>
                       job.kind === "backtest"
                         ? onResearch(job.result_id ?? "")
-                        : onReview(job.result_id ?? "")
+                        : job.kind === "review"
+                          ? onReview(job.result_id ?? "")
+                          : onData()
                     }
                   >
-                    Open {job.kind === "backtest" ? "research" : "review"}
+                    Open{" "}
+                    {job.kind === "backtest"
+                      ? "research"
+                      : job.kind === "review"
+                        ? "review"
+                        : "data"}
                     <ArrowRight size={14} />
                   </button>
                 )}

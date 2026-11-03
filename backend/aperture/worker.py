@@ -21,6 +21,63 @@ LOG = logging.getLogger(__name__)
 def execute(store: Store, job: dict):
     payload = job["payload"]
     update = lambda value, message: store.progress(job["id"], value, message)
+    if job["kind"] == "download":
+        from .providers import download_market
+
+        saved = download_market(store, payload, update)
+        store.finish(
+            job,
+            {
+                "dataset_id": saved["id"],
+                "dataset_name": saved["name"],
+                "dataset_kind": saved["kind"],
+                "completion_message": f"Saved {saved['row_count']:,} daily bars for {saved['symbol_count']} symbols. Coverage details are available in Data.",
+                "coverage": saved.get("metadata", {}).get("coverage", []),
+            },
+        )
+        return
+    if job["kind"] == "connection":
+        from .providers import Provider
+        from .config import PAPER_URL, DATA_URL
+
+        api = Provider(store)
+        try:
+            update(10, "Checking paper-account access")
+            account = api.get("alpaca", PAPER_URL + "/v2/account", ttl=0)
+            if account.get("status") != "ACTIVE" or account.get("currency") != "USD":
+                raise ResearchError(
+                    "The paper account must be active and denominated in USD."
+                )
+            latest = calendar.latest_complete()
+            sample = api.get(
+                "alpaca",
+                DATA_URL + "/v2/stocks/bars",
+                {
+                    "symbols": "SPY",
+                    "timeframe": "1Day",
+                    "start": str(latest),
+                    "end": calendar.close_time(latest).isoformat(),
+                    "feed": "sip",
+                    "adjustment": "raw",
+                    "limit": 10,
+                },
+            )
+            if not sample.get("bars", {}).get("SPY"):
+                raise ResearchError(
+                    "The consolidated SPY sample was unavailable. Check market-data access before downloading."
+                )
+            store.finish(
+                job,
+                {
+                    "paper_access": True,
+                    "completion_message": "Read-only paper-account and consolidated historical-data checks passed.",
+                    "historical_sip_access": True,
+                    "checked_at": str(latest),
+                },
+            )
+        finally:
+            api.close()
+        return
     if job["kind"] == "practice":
         update(15, "Building the fictional practice universe")
         dataset, raw, warnings = practice_dataset()

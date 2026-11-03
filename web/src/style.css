@@ -1,5 +1,27 @@
 @import "tailwindcss";
 
+.market-data {
+  margin-bottom: 24px;
+}
+.market-data .form {
+  max-width: 760px;
+  margin-top: 22px;
+}
+.provider-summary {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  justify-content: space-between;
+  gap: 16px;
+}
+.provider-summary > span {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  font-size: 14px;
+  color: #657b68;
+}
+
 :root {
   --font-caption: 12px;
   --font-small: 14px;

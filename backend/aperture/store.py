@@ -43,6 +43,13 @@ class Store:
                 CREATE TABLE IF NOT EXISTS results (
                     id TEXT PRIMARY KEY, kind TEXT NOT NULL, created_at TEXT NOT NULL,
                     summary TEXT NOT NULL, body BLOB NOT NULL);
+                CREATE TABLE IF NOT EXISTS observations (
+                    id TEXT PRIMARY KEY, provider TEXT NOT NULL,
+                    resource TEXT NOT NULL, fetched_at TEXT NOT NULL,
+                    digest TEXT NOT NULL, body BLOB NOT NULL);
+                CREATE INDEX IF NOT EXISTS observations_resource ON observations(provider,resource,fetched_at);
+                CREATE TABLE IF NOT EXISTS preferences (key TEXT PRIMARY KEY, value TEXT NOT NULL);
+                INSERT OR IGNORE INTO schema_version VALUES (2);
             """)
         self.path.chmod(0o600)
 
@@ -73,10 +80,12 @@ class Store:
             end=str(days[-1]),
             created_at=now(),
             warnings=warnings,
+            metadata=dataset.metadata,
         )
         body = {
             "summary": summary,
             "sectors": dataset.sectors,
+            "metadata": dataset.metadata,
             "bars": [
                 {
                     **vars(bar),
@@ -157,7 +166,58 @@ class Store:
             body["sectors"],
             summary["source"],
             summary["digest"],
+            body.get("metadata", {}),
         )
+
+    def preference(self, key: str, default=None):
+        with self.connect() as db:
+            row = db.execute(
+                "SELECT value FROM preferences WHERE key=?", (key,)
+            ).fetchone()
+        return json.loads(row[0]) if row else default
+
+    def set_preference(self, key: str, value):
+        with self.connect() as db:
+            db.execute(
+                "INSERT INTO preferences VALUES (?,?) ON CONFLICT(key) DO UPDATE SET value=excluded.value",
+                (key, json.dumps(value)),
+            )
+
+    def observe(self, provider: str, resource: str, raw: bytes) -> str:
+        import hashlib
+
+        identifier = str(uuid4())
+        with self.connect() as db:
+            db.execute(
+                "INSERT INTO observations VALUES (?,?,?,?,?,?)",
+                (
+                    identifier,
+                    provider,
+                    resource,
+                    now(),
+                    hashlib.sha256(raw).hexdigest(),
+                    gzip.compress(raw, mtime=0),
+                ),
+            )
+        return identifier
+
+    def cached(
+        self, provider: str, resource: str, seconds: int
+    ) -> tuple[dict, str] | None:
+        with self.connect() as db:
+            row = db.execute(
+                "SELECT id,fetched_at,body FROM observations WHERE provider=? AND resource=? ORDER BY fetched_at DESC LIMIT 1",
+                (provider, resource),
+            ).fetchone()
+        if (
+            row
+            and (
+                datetime.now(timezone.utc) - datetime.fromisoformat(row["fetched_at"])
+            ).total_seconds()
+            < seconds
+        ):
+            return json.loads(gzip.decompress(row["body"])), row["id"]
+        return None
 
     def enqueue(self, kind: str, payload: dict) -> dict:
         packed = json.dumps(payload, sort_keys=True)
@@ -266,6 +326,11 @@ class Store:
                 "UPDATE jobs SET state='complete',progress=100,message='Ready to review',updated_at=?,result_id=? WHERE id=?",
                 (timestamp, identifier, job["id"]),
             )
+            if body.get("completion_message"):
+                db.execute(
+                    "UPDATE jobs SET message=? WHERE id=?",
+                    (body["completion_message"], job["id"]),
+                )
 
     def results(self, kind: str) -> list[dict]:
         with self.connect() as db:
