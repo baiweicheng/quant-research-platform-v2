@@ -17,7 +17,7 @@ from .domain import STRATEGIES, ResearchError, decimal, strategy
 from .ingest import MAX_BYTES, TEMPLATE, parse_csv
 from .store import Store
 from .config import settings
-from .providers import DEFAULT_SYMBOLS, validate_symbols
+from . import membership
 
 
 class ImportRequest(BaseModel):
@@ -36,8 +36,9 @@ class TaskRequest(BaseModel):
 
 
 class DownloadRequest(BaseModel):
-    name: str = Field(default="US stock watchlist", min_length=1, max_length=100)
-    symbols: list[str] = Field(min_length=1, max_length=100)
+    name: str = Field(default="S&P 500 + supplements", min_length=1, max_length=100)
+    universe: Literal["sp500_current", "sp500_historical", "custom"] = "sp500_current"
+    symbols: list[str] = Field(default_factory=list, max_length=1500)
     start: date
     end: date
 
@@ -58,7 +59,7 @@ class EvaluationRequest(BaseModel):
 class PaperConfigRequest(BaseModel):
     strategy_id: str = Field(max_length=40)
     mode: Literal["manual", "automatic"] = "manual"
-    symbols: list[str] = Field(min_length=1, max_length=100)
+    symbols: list[str] = Field(min_length=1, max_length=1500)
     data_start: date
     positions: int = Field(default=25, ge=1, le=100)
     max_weight: str = Field(default="0.05", max_length=20)
@@ -253,20 +254,35 @@ def create_app(
         from .calendar import latest_complete
 
         cfg = settings()
+        current = store.membership("current")
+        watchlist = store.preference("watchlist", {})
         return {
             "alpaca_configured": cfg.configured,
             "sec_configured": "@" in cfg.sec_agent,
             "latest_session": str(latest_complete()),
             "first_session": "2016-01-04",
-            "watchlist": store.preference(
-                "watchlist",
-                {
-                    "name": "US stock watchlist",
-                    "symbols": DEFAULT_SYMBOLS,
-                    "start": "2022-01-03",
-                },
-            ),
+            "membership": {
+                "current": membership.summary(current),
+                "historical": membership.summary(store.membership("historical")),
+            },
+            "watchlist": {
+                "name": watchlist.get("name", "S&P 500 + supplements"),
+                "universe": watchlist.get("universe", "sp500_current"),
+                "symbols": watchlist.get("symbols", []),
+                "start": watchlist.get("start", "2022-01-03"),
+            },
+            "paper_default_symbols": sorted(
+                {m["symbol"] for m in current["members"]}
+                | set(watchlist.get("symbols", []))
+                | {"SPY"}
+            )
+            if current
+            else [],
         }
+
+    @app.post("/api/membership/{kind}/refresh", status_code=202)
+    def refresh_membership(kind: Literal["current", "historical"]):
+        return store.enqueue("membership", {"kind": kind})
 
     @app.post("/api/providers/check", status_code=202)
     def check_provider():
@@ -277,7 +293,9 @@ def create_app(
     def queue_download(payload: DownloadRequest):
         settings().headers()
         data = payload.model_dump(mode="json")
-        data["symbols"] = validate_symbols(data["symbols"])
+        data["symbols"] = membership.symbols(
+            data["symbols"], allow_empty=payload.universe != "custom"
+        )
         from .calendar import latest_complete
 
         if (
@@ -290,7 +308,12 @@ def create_app(
             )
         store.set_preference(
             "watchlist",
-            {"name": data["name"], "symbols": data["symbols"], "start": data["start"]},
+            {
+                "name": data["name"],
+                "symbols": data["symbols"],
+                "start": data["start"],
+                "universe": data["universe"],
+            },
         )
         return store.enqueue("download", data)
 

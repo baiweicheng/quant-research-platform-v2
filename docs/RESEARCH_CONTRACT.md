@@ -2,7 +2,7 @@
 
 ## Inputs
 
-CSV columns: `symbol,date,open,high,low,close,volume`; optional `split,dividend,pay_date,sector,available_at`. Dates are ISO calendar dates. `available_at` is an ISO timestamp with time zone. Rows may be unordered; duplicate symbol/date pairs are rejected. At most 100 symbols, 80,000 rows and 16 MB per import. All dates must be completed XNYS sessions, from 1990 onward.
+CSV columns: `symbol,date,open,high,low,close,volume`; optional `split,dividend,pay_date,sector,available_at`. Dates are ISO calendar dates. `available_at` is an ISO timestamp with time zone. Rows may be unordered; duplicate symbol/date pairs are rejected. At most 1,500 symbols, 80,000 rows and 16 MB per import. All dates must be completed XNYS sessions, from 1990 onward.
 
 OHLC must be **as-traded** prices: the actual units traded on that date. Already split-adjusted OHLC or total-return-adjusted prices are unsupported. Never mix adjusted close with unadjusted open. A vendor label such as “raw” is not independently sufficient evidence of this convention.
 
@@ -13,6 +13,10 @@ OHLC must be **as-traded** prices: the actual units traded on that date. Already
 - `SPY` is reserved for the benchmark and excluded from stock selection. The importer is responsible for restricting other names to US-listed stocks. Listing identity, ticker reuse, foreign-market symbols and delisted coverage are not resolved by this release.
 
 Positive finite prices, OHLC bounds, nonnegative integer volume, valid actions, exchange sessions and duplicate keys are validated before the whole dataset is atomically stored. Identical submitted UTF-8 text, price contract and source description deduplicate; changed inputs create a new immutable snapshot. A source fingerprint and compressed submitted UTF-8 CSV text are retained. Browser file decoding may remove an encoding marker; this is not a byte-for-byte archive of the original file. Imported data is never silently overwritten.
+
+## Universe membership
+
+Data defaults to the full current S&P 500 plus optional supplements; SPY is only a benchmark. See [universe contract](UNIVERSE.md) for immutable roster refreshes, historical effective dates, coverage limits, and free-source uncertainty. Current-roster snapshots are blocked from historical backtests. Historical downloads include the union of in-period members and use only the roster effective on each decision date; missing required member prices stop ingestion and backtests. Archived/inactive listings can supply historical prices without becoming tradable. Fixed-list CSV inputs remain explicitly exploratory.
 
 ## Signals and allocation
 

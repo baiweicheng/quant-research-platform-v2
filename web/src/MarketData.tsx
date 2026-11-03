@@ -1,3 +1,4 @@
+import { useState } from "react";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { useNavigate } from "react-router-dom";
 import { Database, Download, PlugZap } from "lucide-react";
@@ -9,7 +10,24 @@ type ProviderInfo = {
   sec_configured: boolean;
   latest_session: string;
   first_session: string;
-  watchlist: { name: string; symbols: string[]; start: string };
+  watchlist: {
+    name: string;
+    universe?: string;
+    symbols: string[];
+    start: string;
+  };
+  membership?: { current: Membership | null; historical: Membership | null };
+};
+type Membership = {
+  id: string;
+  captured_at: string;
+  source: string;
+  member_count: number;
+  coverage_start: string;
+  coverage_end: string;
+  added?: string[];
+  removed?: string[];
+  initial?: boolean;
 };
 
 export default function MarketData() {
@@ -18,7 +36,7 @@ export default function MarketData() {
   const info = useQuery({
     queryKey: ["providers"],
     queryFn: () => api<ProviderInfo>("/providers"),
-    staleTime: 30000,
+    staleTime: 0,
   });
   const enqueue = useMutation({
     mutationFn: ({ path, body }: { path: string; body: unknown }) =>
@@ -29,6 +47,27 @@ export default function MarketData() {
     },
   });
   const cfg = info.data;
+  const [universe, setUniverse] = useState("sp500_current");
+  const historical =
+    universe === "sp500_historical" ? cfg?.membership?.historical : null;
+  const end = historical
+    ? [
+        historical.coverage_end,
+        cfg?.latest_session ?? historical.coverage_end,
+      ].sort()[0]
+    : (cfg?.latest_session ?? "");
+  const requestedStart = cfg?.watchlist?.start ?? "2022-01-03";
+  const start =
+    historical && requestedStart >= end
+      ? end > "2022-01-03"
+        ? "2022-01-03"
+        : [
+            historical.coverage_start,
+            cfg?.first_session ?? historical.coverage_start,
+          ]
+            .sort()
+            .at(-1)
+      : requestedStart;
   return (
     <section className="card market-data">
       <div className="card-header">
@@ -73,9 +112,57 @@ export default function MarketData() {
             Test connection
           </button>
         </div>
+        <div className="membership-status">
+          <h3>S&P 500 membership</h3>
+          {(["current", "historical"] as const).map((kind) => {
+            const saved = cfg?.membership?.[kind];
+            return (
+              <div key={kind}>
+                <p>
+                  <strong>
+                    {kind === "current"
+                      ? "Current roster"
+                      : "Historical rosters"}
+                  </strong>
+                  {saved
+                    ? ` · ${saved.member_count} securities · captured ${new Date(saved.captured_at).toLocaleString()}`
+                    : " · Not downloaded yet"}
+                </p>
+                {saved && (
+                  <p className="field-hint">
+                    {kind === "historical"
+                      ? `Available history: ${saved.coverage_start} – ${saved.coverage_end}. The final roster is never extended beyond this date.`
+                      : saved.initial
+                        ? "First capture saved. Future refreshes report additions and removals."
+                        : `Changes since previous capture: added ${saved.added?.join(", ") || "none"}; removed ${saved.removed?.join(", ") || "none"}.`}{" "}
+                    <a href={saved.source} target="_blank" rel="noreferrer">
+                      Source
+                    </a>
+                  </p>
+                )}
+                <button
+                  type="button"
+                  className="button secondary small"
+                  disabled={enqueue.isPending}
+                  onClick={() =>
+                    enqueue.mutate({
+                      path: `/membership/${kind}/refresh`,
+                      body: {},
+                    })
+                  }
+                >
+                  Refresh{" "}
+                  {kind === "current"
+                    ? "current membership"
+                    : "historical membership"}
+                </button>
+              </div>
+            );
+          })}
+        </div>
         <form
           className="form"
-          key={cfg?.latest_session ?? "loading"}
+          key={`${cfg?.latest_session ?? "loading"}-${universe}`}
           onSubmit={(e) => {
             e.preventDefault();
             const values = new FormData(e.currentTarget);
@@ -83,6 +170,7 @@ export default function MarketData() {
               path: "/downloads",
               body: {
                 name: values.get("name"),
+                universe,
                 symbols: String(values.get("symbols"))
                   .split(/[\s,;]+/)
                   .filter(Boolean),
@@ -93,38 +181,66 @@ export default function MarketData() {
           }}
         >
           <label>
-            Watchlist name
+            Dataset name
             <input
               name="name"
-              defaultValue={cfg?.watchlist?.name ?? "US stock watchlist"}
+              defaultValue={"S&P 500 + supplements"}
               maxLength={100}
               required
             />
           </label>
           <label>
-            Stock symbols
+            Stock universe
+            <select
+              name="universe"
+              value={universe}
+              onChange={(e) => setUniverse(e.target.value)}
+            >
+              <option value="sp500_current">
+                Current S&P 500 + optional supplements
+              </option>
+              <option value="sp500_historical">
+                Historical S&P 500 members + optional supplements
+              </option>
+              <option value="custom">Custom list only</option>
+            </select>
+          </label>
+          <label>
+            {universe === "custom"
+              ? "Stock symbols"
+              : "Additional stock symbols (optional)"}
             <textarea
               name="symbols"
               rows={3}
               defaultValue={
-                cfg?.watchlist?.symbols?.join(", ") ?? "AAPL, MSFT, SPY"
+                cfg?.watchlist?.symbols
+                  ?.filter((s) => s !== "SPY")
+                  .join(", ") ?? ""
               }
-              required
+              required={universe === "custom"}
+              placeholder="Optional names outside the S&P 500"
             />
           </label>
           <p className="field-hint">
-            Start with roughly 25–50 companies. Custom US-listed names outside
-            the S&P 500 are welcome; SPY is always included as the benchmark.
-            This is a current watchlist, not a historical index-membership
-            database.
+            The full S&P 500 is included by default, with every listed share
+            class. Additional symbols supplement the index. SPY is always
+            included only as a benchmark. Downloads refresh membership when its
+            capture is over 24 hours old.
           </p>
+          <Notice>
+            {universe === "sp500_current"
+              ? "Current members support current reviews. To backtest history, choose Historical S&P 500 members; today's roster cannot be backdated."
+              : universe === "sp500_historical"
+                ? "Historical downloads include all members present during the selected period, including departures. Dates outside the source coverage and missing member prices stop the job. The public history is retrospective, with no certified announcement times or security identities; results remain exploratory."
+                : "A custom fixed list can introduce survivorship and selection bias in historical tests."}
+          </Notice>
           <div className="form-row">
             <label>
               History from
               <input
                 name="start"
                 type="date"
-                defaultValue={cfg?.watchlist?.start ?? "2022-01-03"}
+                defaultValue={start}
                 min={cfg?.first_session}
                 max={cfg?.latest_session}
                 required
@@ -135,7 +251,7 @@ export default function MarketData() {
               <input
                 name="end"
                 type="date"
-                defaultValue={cfg?.latest_session ?? ""}
+                defaultValue={end}
                 min={cfg?.first_session}
                 max={cfg?.latest_session}
                 required
@@ -161,12 +277,14 @@ export default function MarketData() {
         <details className="details">
           <summary>What is checked, and what is still uncertain?</summary>
           <p>
-            Every selected name must be an active US exchange listing. Split
-            ratios are checked against adjusted provider bars; unsupported
-            actions stop the download. Per-stock gaps and raw response
-            fingerprints are retained. Historical membership, delisted coverage
-            and historical sectors are not certified. No alternate feed is
-            silently substituted.
+            Downloads check active and archived US listings, retaining inactive
+            names for historical prices. Unavailable or ambiguous identities
+            stop the download rather than silently dropping departures. Paper
+            trading separately requires tradable listings. Split ratios are
+            checked against adjusted provider bars; unsupported actions stop the
+            download. Per-stock gaps and raw response fingerprints are retained.
+            Historical membership, delisted coverage and historical sectors are
+            not certified. No alternate feed is silently substituted.
           </p>
           <p>
             Data uses the latest completed session after close + 15 minutes.

@@ -316,10 +316,16 @@ it("downloads a custom stock list from the interface without exposing credential
     name: "Download & validate",
   });
   await waitFor(() => expect(downloadButton).toBeEnabled());
+  await userEvent.selectOptions(
+    screen.getByLabelText("Stock universe"),
+    "custom",
+  );
   fireEvent.change(screen.getByLabelText("Stock symbols"), {
     target: { value: "AAPL, CUSTOM" },
   });
-  await userEvent.click(downloadButton);
+  await userEvent.click(
+    screen.getByRole("button", { name: "Download & validate" }),
+  );
   await screen.findByRole("heading", { name: "Your work, kept in view." });
   const call = vi
     .mocked(globalThis.fetch)

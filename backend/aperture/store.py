@@ -57,11 +57,37 @@ class Store:
                     id TEXT PRIMARY KEY, protocol_id TEXT NOT NULL, job_id TEXT NOT NULL,
                     label TEXT NOT NULL, phase TEXT NOT NULL, state TEXT NOT NULL,
                     created_at TEXT NOT NULL, summary TEXT NOT NULL, body BLOB);
+                CREATE TABLE IF NOT EXISTS memberships (
+                    id TEXT PRIMARY KEY, kind TEXT NOT NULL, captured_at TEXT NOT NULL,
+                    body BLOB NOT NULL, raw BLOB NOT NULL);
+                INSERT OR IGNORE INTO schema_version VALUES (4);
             """)
         self.path.chmod(0o600)
         from .paper import initialize
 
         initialize(self)
+
+    def save_membership(self, body: dict, raw: bytes) -> dict:
+        with self.connect() as db:
+            db.execute(
+                "INSERT INTO memberships VALUES (?,?,?,?,?)",
+                (
+                    body["id"],
+                    body["kind"],
+                    body["captured_at"],
+                    encode(body),
+                    gzip.compress(raw, mtime=0),
+                ),
+            )
+        return body
+
+    def membership(self, kind: str, identifier: str | None = None) -> dict | None:
+        with self.connect() as db:
+            row = db.execute(
+                "SELECT body FROM memberships WHERE kind=? AND (? IS NULL OR id=?) ORDER BY captured_at DESC, rowid DESC LIMIT 1",
+                (kind, identifier, identifier),
+            ).fetchone()
+        return decode(row[0]) if row else None
 
     @contextmanager
     def connect(self):

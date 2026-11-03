@@ -21,6 +21,19 @@ LOG = logging.getLogger(__name__)
 def execute(store: Store, job: dict):
     payload = job["payload"]
     update = lambda value, message: store.progress(job["id"], value, message)
+    if job["kind"] == "membership":
+        from .membership import refresh, summary
+
+        update(10, "Refreshing dated S&P 500 membership")
+        saved = refresh(store, payload["kind"])
+        store.finish(
+            job,
+            {
+                "completion_message": f"Saved {saved['member_count']} S&P 500 securities. Membership details and coverage are available in Data.",
+                "membership": summary(saved),
+            },
+        )
+        return
     if job["kind"].startswith("paper_"):
         from .paper import (
             Broker,

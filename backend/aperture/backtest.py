@@ -8,6 +8,7 @@ from . import __version__, calendar
 from .domain import Dataset, ONE, ZERO, Policy, Portfolio, ResearchError, strategy
 from .ledger import apply_actions, buy, rebalance
 from .metrics import windows
+from .membership import validate_coverage, HISTORY_NOTE
 from .portfolio import target_weights
 from .signals import rank
 
@@ -49,6 +50,7 @@ def run(
         raise ResearchError(
             f"Choose dates within the stock data coverage: {first_available} to {last_available}."
         )
+    validate_coverage(dataset, days[0], days[-1])
     portfolio = Portfolio(capital)
     benchmark = Portfolio(capital)
     benchmark_ready = "SPY" in all_by_day and all(
@@ -67,7 +69,9 @@ def run(
     curve, trades, decision_log = [], [], []
     cash_targets = []
     notes = {
-        "Exploratory fixed-list research: historical membership, delisted-stock coverage, and sector classifications have not been independently verified. Results must not be described as survivorship-safe."
+        HISTORY_NOTE
+        if dataset.metadata.get("membership")
+        else "Exploratory fixed-list research: historical membership, delisted-stock coverage, and sector classifications have not been independently verified. Results must not be described as survivorship-safe."
     }
     if dataset.kind == "synthetic":
         notes.add(

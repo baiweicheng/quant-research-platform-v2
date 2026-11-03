@@ -97,6 +97,7 @@ def market(tmp_path, monkeypatch):
 def request():
     return {
         "name": "Test stocks",
+        "universe": "custom",
         "symbols": ["ABC", "SPY"],
         "start": "2024-05-06",
         "end": "2024-05-10",
@@ -201,7 +202,7 @@ def test_symbol_validation_never_silently_truncates():
     with pytest.raises(ResearchError):
         validate_symbols(["../secret"])
     with pytest.raises(ResearchError):
-        validate_symbols([f"S{i}" for i in range(100)])
+        validate_symbols([f"S{i}" for i in range(1500)])
 
 
 def test_cent_rounded_adjusted_prices_do_not_create_false_splits(market):

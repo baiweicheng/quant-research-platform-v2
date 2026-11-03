@@ -3,7 +3,7 @@
 import hashlib
 import json
 import time
-from datetime import date, datetime, timedelta, timezone
+from datetime import date, datetime, timedelta
 from decimal import Decimal
 from urllib.parse import quote
 from zoneinfo import ZoneInfo
@@ -12,11 +12,11 @@ import httpx
 
 from . import calendar
 from .config import DATA_URL, PAPER_URL, Settings, settings
-from .domain import Bar, Dataset, ONE, ResearchError, ZERO, decimal
+from .domain import Bar, Dataset, ResearchError, ZERO, decimal
 from .ingest import WARNING
+from . import membership
 from .store import Store, now
 
-DEFAULT_SYMBOLS = "AAPL MSFT NVDA GOOGL AMZN META JPM BAC V MA JNJ MRK ABBV PG KO PEP COST WMT XOM CVX CAT DE UNP LMT NEE DUK SO ECL APD AMT SPY".split()
 SECTORS = {
     s: sector
     for sector, names in {
@@ -126,7 +126,7 @@ class Provider:
 
     def pages(self, path: str, params: dict, key: str) -> list[dict]:
         output, seen = [], set()
-        for _ in range(100):
+        for _ in range(500):
             body = self.get("alpaca", DATA_URL + path, params)
             if not isinstance(body, dict) or not isinstance(body.get(key), dict):
                 raise ResearchError(
@@ -146,26 +146,31 @@ class Provider:
 
 
 def validate_symbols(symbols: list[str]) -> list[str]:
-    import re
-
-    result = list(dict.fromkeys(s.strip().upper() for s in symbols if s.strip()))
-    if not 1 <= len(result) <= 100 or any(
-        not re.fullmatch(r"[A-Z][A-Z0-9.\-]{0,11}", s) for s in result
-    ):
-        raise ResearchError(
-            "Choose 1–100 US stock symbols, using letters, digits, dots or hyphens."
-        )
+    result = membership.symbols(symbols)
     if "SPY" not in result:
         result.append("SPY")
-    if len(result) > 100:
-        raise ResearchError("Leave one of the 100 symbol slots for the SPY benchmark.")
+    if len(result) > membership.MAX_SYMBOLS:
+        raise ResearchError(
+            "Leave one of the 1,500 symbol slots for the SPY benchmark."
+        )
     return result
+
+
+def batch_pages(api, path, query, key):
+    names = query["symbols"].split(",")
+    output = []
+    for offset in range(0, len(names), 100):
+        output.extend(
+            api.pages(
+                path, {**query, "symbols": ",".join(names[offset : offset + 100])}, key
+            )
+        )
+    return output
 
 
 def download_market(
     store: Store, payload: dict, progress, provider: Provider | None = None
 ) -> dict:
-    symbols = validate_symbols(payload["symbols"])
     start, end = (
         date.fromisoformat(payload["start"]),
         date.fromisoformat(payload["end"]),
@@ -175,29 +180,69 @@ def download_market(
         raise ResearchError(
             f"Choose dates from 2016-01-04 through the latest completed session, {latest}."
         )
+    symbols, membership_audit, member_sectors = membership.resolve(
+        store, payload, start, end
+    )
+    symbols = validate_symbols(symbols)
     expected = calendar.sessions(start, end)
-    if len(expected) * len(symbols) > 80000:
+    if len(expected) * len(symbols) > membership.MAX_BARS:
         raise ResearchError(
-            "This request exceeds 80,000 daily bars. Reduce the period or stock list."
+            "This request exceeds 4,000,000 daily bars. Reduce the period or stock list."
         )
     api = provider or Provider(store)
     try:
         securities = []
+        historical = membership_audit and membership_audit["kind"] == "historical"
+        asset_map = None
+        if len(symbols) > 100:
+            asset_map = {}
+            for status in ["active", "inactive"]:
+                assets = api.get(
+                    "alpaca",
+                    PAPER_URL + "/v2/assets",
+                    {"status": status, "asset_class": "us_equity"},
+                    ttl=86400,
+                )
+                if not isinstance(assets, list):
+                    raise ResearchError("The provider asset directory changed format.")
+                for asset in assets:
+                    key = asset.get("symbol")
+                    if key in asset_map and asset_map[key].get("id") != asset.get("id"):
+                        if key in symbols:
+                            # The current universe pins Alpaca's active identity
+                            # with asof=latest. An older reused ticker cannot
+                            # displace it. Historical rosters have no such ID
+                            # evidence and must fail rather than guess.
+                            if (
+                                not historical
+                                and asset_map[key].get("status") == "active"
+                            ):
+                                continue
+                            raise ResearchError(
+                                f"Ambiguous historical identity for {key}; ticker reuse cannot be guessed."
+                            )
+                    asset_map[key] = asset
         for index, symbol in enumerate(symbols):
             progress(
                 2 + round(index / len(symbols) * 15), f"Checking US listing: {symbol}"
             )
-            asset = api.get(
-                "alpaca", PAPER_URL + "/v2/assets/" + quote(symbol, safe=""), ttl=86400
+            asset = (
+                asset_map[symbol]
+                if asset_map is not None and symbol in asset_map
+                else api.get(
+                    "alpaca",
+                    PAPER_URL + "/v2/assets/" + quote(symbol, safe=""),
+                    ttl=86400,
+                )
             )
             if (
                 asset.get("class") != "us_equity"
                 or asset.get("exchange")
                 not in ("NYSE", "NASDAQ", "AMEX", "ARCA", "BATS", "NYSEARCA")
-                or asset.get("status") != "active"
+                or asset.get("status") not in ("active", "inactive")
             ):
                 raise ResearchError(
-                    f"{symbol} is not a supported active US exchange listing. It was not silently removed."
+                    f"{symbol} has no unambiguous supported US exchange listing in the provider directory. It was not silently removed."
                 )
             import re
 
@@ -215,6 +260,7 @@ def download_market(
                         "symbol",
                         "name",
                         "exchange",
+                        "status",
                         "tradable",
                         "fractionable",
                     )
@@ -234,7 +280,7 @@ def download_market(
             "sort": "asc",
         }
         progress(20, "Downloading consolidated daily bars")
-        bar_pages = api.pages("/v2/stocks/bars", query, "bars")
+        bar_pages = batch_pages(api, "/v2/stocks/bars", query, "bars")
         bars: dict[str, dict[date, Bar]] = {s: {} for s in symbols}
         for page in bar_pages:
             for symbol, items in page.get("bars", {}).items():
@@ -263,7 +309,8 @@ def download_market(
                         available_at=calendar.available_time(day),
                     )
         progress(40, "Checking split and dividend events")
-        action_pages = api.pages(
+        action_pages = batch_pages(
+            api,
             "/v1/corporate-actions",
             {
                 "symbols": ",".join(symbols),
@@ -360,8 +407,8 @@ def download_market(
         progress(65, "Cross-checking action adjustments and missing sessions")
         # Compare the raw/split-adjusted factor change with the independently
         # returned split event. This catches wrong units and missing split rows.
-        split_pages = api.pages(
-            "/v2/stocks/bars", {**query, "adjustment": "split"}, "bars"
+        split_pages = batch_pages(
+            api, "/v2/stocks/bars", {**query, "adjustment": "split"}, "bars"
         )
         adjusted = {s: {} for s in symbols}
         for page in split_pages:
@@ -421,16 +468,23 @@ def download_market(
         provenance = {
             "contract": "alpaca-raw-v1",
             "normalizer_version": "1.0.0",
-            "sectors": {s: SECTORS.get(s, "Unknown") for s in symbols},
+            "sectors": {
+                s: member_sectors.get(s, "Unknown")
+                if historical
+                else member_sectors.get(s, SECTORS.get(s, "Unknown"))
+                for s in symbols
+            },
             "bar_pages": bar_pages,
             "actions": action_pages,
             "split_pages": split_pages,
             "securities": securities,
             "query": query,
+            "membership": membership_audit,
         }
         raw = json.dumps(provenance, sort_keys=True, separators=(",", ":")).encode()
         digest = hashlib.sha256(raw).hexdigest()
         metadata = {
+            "membership": membership_audit,
             "provider": "alpaca",
             "feed": "sip",
             "price_basis": "as_traded",
@@ -441,8 +495,12 @@ def download_market(
             "action_count": len(applied),
             "observation_ids": api.observations,
             "download": {"symbols": symbols, "start": str(start), "end": str(end)},
-            "universe": "Current fixed watchlist; historical membership/delistings not certified",
-            "sector_basis": "Static research labels; Unknown for unmapped custom names",
+            "universe": membership_audit["mode"]
+            if membership_audit
+            else "Explicit fixed list; historical membership/delistings not certified",
+            "sector_basis": "Unknown historical sectors; no current classification backfill"
+            if historical
+            else "Current GICS roster sectors with static research labels for supplements; not historical sector evidence",
         }
         dataset = Dataset(
             digest[:24],
@@ -453,7 +511,12 @@ def download_market(
                 s: tuple(sorted(rows.values(), key=lambda b: b.session))
                 for s, rows in bars.items()
             },
-            {s: SECTORS.get(s, "Unknown") for s in symbols},
+            {
+                s: member_sectors.get(s, "Unknown")
+                if historical
+                else member_sectors.get(s, SECTORS.get(s, "Unknown"))
+                for s in symbols
+            },
             "Alpaca SIP · raw daily bars + corporate actions",
             digest,
             metadata,
@@ -465,9 +528,24 @@ def download_market(
             "Historical availability is modeled as close + 15 minutes; retrieved raw payloads are archived with observation times.",
             "Static sectors are exploratory research classifications, not verified historical sector membership.",
         ]
+        if any(a.get("status") == "inactive" for a in securities):
+            warnings.append(
+                "Inactive listings were retained for historical price coverage. Their inclusion is not evidence that they can currently be traded; paper execution checks tradability separately."
+            )
         if any(h["missing_count"] for h in health):
             warnings.append(
                 "Some symbols have missing sessions. Signal warm-up excludes incomplete history; a missing held price stops a backtest."
+            )
+        if historical:
+            membership.validate_coverage(dataset, start, end)
+            warnings[0] = membership.HISTORY_NOTE
+        elif membership_audit:
+            warnings[0] = (
+                "Current S&P 500 roster plus optional supplements, for current reviews only. Historical backtests are blocked on this snapshot; download Historical S&P 500 members instead."
+            )
+        if membership_audit and membership_audit["additional_symbols"]:
+            warnings.append(
+                "Additional symbols are an explicitly selected fixed supplement, not a historical index; their selection can introduce survivorship/selection bias."
             )
         progress(95, "Saving the immutable market snapshot")
         return store.save_dataset(dataset, raw, warnings)

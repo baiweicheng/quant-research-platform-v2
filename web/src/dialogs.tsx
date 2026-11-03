@@ -390,7 +390,7 @@ export function ImportDialog({
           </label>
         )}
         <p className="field-hint">
-          Up to 100 symbols and 80,000 rows, 16 MB. Include SPY for benchmark
+          Up to 1,500 symbols and 80,000 rows, 16 MB. Include SPY for benchmark
           comparisons. Missing historical sectors use a shared Unknown bucket.
         </p>
         <label className="checkbox-label">

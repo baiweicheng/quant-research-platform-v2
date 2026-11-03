@@ -84,3 +84,14 @@ The native file chooser remains a manual acceptance item because browser automat
 ## Launcher browser opening · 2026-11-03
 
 The launcher now opts into opening the system default browser after successful server startup. Verified by running the actual launcher script on this Mac: Safari opened `http://127.0.0.1:8000` automatically and showed the correct empty Overview. Stopping the service shut down its worker; the temporary test tab was closed. All 122 existing backend tests, entrypoint lint/format, launcher syntax, CLI help and production build passed. Finder double-click itself remains separate from this shell-invoked launcher check. Screenshot: ignored `var/uat/auto-browser-launch.png`.
+
+
+## S&P 500 membership follow-up — November 3, 2026
+
+Local validation: 141 backend tests and 26 UI tests; strict TypeScript/production build, backend format, changed-module Python F checks and whitespace passed. New cases cover full-index defaults and optional supplements; source format/count/duplicate validation; immutable refreshes, failures and stale capture handling; dated additions/removals/re-entry; future-roster perturbation; current-roster historical-test rejection; missing departed members; next-session fills; active versus archived identities and per-symbol metadata recovery; whole-index batching; and a greater-than-80,000-row download. Existing accounting, filing availability, research validation and paper approval/execution tests still pass.
+
+Actual production-browser UAT used isolated `var/membership-uat.sqlite3`: refreshed 503 current securities and 2,720 historical rosters; downloaded all 503 current securities plus HIMS and SPY (505 total, 1,010 rows, October 28–29); followed queued work through Activity to saved Data; confirmed historical-mode source-bound dates and an explicit rejection beyond August 18, 2026. Full-source parsing was tested against live downloaded source content. The first real downloads exposed inactive KVUE metadata omitted by the bulk directory and an active/archived ECHO ticker collision. Those ingestion paths were fixed and regression tested. Existing paper permissions were not expanded. No account endpoints or orders were needed for this UAT.
+
+A separate October 30–November 2 real read stopped at the existing AON foreign-dividend currency guard: Alpaca supplied `foreign=true` without a currency for the November 2 event. This was preserved, not guessed away. Arbitrary full-index periods can still stop on unsupported actions, ambiguous historical tickers or unavailable departed-stock prices. Public historical coverage currently ends August 18; announcement-time/security-master/delisting certification remains unavailable. Results must not be called survivorship-safe. See [universe contract](UNIVERSE.md).
+
+The default database was checked read-only separately; test snapshots/jobs remain isolated. Validation is local, not a claim of GitHub CI or prolonged unattended operation.

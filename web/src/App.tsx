@@ -532,8 +532,8 @@ function DataPage({
               </button>
             }
           >
-            Nothing has been imported. Add a small US stock list with enough
-            warm-up history, or create practice data above.
+            Nothing has been imported. Download the S&P 500 with enough warm-up
+            history, or create practice data above.
           </Empty>
         </div>
       ) : (
@@ -622,10 +622,11 @@ function DataPage({
         <div className="card education">
           <h3>Which stocks should I start with?</h3>
           <p>
-            Use a manageable watchlist of roughly 25–50 liquid US-listed stocks
-            spread across sectors, plus SPY. You can include names outside the
-            S&P 500. These fixed-list experiments remain exploratory until
-            historical membership and delisted coverage are verified.
+            Start with the full S&P 500. Additional symbols supplement the
+            index; SPY is reserved for comparisons. Choose historical members
+            for backtests and current members for current reviews. Public
+            historical rosters and delisted-security coverage still need
+            independent verification.
           </p>
         </div>
         <div className="card education">
@@ -942,6 +943,7 @@ function ActivityPage({
                         practice: "Prepare practice data",
                         download: "Download market data",
                         connection: "Check paper/data access",
+                        membership: "Refresh S&P 500 membership",
                         fundamentals: "Add SEC fundamentals",
                         backtest: "Run backtest",
                         review: "Prepare allocation review",

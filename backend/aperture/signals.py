@@ -8,6 +8,7 @@ from statistics import stdev
 from . import calendar
 from .domain import Bar, Dataset, RankedStock, ResearchError, strategy
 from .fundamentals import FUNDAMENTAL_STRATEGIES, inputs
+from .membership import eligible
 
 
 def total_return_levels(bars: tuple[Bar, ...] | list[Bar]) -> list[float]:
@@ -44,8 +45,22 @@ def rank(
     expected = calendar.sessions(decision - timedelta(days=740), decision)[-required:]
     ranked: list[RankedStock] = []
     excluded: list[dict] = []
+    members = eligible(dataset, decision)
+    missing = members - dataset.bars.keys()
+    if missing:
+        raise ResearchError(
+            "Universe members have no price history: " + ", ".join(sorted(missing)[:12])
+        )
     for symbol, all_bars in sorted(dataset.bars.items()):
         if symbol == "SPY":
+            continue
+        if symbol not in members:
+            excluded.append(
+                {
+                    "symbol": symbol,
+                    "reason": "Not an S&P 500 member on this decision date.",
+                }
+            )
             continue
         by_day = {
             bar.session: bar

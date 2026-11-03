@@ -7,7 +7,7 @@ import json
 import math
 import random
 import re
-from datetime import date, datetime, timedelta
+from datetime import date, datetime
 from decimal import Decimal
 
 from . import calendar
@@ -114,9 +114,9 @@ def parse_csv(text: str, name: str, source: str) -> tuple[Dataset, bytes, list[s
             raise ResearchError(f"Row {line}: {error}") from None
     if not rows:
         raise ResearchError("The CSV has no data rows.")
-    if len(rows) > 100:
+    if len(rows) > 1500:
         raise ResearchError(
-            "This local release supports at most 100 symbols per dataset, including SPY."
+            "This local release supports at most 1,500 symbols per dataset, including SPY."
         )
     digest = hashlib.sha256(raw + b"\0as-traded-v1\0" + source.encode()).hexdigest()
     dataset = Dataset(

@@ -68,7 +68,7 @@ See [paper execution](docs/PAPER_TRADING.md) and [research validation](docs/RESE
 
 No software or free data source can guarantee zero errors. Passing tests establishes specific behavior under tested assumptions, not the absence of defects or future investment performance.
 
-Current tests use a **fixed imported list**. Historical membership, delisted-security coverage, US listing eligibility, sector histories and vendor adjustment conventions are not independently verified. These results are exploratory and must not be called survivorship-safe. Missing held-stock prices stop the simulation; the engine never invents a delisting exit or forward-fills a held stock.
+Data defaults to the **full S&P 500 plus optional additional stocks**. Choose current members for current reviews, or historical members for backtests; membership refresh, dated source coverage and additions/removals are visible in Data. Historical downloads include departed members and reject missing member prices. See [the universe contract](docs/UNIVERSE.md). Public historical membership is retrospective; delisted-security coverage, historical security identities, sector histories and vendor adjustment conventions are not independently verified. These results are exploratory and must not be called survivorship-safe. Missing held-stock prices stop the simulation; the engine never invents a delisting exit or forward-fills a held stock.
 
 For input requirements, formulas, timing and financial conventions see [the research contract](docs/RESEARCH_CONTRACT.md). For the service boundary and recovery behavior see [architecture](docs/ARCHITECTURE.md).
 

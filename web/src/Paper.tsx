@@ -282,7 +282,10 @@ export default function PaperWorkspace({ state }: { state: State }) {
   const providers = useQuery({
     queryKey: ["providers"],
     queryFn: () =>
-      api<{ watchlist: { symbols: string[]; start: string } }>("/providers"),
+      api<{
+        watchlist: { symbols: string[]; start: string };
+        paper_default_symbols?: string[];
+      }>("/providers"),
   });
   const [editing, setEditing] = useState(false);
   const [selected, setSelected] = useState("");
@@ -479,6 +482,7 @@ export default function PaperWorkspace({ state }: { state: State }) {
                   required
                   defaultValue={(
                     cfg?.symbols ??
+                    providers.data?.paper_default_symbols ??
                     providers.data?.watchlist.symbols ??
                     []
                   ).join(" ")}
