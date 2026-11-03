@@ -80,3 +80,7 @@ Actual-browser UAT on isolated `var/release-uat.sqlite3`: froze a real-data Valu
 Local evidence: `var/uat/m05-fill-audit.json`, `m05-completed-paper.png`, `m05-clean-first-use.png`, `m05-portfolio-320.png`, plus isolated `var/release-uat.sqlite3` and `var/contract-uat.sqlite3`. Credentials and account exports are not committed.
 
 The native file chooser remains a manual acceptance item because browser automation stalled without delivering file bytes. Clean-machine installation/Finder double-click, actual VoiceOver/touch input, multi-week unattended scheduling, paid/consolidated quote access and live execution were not certified. A local worker must stay running; no hosted uptime is promised. Fixed-list history and current issuer/class/sector mapping remain exploratory. Existing dependency deprecations and chart-bundle warning are unchanged.
+
+## Launcher browser opening · 2026-11-03
+
+The launcher now opts into opening the system default browser after successful server startup. Verified by running the actual launcher script on this Mac: Safari opened `http://127.0.0.1:8000` automatically and showed the correct empty Overview. Stopping the service shut down its worker; the temporary test tab was closed. All 122 existing backend tests, entrypoint lint/format, launcher syntax, CLI help and production build passed. Finder double-click itself remains separate from this shell-invoked launcher check. Screenshot: ignored `var/uat/auto-browser-launch.png`.

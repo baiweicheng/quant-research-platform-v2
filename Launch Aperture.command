@@ -13,5 +13,6 @@ if [[ ! -d web/node_modules ]]; then
   npm --prefix web ci
 fi
 npm --prefix web run build
-print "Open http://127.0.0.1:8000 in your browser. Keep this window open; Control-C stops Aperture."
-exec .venv/bin/python -m aperture
+print "Your default browser will open when Aperture is ready at http://127.0.0.1:8000."
+print "Keep this window open; Control-C stops Aperture."
+exec .venv/bin/python -m aperture --open-browser

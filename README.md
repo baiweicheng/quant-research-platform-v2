@@ -8,7 +8,7 @@ Includes captured market/SEC inputs, reproducible backtests and research validat
 
 Requires [uv](https://docs.astral.sh/uv/) and Node.js 22.12+ with npm. Dependencies and the Python runtime are downloaded on first setup; subsequent research runs are local.
 
-Double-click `Launch Aperture.command`, or run from the repository root:
+Double-click `Launch Aperture.command`. It opens your default browser automatically once the local service is ready. Alternatively, run from the repository root:
 
 ```sh
 UV_CACHE_DIR=.cache/uv UV_PYTHON_INSTALL_DIR=.tools/python uv sync --locked --python 3.13
