@@ -1,0 +1,31 @@
+[project]
+name = "aperture-research"
+version = "0.2.0"
+description = "A local, long-only equity research workspace"
+requires-python = ">=3.12,<3.15"
+dependencies = [
+  "fastapi>=0.115,<1",
+  "uvicorn>=0.34,<1",
+  "httpx>=0.28,<1",
+  "pydantic>=2.10,<3",
+  "exchange-calendars>=4.11,<5",
+  "python-dotenv>=1.2.4",
+]
+
+[dependency-groups]
+dev = [
+  "pytest>=8,<10",
+  "hypothesis>=6.120,<7",
+  "ruff>=0.17.3",
+]
+
+[build-system]
+requires = ["hatchling>=1.27"]
+build-backend = "hatchling.build"
+
+[tool.hatch.build.targets.wheel]
+packages = ["backend/aperture"]
+
+[tool.pytest.ini_options]
+testpaths = ["backend/tests"]
+addopts = "-ra"
