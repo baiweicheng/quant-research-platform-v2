@@ -50,6 +50,13 @@ class Store:
                 CREATE INDEX IF NOT EXISTS observations_resource ON observations(provider,resource,fetched_at);
                 CREATE TABLE IF NOT EXISTS preferences (key TEXT PRIMARY KEY, value TEXT NOT NULL);
                 INSERT OR IGNORE INTO schema_version VALUES (2);
+                CREATE TABLE IF NOT EXISTS protocols (
+                    id TEXT PRIMARY KEY, created_at TEXT NOT NULL, body TEXT NOT NULL,
+                    holdout_state TEXT NOT NULL DEFAULT 'locked');
+                CREATE TABLE IF NOT EXISTS trials (
+                    id TEXT PRIMARY KEY, protocol_id TEXT NOT NULL, job_id TEXT NOT NULL,
+                    label TEXT NOT NULL, phase TEXT NOT NULL, state TEXT NOT NULL,
+                    created_at TEXT NOT NULL, summary TEXT NOT NULL, body BLOB);
             """)
         self.path.chmod(0o600)
 
@@ -259,6 +266,10 @@ class Store:
         packed = json.dumps(payload, sort_keys=True)
         with self.connect() as db:
             db.execute("BEGIN IMMEDIATE")
+            if kind == "backtest":
+                from .experiments import guard
+
+                guard(db, payload["start"], payload["end"])
             duplicate = db.execute(
                 "SELECT * FROM jobs WHERE kind=? AND payload=? AND state IN ('queued','running')",
                 (kind, packed),
@@ -322,6 +333,7 @@ class Store:
     def recover(self):
         # Called only while holding the worker's exclusive OS lock.
         with self.connect() as db:
+            db.execute("UPDATE trials SET state='interrupted' WHERE state='running'")
             db.execute(
                 "UPDATE jobs SET state='failed',message='The local worker stopped during this task. Nothing partial was saved; run it again.',updated_at=? WHERE state='running'",
                 (now(),),

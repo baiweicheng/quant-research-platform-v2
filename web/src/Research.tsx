@@ -12,6 +12,7 @@ import {
 import { api, download, money, percent, points, shortDate } from "./api";
 import { Badge, Empty, MetricStrip, Notice, PeriodPicker } from "./components";
 import type { Period, Run, State, Strategy } from "./types";
+import Validation from "./Validation";
 import { SignalAudit } from "./Fundamentals";
 const Chart = lazy(() => import("./Chart"));
 
@@ -28,7 +29,7 @@ export default function Research({
 }) {
   const location = useLocation();
   const requestedRun = new URLSearchParams(location.search).get("run") ?? "";
-  const [section, setSection] = useState<"library" | "results">(
+  const [section, setSection] = useState<"library" | "results" | "validation">(
     requestedRun ? "results" : "library",
   );
   const [selected, setSelected] = useState(requestedRun);
@@ -88,8 +89,17 @@ export default function Research({
         >
           Backtest results <span>{state.runs.length}</span>
         </button>
+        <button
+          role="tab"
+          aria-selected={section === "validation"}
+          onClick={() => setSection("validation")}
+        >
+          Validation
+        </button>
       </div>
-      {section === "library" ? (
+      {section === "validation" ? (
+        <Validation state={state} />
+      ) : section === "library" ? (
         <>
           <div className="section-intro">
             <h2>A thoughtful starting point.</h2>
@@ -349,7 +359,7 @@ export default function Research({
   );
 }
 
-function RunDetail({
+export function RunDetail({
   run,
   period,
   setPeriod,
@@ -367,8 +377,8 @@ function RunDetail({
             <span className="eyebrow">BACKTEST · {run.dataset_name}</span>
             <h2>{run.strategy.name}</h2>
             <p>
-              {shortDate(window.start)} – {shortDate(window.end)} · Weekly ·{" "}
-              {money(run.capital)} initial capital
+              {shortDate(window.start)} – {shortDate(window.end)} ·{" "}
+              {run.frequency} · {money(run.capital)} initial capital
             </p>
           </div>
           <button

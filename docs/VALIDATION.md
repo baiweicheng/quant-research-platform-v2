@@ -50,3 +50,9 @@ Observed browser logs contained no application exceptions or warnings during the
 Increased the smallest text to a 12px minimum, supporting text and controls to 14px, main text/navigation to 16px, and small headings to 18px. Chart axes and tooltips now use 14px text. Prominent balances and large headings retain their hierarchy. Shared CSS typography variables keep the scale consistent across breakpoints; navigation moves to a second top row sooner, and supporting content wraps rather than shrinking.
 
 Verified the production build, 10 existing frontend tests, and actual-browser readability/layout at desktop, tablet and compact sizes (1280/1024/980/768/390/320px). All five main screens fit at 320px without page-level horizontal overflow; inspected the strategy library, backtest form, saved result and chart period controls. No new tests were added for this visual adjustment. Local screenshots are stored under ignored `var/uat/typography-*.png`.
+
+## M-04 · 2026-11-03
+
+72 backend tests and 18 frontend tests passed; strict TypeScript/production build and whitespace checks passed. New checks cover chronological/disjoint folds, immutable fingerprints, cross-snapshot locked dates, prior failed/pending exposures, final-release sequencing and once-only behavior, failed/interrupted trial retention, retirement, exact form dates, explicit release acknowledgement and future-data perturbation.
+
+Actual-browser UAT on isolated `var/release-uat.sqlite3`: froze a real-data Value + Momentum protocol; ran eight development trials; released one final trial; verified exposure labels, saved metrics/dates, signal/filing audit, short-history 1Y handling, responsive 320px local table scrolling and persistence after reload. Browser warning/error logs were empty. Screenshot: ignored `var/uat/m04-validation.png`. No broker writes. Existing dependency deprecations and chart-bundle size notice remain non-failing.

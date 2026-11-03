@@ -21,6 +21,11 @@ LOG = logging.getLogger(__name__)
 def execute(store: Store, job: dict):
     payload = job["payload"]
     update = lambda value, message: store.progress(job["id"], value, message)
+    if job["kind"] == "validation":
+        from .experiments import execute as evaluate
+
+        store.finish(job, evaluate(store, job, update))
+        return
     if job["kind"] == "fundamentals":
         from .fundamentals import attach
 

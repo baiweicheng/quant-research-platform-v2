@@ -42,6 +42,19 @@ class DownloadRequest(BaseModel):
     end: date
 
 
+class ProtocolRequest(TaskRequest):
+    name: str = Field(min_length=1, max_length=100)
+    hypothesis: str = Field(min_length=10, max_length=2000)
+    start: date
+    end: date
+    holdout_start: date
+
+
+class EvaluationRequest(BaseModel):
+    phase: Literal["development", "holdout"]
+    acknowledge: bool = False
+
+
 def create_app(
     db_path: str | Path = "var/aperture.sqlite3",
     web_path: str | Path | None = "web/dist",
@@ -114,6 +127,44 @@ def create_app(
     @app.get("/api/results/{identifier}")
     def result(identifier: str):
         return store.result(identifier)
+
+    @app.get("/api/research/protocols")
+    def research_protocols():
+        from .experiments import protocols, history
+
+        with store.connect() as db:
+            attempts = db.execute(
+                "SELECT count(*) FROM jobs WHERE kind IN ('backtest','validation')"
+            ).fetchone()[0]
+        return {
+            "protocols": protocols(store),
+            "trials": history(store),
+            "workspace_attempts": attempts,
+        }
+
+    @app.post("/api/research/protocols", status_code=201)
+    def create_protocol(payload: ProtocolRequest):
+        from .experiments import create
+
+        return create(store, payload.model_dump(mode="json"))
+
+    @app.post("/api/research/protocols/{identifier}/evaluate", status_code=202)
+    def evaluate_protocol(identifier: str, payload: EvaluationRequest):
+        from .experiments import enqueue
+
+        return enqueue(store, identifier, payload.phase, payload.acknowledge)
+
+    @app.get("/api/research/trials/{identifier}")
+    def research_trial(identifier: str):
+        from .experiments import trial
+
+        return trial(store, identifier)
+
+    @app.post("/api/research/protocols/{identifier}/retire")
+    def retire_protocol(identifier: str):
+        from .experiments import retire
+
+        return retire(store, identifier)
 
     @app.get("/api/providers")
     def providers():

@@ -2020,3 +2020,30 @@ textarea:focus-visible {
   color: #4a7240;
   border-color: #cfdfc5;
 }
+
+.validation-actions {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 1rem;
+  margin: 1.5rem 0;
+}
+.validation-actions .check-label {
+  display: flex;
+  align-items: flex-start;
+  gap: 0.6rem;
+  max-width: 30rem;
+}
+.validation-actions input {
+  flex: 0 0 auto;
+  margin-top: 0.25rem;
+}
+.card-body .form-row {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 1rem;
+}
+.card-body .form-row > label {
+  flex: 1 1 12rem;
+  min-width: 0;
+}
