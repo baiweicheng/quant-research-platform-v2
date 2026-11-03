@@ -12,6 +12,7 @@ import {
 import { api, download, money, percent, points, shortDate } from "./api";
 import { Badge, Empty, MetricStrip, Notice, PeriodPicker } from "./components";
 import type { Period, Run, State, Strategy } from "./types";
+import { SignalAudit } from "./Fundamentals";
 const Chart = lazy(() => import("./Chart"));
 
 export default function Research({
@@ -142,8 +143,9 @@ export default function Research({
           </div>
           <Notice>
             Backtesting explores a hypothesis. It does not approve a strategy or
-            establish that it will work in the future. AI-assisted discovery and
-            point-in-time fundamentals come in later milestones.
+            establish that it will work in the future. Fundamental strategies
+            need a combined price + SEC dataset. AI-assisted discovery comes in
+            a later milestone.
           </Notice>
         </>
       ) : !state.runs.length ? (
@@ -485,6 +487,12 @@ function RunDetail({
           </div>
         </section>
       </div>
+      <SignalAudit
+        decisions={run.decisions || []}
+        fundamental={["quality", "quality_value", "value_momentum"].includes(
+          run.strategy.id,
+        )}
+      />
       <section className="card">
         <div className="card-header">
           <div>

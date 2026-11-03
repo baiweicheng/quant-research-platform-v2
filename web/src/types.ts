@@ -7,6 +7,50 @@ export type Strategy = {
   risk: string;
   inputs: string;
   implemented: boolean;
+  definition?: string;
+};
+export type FundamentalCoverage = {
+  record_count: number;
+  availability: string;
+  retrieved_at: string;
+  coverage: {
+    symbol: string;
+    records: number;
+    reason: string;
+    quality_ready: boolean;
+    value_ready: boolean;
+    latest_period?: string | null;
+    latest_filed?: string | null;
+    available_at?: string | null;
+  }[];
+};
+export type Signal = {
+  symbol: string;
+  score: number;
+  components: {
+    profitability?: string;
+    earnings_yield?: string;
+    momentum?: number;
+    eps_asof?: string;
+    percentiles?: Record<string, number>;
+    filing?: {
+      start: string;
+      end: string;
+      filed: string;
+      available_at: string;
+      accession: string;
+      url: string;
+      sources: Record<string, string>;
+      issues: string[];
+    };
+  };
+};
+export type Decision = {
+  session: string;
+  execute_session: string;
+  eligible: number;
+  signals?: Signal[];
+  exclusions?: { symbol: string; reason: string }[];
 };
 export type Dataset = {
   id: string;
@@ -26,6 +70,7 @@ export type Dataset = {
     feed?: string;
     retrieved_at?: string;
     action_count?: number;
+    fundamentals?: FundamentalCoverage;
     coverage?: {
       symbol: string;
       rows: number;
@@ -96,6 +141,7 @@ export type Run = Omit<RunSummary, "metrics"> & {
   policy: Record<string, string | number>;
   execution_model: string;
   benchmark_model: string;
+  decisions?: Decision[];
   curve: {
     session: string;
     equity: string;
@@ -129,9 +175,15 @@ export type Run = Omit<RunSummary, "metrics"> & {
   }[];
 };
 export type Review = ReviewSummary & {
+  signals?: Signal[];
   capital: string;
   cash_weight: string;
-  targets: { symbol: string; weight: string; sector: string }[];
+  targets: {
+    symbol: string;
+    weight: string;
+    sector: string;
+    components?: Signal["components"];
+  }[];
   excluded: { symbol: string; reason: string }[];
   eligible: number;
   notes: string[];

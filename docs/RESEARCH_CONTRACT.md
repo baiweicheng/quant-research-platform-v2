@@ -1,4 +1,4 @@
-# Research contract · v0.1
+# Research contract · price inputs and annual SEC fundamentals
 
 ## Inputs
 
@@ -16,13 +16,31 @@ Positive finite prices, OHLC bounds, nonnegative integer volume, valid actions, 
 
 ## Signals and allocation
 
-Signals require 253 complete sessions available by the decision cutoff. Total-return levels use the gross economic return `split × (close + dividend) / previous_close`. This ex-date index is for ranking; it is separate from the spendable-cash ledger.
+Momentum and volatility signals require 253 complete sessions available by the decision cutoff. Profitability and quality value require 20 complete price sessions plus the required available filing. Total-return levels use the gross economic return `split × (close + dividend) / previous_close`. This ex-date index is for ranking; it is separate from the spendable-cash ledger.
 
 - **12–1 momentum v1.0.0:** cumulative total return from 252 sessions ago through 21 sessions ago. Rank descending; nonpositive scores are ineligible.
 - **Defensive low volatility v1.0.0:** sample standard deviation of 252 daily total returns; rank lowest first. No volatility forecast or leverage.
+- **Profitability / quality v1.0.0:** positive annual gross profit / fiscal-year-end assets, highest first. Use reported GrossProfit or same-accession, same-duration revenue minus cost of revenue; assets must match the accession and fiscal end. This is one profitability measure, not a full Quality Minus Junk replication.
+- **Quality value v1.0.0:** equal average of profitability and earnings-yield percentile ranks among stocks eligible for both positive factors.
+- **Value + Momentum v1.0.0:** equal average of positive earnings-yield and positive 12–1 momentum percentile ranks among stocks eligible for both. The value measure is annual reported diluted EPS / decision close, not book-to-market; this is an explicit implementation choice, not replication of an academic portfolio.
+- Percentile ranks use `(strictly lower count + (tie count - 1) / 2) / (eligible count - 1)`; a one-stock cross-section receives 0.5. Missing or nonpositive blend inputs exclude a stock; there is no single-factor fallback.
 - Ties use symbol order. Zero total volume over the latest 20 sessions excludes a stock. This is a minimum data check, not an institutional liquidity/capacity model.
 
 Select up to 25 names, equal-weight under a 5% stock cap, 25% sector cap and 2% cash floor. One shared construction function is used for simulations and read-only weekly reviews. Infeasible constraints leave more cash; they are never relaxed to force a fully invested portfolio. These are provisional research defaults, not user approval of a live risk policy.
+
+## SEC fundamental snapshots
+
+Data → Add SEC fundamentals reads the official issuer directory, submissions metadata and companyfacts API, then saves a separate immutable price + SEC snapshot. Issuer CIKs are cross-checked; raw responses and content fingerprints are retained locally. Refreshing an enriched dataset starts from its original price parent. Identical inputs and policy deduplicate.
+
+Supported inputs are annual standard US-GAAP whole-entity facts in 10-K and 10-K/A filings, with 330–400-day flow durations (including 52/53-week years), exact USD amounts and USD/shares EPS. Quarterly/YTD, IFRS, custom taxonomy, foreign-currency and mismatched periods are not prorated or substituted. Conflicting values for the same tag/accession/period disable that component. Current multi-ticker issuers are conservatively excluded from EPS valuation until class units are mapped; some additional tickers may be preferred securities. This can exclude otherwise usable companies, and is disclosed in coverage.
+
+Each record retains accession, fiscal start/end, filing date, form, source tags and modeled availability. Availability is close + 15 minutes on the **first exchange session strictly after the filing date**. At a decision, choose the latest fiscal end then its latest available filing version; amendments never rewrite an earlier decision. Conflicting annual durations at that version are excluded. Fiscal ends older than 550 calendar days are stale. Same-day press releases are not substituted for filings.
+
+EPS uses the share basis reported by the selected filing, divided by all split factors strictly after filing through the decision. Complete price/action coverage from the session after filing through the decision is required for this conversion, even if a shorter signal warm-up would otherwise suffice. Future splits cannot adjust earlier decisions. This assumes a filing's EPS basis corresponds to the shares in effect at filing; anticipatory split presentation, complex class reorganizations and source corrections need separate filing-level verification. Such cases are not certified for trading. Annual earnings yield is not TTM or a forward estimate.
+
+Current SEC responses are filing-versioned inputs, not a commercial vintage database proving original dissemination times or exhaustive historical coverage. Current ticker/CIK and share-class mapping does not resolve historical ticker reuse or survivorship bias. Inspect the filing links, exclusions, and decision components before interpreting exploratory results. All components and source policy accompany saved exports.
+
+Sources: [SEC API scope and units](https://www.sec.gov/search-filings/edgar-application-programming-interfaces), [SEC fair access](https://www.sec.gov/about/developer-resources), [gross profitability research](https://www.nber.org/papers/w15940), [value and momentum research](https://www.aqr.com/Insights/Research/Journal-Article/Value-and-Momentum-Everywhere). Evidence for a research family does not establish the effectiveness of these particular long-only recipes, universe, weekly schedule or cost model.
 
 ## Timing and execution
 

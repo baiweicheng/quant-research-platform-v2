@@ -180,6 +180,22 @@ def create_app(
     def practice():
         return store.enqueue("practice", {})
 
+    @app.post("/api/fundamentals/{dataset_id}", status_code=202)
+    def queue_fundamentals(dataset_id: str):
+        if "@" not in settings().sec_agent:
+            raise ResearchError(
+                "Configure SEC_USER_AGENT with your name and contact email in the private .env file first."
+            )
+        dataset = store.dataset(dataset_id)
+        if dataset.kind == "synthetic":
+            raise ResearchError(
+                "Choose actual market data, not fictional practice symbols."
+            )
+        return store.enqueue(
+            "fundamentals",
+            {"dataset_id": dataset.metadata.get("price_dataset_id", dataset.id)},
+        )
+
     @app.post("/api/tasks/{kind}", status_code=202)
     def task(kind: Literal["backtest", "review"], payload: TaskRequest):
         strategy(payload.strategy_id)
@@ -188,6 +204,14 @@ def create_app(
         )
         if summary is None:
             raise ResearchError("Choose an available dataset from Data first.")
+        from .fundamentals import FUNDAMENTAL_STRATEGIES
+
+        if payload.strategy_id in FUNDAMENTAL_STRATEGIES and not summary.get(
+            "metadata", {}
+        ).get("fundamentals"):
+            raise ResearchError(
+                "Add SEC fundamentals to this market dataset in Data first. Price-only inputs cannot run this strategy."
+            )
         if kind == "backtest":
             if (
                 payload.start is None

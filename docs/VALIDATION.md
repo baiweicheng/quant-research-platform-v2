@@ -1,6 +1,6 @@
 # Research milestone validation
 
-Verified on a local Mac, 2026-11-02. This record covers the first research milestone, not paper/live readiness or a vendor-data certification.
+Verified on a local Mac, 2026-11-02. The original record below covers the foundation checkpoint; subsequent real-data and SEC checks are recorded in [the incremental build record](MILESTONES.md). Neither record certifies paper/live readiness or vendor history.
 
 ## Automated checks
 
@@ -41,7 +41,7 @@ Observed browser logs contained no application exceptions or warnings during the
 ## Remaining validation limits
 
 - The in-app browser’s file chooser exposed a filename but did not supply a usable FileList to the page during automation. The actual native file-picker import path remains a manual UAT item. File selection/reading is covered by an automated component test, and Paste CSV ingestion was verified end to end in the actual browser.
-- No real provider downloads, original-file binary archive, historical universe certification, point-in-time fundamentals, cash-account settlement simulation, broker fills, strategy activation, paper orders or live orders were validated or implemented.
+- At the foundation checkpoint, no real provider downloads or point-in-time fundamentals were present; those are now covered in the incremental build record. Historical universe certification, cash-account settlement simulation, broker fills, strategy activation, paper orders and live orders remain unverified/unimplemented.
 - No clean-machine installation, VoiceOver audit, real-device touch testing or prolonged unattended run is claimed. Responsive testing used browser viewport overrides.
 - Zero defects, unbiased vendor history and future profitability are not guaranteed by these checks.
 

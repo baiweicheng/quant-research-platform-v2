@@ -1071,7 +1071,16 @@ input[type="checkbox"] {
 }
 .dataset-list {
   display: grid;
+  grid-template-columns: minmax(0, 1fr);
   gap: 18px;
+}
+.fundamental-table td:last-child {
+  white-space: normal;
+  min-width: 240px;
+  max-width: 360px;
+}
+.fundamental-table p {
+  overflow-wrap: anywhere;
 }
 .inline {
   display: flex;

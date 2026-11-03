@@ -74,6 +74,24 @@ class Bar:
 
 
 @dataclass(frozen=True)
+class AnnualStatement:
+    symbol: str
+    cik: str
+    start: date
+    end: date
+    filed: date
+    available_at: datetime
+    accession: str
+    form: str
+    assets: Decimal | None
+    gross_profit: Decimal | None
+    eps: Decimal | None
+    eps_compatible: bool
+    sources: dict[str, str] = field(default_factory=dict)
+    issues: tuple[str, ...] = ()
+
+
+@dataclass(frozen=True)
 class Dataset:
     id: str
     name: str
@@ -84,6 +102,7 @@ class Dataset:
     source: str
     digest: str
     metadata: dict = field(default_factory=dict)
+    fundamentals: dict[str, tuple[AnnualStatement, ...]] = field(default_factory=dict)
 
 
 @dataclass(frozen=True)
@@ -126,6 +145,7 @@ class RankedStock:
     symbol: str
     score: float
     sector: str
+    components: dict = field(default_factory=dict)
 
 
 @dataclass
@@ -181,33 +201,36 @@ STRATEGIES = [
     },
     {
         "id": "quality",
-        "version": "pending",
+        "version": "1.0.0",
         "name": "Profitability / Quality",
         "category": "Fundamental",
         "description": "Favor businesses that turn their resources into profits.",
         "risk": "Strong businesses can be expensive; accounting differs by industry.",
-        "inputs": "Verified point-in-time financial statements.",
-        "implemented": False,
+        "inputs": "SEC annual gross profit / year-end assets, positive only; 20 complete price sessions. US-GAAP 10-K filings, available conservatively after filing.",
+        "definition": "Rank positive annual gross profit divided by fiscal year-end assets, highest first. Revenue minus cost of revenue is used only when matched to the same filing and annual period. This is a profitability signal, not the full academic Quality Minus Junk portfolio.",
+        "implemented": True,
     },
     {
         "id": "quality_value",
-        "version": "pending",
+        "version": "1.0.0",
         "name": "Quality Value",
         "category": "Fundamental",
         "description": "Combine inexpensive valuation with business profitability.",
         "risk": "Cheap companies can stay cheap or deteriorate further.",
-        "inputs": "Point-in-time statements and historical valuation denominators.",
-        "implemented": False,
+        "inputs": "SEC annual gross profit / assets and split-aware diluted EPS / decision close; 20 complete price sessions. Both factors must be positive.",
+        "definition": "Equal blend of cross-sectional profitability and earnings-yield percentile ranks among stocks that qualify for both. Earnings yield is reported annual diluted EPS, adjusted for subsequent known splits, divided by the decision-session raw close. Missing factors never fall back to a single-factor strategy.",
+        "implemented": True,
     },
     {
         "id": "value_momentum",
-        "version": "pending",
+        "version": "1.0.0",
         "name": "Value + Momentum",
         "category": "Technical + fundamental",
         "description": "Combine what a business costs with how its stock is behaving.",
         "risk": "Value underperformance and momentum reversals can coincide.",
-        "inputs": "Validated fundamental history plus price momentum.",
-        "implemented": False,
+        "inputs": "SEC annual diluted EPS / decision close and 12–1 total-return momentum; 253 complete price sessions. Both factors must be positive.",
+        "definition": "Equal blend of cross-sectional earnings-yield and 12–1 momentum percentile ranks among stocks that qualify for both. Uses annual reported diluted EPS with explicit split adjustments, not current vendor ratios. Missing or nonpositive components exclude a stock; no single-factor fallback.",
+        "implemented": True,
     },
 ]
 

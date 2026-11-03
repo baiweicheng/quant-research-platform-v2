@@ -126,6 +126,15 @@ def run(
                     "targets": {
                         symbol: str(weight) for symbol, weight in targets.items()
                     },
+                    "signals": [
+                        {
+                            "symbol": stock.symbol,
+                            "score": stock.score,
+                            "components": stock.components,
+                        }
+                        for stock in ranked
+                    ],
+                    "exclusions": excluded,
                 }
             )
         if progress and (index % 10 == 0 or index == len(days) - 1):
@@ -167,6 +176,7 @@ def run(
         "dataset_kind": dataset.kind,
         "dataset_revision": dataset.revision,
         "source_digest": dataset.digest,
+        "input_audit": dataset.metadata,
         "start": str(days[0]),
         "end": str(days[-1]),
         "capital": str(capital),

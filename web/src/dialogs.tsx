@@ -25,9 +25,25 @@ export function TaskDialog({
   onClose: () => void;
   onQueued: () => void;
 }) {
-  const [datasetId, setDatasetId] = useState(state.datasets[0]?.id ?? "");
+  const [datasetId, setDatasetId] = useState(
+    (
+      state.datasets.find(
+        (d) =>
+          !["quality", "quality_value", "value_momentum"].includes(
+            initial || "",
+          ) || d.metadata?.fundamentals,
+      ) || state.datasets[0]
+    )?.id ?? "",
+  );
   const [strategyId, setStrategyId] = useState(initial ?? "momentum");
   const dataset = state.datasets.find((row) => row.id === datasetId);
+  const needsFundamentals = [
+    "quality",
+    "quality_value",
+    "value_momentum",
+  ].includes(strategyId);
+  const missingFundamentals =
+    needsFundamentals && !dataset?.metadata?.fundamentals;
   const [start, setStart] = useState(
     dataset ? afterWarmup(dataset.start, dataset.end) : "",
   );
@@ -121,6 +137,13 @@ export function TaskDialog({
             evidence of strategy performance.
           </Notice>
         )}
+        {missingFundamentals && (
+          <Notice>
+            Add SEC fundamentals to this market dataset in Data first, then
+            select the combined snapshot. This strategy needs filing-dated
+            statements as well as prices.
+          </Notice>
+        )}
         {kind === "backtest" && (
           <>
             <div className="form-row">
@@ -152,8 +175,11 @@ export function TaskDialog({
               </label>
             </div>
             <p className="field-hint">
-              Signals need 253 earlier sessions. Dates default to leave warm-up
-              history when available. Earlier periods can remain in cash.
+              {strategyId === "quality" || strategyId === "quality_value"
+                ? "Signals need 20 earlier price sessions and an available annual filing."
+                : "Signals need 253 earlier price sessions."}{" "}
+              Dates default to leave warm-up history when available. Earlier
+              periods can remain in cash.
             </p>
             <label>
               Starting capital · USD
@@ -185,9 +211,9 @@ export function TaskDialog({
           </p>
           {kind === "review" && (
             <p>
-              This release validates imported data; it does not download a
-              provider update. Data must include the latest completed session.
-              This review cannot be approved for trading yet.
+              This review uses saved inputs. Update prices and any required SEC
+              fundamentals in Data first. Prices must include the latest
+              completed session. This review cannot be approved for trading yet.
             </p>
           )}
         </details>
@@ -198,7 +224,7 @@ export function TaskDialog({
           </button>
           <button
             className="button"
-            disabled={!dataset || task.isPending}
+            disabled={!dataset || missingFundamentals || task.isPending}
             type="submit"
           >
             {task.isPending ? (
@@ -432,14 +458,15 @@ export function StrategyDialog({
             <div>
               <h3>Research definition · v{strategy.version}</h3>
               <p>
-                {strategy.id === "momentum"
-                  ? "Rank cumulative total returns from 252 sessions ago to 21 sessions ago, excluding the most recent month. Only positive scores qualify."
-                  : "Rank the sample standard deviation of 252 daily total returns, lowest first. No volatility forecast or leverage is applied."}
+                {strategy.definition ||
+                  (strategy.id === "momentum"
+                    ? "Rank cumulative total returns from 252 sessions ago to 21 sessions ago, excluding the most recent month. Only positive scores qualify."
+                    : "Rank the sample standard deviation of 252 daily total returns, lowest first. No volatility forecast or leverage is applied.")}
               </p>
               <p>
-                Both use a fixed stock list with complete warm-up history,
-                equal-weight allocation subject to the same position, sector and
-                cash limits.
+                All strategies use a fixed stock list with complete required
+                history, equal-weight allocation subject to the same position,
+                sector and cash limits.
               </p>
             </div>
             <Notice>

@@ -37,11 +37,14 @@ The app opens empty. Practice data is never silently loaded. Account metrics rem
 - Authenticated Alpaca SIP history, split/dividend normalization, per-stock coverage and captured source responses through the Data interface.
 - A persisted background queue, visible progress, atomic saved results, duplicate task protection, and interrupted-task recovery.
 - 12–1 momentum and defensive low-volatility strategies; shared stock/sector/cash allocation rules.
+- Filing-versioned SEC annual fundamentals, stock-level coverage/exclusions, profitability, quality value and technical/fundamental Value + Momentum strategies. Historical decision audits link back to original filings.
 - Calendar-aware after-close decisions and following-session opening-price simulation, fractional quantities, explicit costs, split/dividend accounting and no borrowing.
 - Saved backtests, comparison, SPY benchmark, common chart periods, and read-only current allocation reviews.
 - Approved Weekly Focus layout, responsive top navigation, empty/error states and explanations.
 
-Alpaca market-data downloads are now available under Data. Point-in-time fundamentals, the quality/value/hybrid strategies, AI-assisted discovery, strategy approvals, broker reconciliation and both manual/automatic paper execution remain future milestones. None are represented as working features. Real-money trading requires a later readiness review and explicit authorization.
+For real research, download market data in Data, then add SEC fundamentals to create a combined snapshot. Select that snapshot when running a fundamental or blended strategy. Review factor values, filing availability and exclusions under “Why these stocks?” in the result. Annual US-GAAP support is deliberately limited; unsupported inputs are excluded. See the research contract before interpreting results.
+
+AI-assisted discovery, stronger research validation, strategy approvals, broker reconciliation and both manual/automatic paper execution remain future milestones. Real-money trading requires a later readiness review and explicit authorization.
 
 ## Accuracy boundaries
 

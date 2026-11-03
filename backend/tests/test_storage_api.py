@@ -125,7 +125,7 @@ def test_api_boundaries_and_real_background_backtest(tmp_path):
         assert state["jobs"][0]["state"] == "complete"
         result = client.get(f"/api/results/{state['runs'][0]['id']}").json()
         assert result["trade_count"] == 0  # warm-up absent, not manufactured
-        assert result["engine_version"] == "0.1.0"
+        assert result["engine_version"] == "0.2.0"
         assert result["input_contract"] == "as-traded-v1"
         assert result["windows"]["All"]["metrics"]["return"] == 0
         assert result["notes"]

@@ -21,6 +21,19 @@ LOG = logging.getLogger(__name__)
 def execute(store: Store, job: dict):
     payload = job["payload"]
     update = lambda value, message: store.progress(job["id"], value, message)
+    if job["kind"] == "fundamentals":
+        from .fundamentals import attach
+
+        saved = attach(store, payload["dataset_id"], update)
+        store.finish(
+            job,
+            {
+                "dataset_id": saved["id"],
+                "dataset_name": saved["name"],
+                "completion_message": f"Saved SEC annual fundamentals alongside prices. {saved['metadata']['fundamentals']['record_count']:,} filing-period records; view coverage and exclusions in Data.",
+            },
+        )
+        return
     if job["kind"] == "download":
         from .providers import download_market
 
@@ -134,14 +147,26 @@ def execute(store: Store, job: dict):
                     "symbol": symbol,
                     "weight": str(weight),
                     "sector": dataset.sectors.get(symbol, "Unknown"),
+                    "components": next(
+                        stock.components for stock in ranked if stock.symbol == symbol
+                    ),
                 }
                 for symbol, weight in targets.items()
             ],
             "excluded": excluded,
             "eligible": len(ranked),
+            "signals": [
+                {
+                    "symbol": stock.symbol,
+                    "score": stock.score,
+                    "components": stock.components,
+                }
+                for stock in ranked
+            ],
             "notes": notes,
             "status": "research_only",
             "policy": {key: str(value) for key, value in vars(policy).items()},
+            "input_audit": dataset.metadata,
         }
     else:
         raise ResearchError("Unknown background task.")

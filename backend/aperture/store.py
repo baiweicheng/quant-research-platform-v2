@@ -8,7 +8,7 @@ from datetime import datetime, timezone, date
 from pathlib import Path
 from uuid import uuid4
 
-from .domain import Bar, Dataset, ResearchError, decimal
+from .domain import AnnualStatement, Bar, Dataset, ResearchError, decimal
 
 
 def now() -> str:
@@ -86,6 +86,25 @@ class Store:
             "summary": summary,
             "sectors": dataset.sectors,
             "metadata": dataset.metadata,
+            "fundamentals": {
+                symbol: [
+                    {
+                        **vars(statement),
+                        "start": str(statement.start),
+                        "end": str(statement.end),
+                        "filed": str(statement.filed),
+                        "available_at": statement.available_at.isoformat(),
+                        **{
+                            key: str(getattr(statement, key))
+                            if getattr(statement, key) is not None
+                            else None
+                            for key in ("assets", "gross_profit", "eps")
+                        },
+                    }
+                    for statement in statements
+                ]
+                for symbol, statements in dataset.fundamentals.items()
+            },
             "bars": [
                 {
                     **vars(bar),
@@ -154,6 +173,22 @@ class Store:
                 item[key] = decimal(item[key])
             bar = Bar(**item)
             bars.setdefault(bar.symbol, []).append(bar)
+        fundamentals = {}
+        for symbol, statements in body.get("fundamentals", {}).items():
+            normalized = []
+            for statement in statements:
+                for key in ("start", "end", "filed"):
+                    statement[key] = date.fromisoformat(statement[key])
+                statement["available_at"] = datetime.fromisoformat(
+                    statement["available_at"]
+                )
+                for key in ("assets", "gross_profit", "eps"):
+                    statement[key] = (
+                        decimal(statement[key]) if statement[key] is not None else None
+                    )
+                statement["issues"] = tuple(statement.get("issues", ()))
+                normalized.append(AnnualStatement(**statement))
+            fundamentals[symbol] = tuple(normalized)
         return Dataset(
             identifier,
             summary["name"],
@@ -167,6 +202,7 @@ class Store:
             summary["source"],
             summary["digest"],
             body.get("metadata", {}),
+            fundamentals,
         )
 
     def preference(self, key: str, default=None):

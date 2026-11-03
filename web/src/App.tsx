@@ -28,6 +28,11 @@ import {
 import { ImportDialog, StrategyDialog, TaskDialog } from "./dialogs";
 import Research from "./Research";
 import MarketData from "./MarketData";
+import {
+  FundamentalDetails,
+  FundamentalsPanel,
+  SignalAudit,
+} from "./Fundamentals";
 import type { Review, State, Strategy } from "./types";
 
 const tabs = [
@@ -372,7 +377,7 @@ function Overview({
               detail={
                 state.runs.length
                   ? `${state.runs.length} reproducible experiments saved`
-                  : "Momentum and low volatility are ready"
+                  : "Five strategies, with clear input requirements"
               }
             />
             <Step
@@ -459,6 +464,7 @@ function DataPage({
         </button>
       </div>
       <MarketData />
+      <FundamentalsPanel datasets={state.datasets} />
       <div className="data-start card">
         <span className="soft-icon">
           <Database size={23} />
@@ -546,6 +552,9 @@ function DataPage({
                 <p className="data-source">
                   <strong>Source</strong> {dataset.source}
                 </p>
+                {dataset.metadata?.fundamentals && (
+                  <FundamentalDetails data={dataset.metadata.fundamentals} />
+                )}
                 <details className="details">
                   <summary>Coverage, symbols & limitations</summary>
                   <p>{dataset.symbols.join(" · ")}</p>
@@ -665,8 +674,8 @@ function Portfolio({
               </button>
             }
           >
-            Use current saved data and an existing price strategy to see an
-            allocation under the default risk policy.
+            Use current saved data and an existing strategy to see an allocation
+            under the default risk policy.
           </Empty>
         </div>
       ) : (
@@ -780,6 +789,20 @@ function ReviewDetail({ review }: { review: Review }) {
           not order sizes. Actual orders require current account state, prices
           and cash checks.
         </p>
+        <SignalAudit
+          fundamental={["quality", "quality_value", "value_momentum"].includes(
+            review.strategy.id,
+          )}
+          decisions={[
+            {
+              session: review.decision_session,
+              execute_session: review.execute_session,
+              eligible: review.eligible,
+              signals: review.signals || [],
+              exclusions: review.excluded,
+            },
+          ]}
+        />
         <details className="details">
           <summary>Excluded stocks ({review.excluded.length})</summary>
           {review.excluded.length ? (
@@ -859,6 +882,7 @@ function ActivityPage({
                         practice: "Prepare practice data",
                         download: "Download market data",
                         connection: "Check paper/data access",
+                        fundamentals: "Add SEC fundamentals",
                         backtest: "Run backtest",
                         review: "Prepare allocation review",
                       }[job.kind] ?? job.kind}

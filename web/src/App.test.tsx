@@ -8,6 +8,7 @@ import { MetricStrip, PeriodPicker } from "./components";
 import { ImportDialog, TaskDialog } from "./dialogs";
 import type { State } from "./types";
 import { percent, points } from "./api";
+import { SignalAudit } from "./Fundamentals";
 
 const state: State = {
   version: "0.1.0",
@@ -334,26 +335,24 @@ it("downloads a custom stock list from the interface without exposing credential
 it("opens Data for a completed download rather than treating it as a portfolio review", async () => {
   vi.stubGlobal(
     "fetch",
-    vi
-      .fn()
-      .mockResolvedValue({
-        ok: true,
-        json: async () => ({
-          ...state,
-          jobs: [
-            {
-              id: "download",
-              kind: "download",
-              state: "complete",
-              progress: 100,
-              message: "Saved bars",
-              created_at: "2025-12-31T12:00:00Z",
-              updated_at: "2025-12-31T12:00:00Z",
-              result_id: "snapshot",
-            },
-          ],
-        }),
+    vi.fn().mockResolvedValue({
+      ok: true,
+      json: async () => ({
+        ...state,
+        jobs: [
+          {
+            id: "download",
+            kind: "download",
+            state: "complete",
+            progress: 100,
+            message: "Saved bars",
+            created_at: "2025-12-31T12:00:00Z",
+            updated_at: "2025-12-31T12:00:00Z",
+            result_id: "snapshot",
+          },
+        ],
       }),
+    }),
   );
   render(wrapper(<App />));
   await userEvent.click(await screen.findByRole("link", { name: "Activity" }));
@@ -361,4 +360,166 @@ it("opens Data for a completed download rather than treating it as a portfolio r
   expect(
     screen.getByRole("heading", { name: "Good research starts here." }),
   ).toBeVisible();
+});
+
+it("blocks fundamental runs until the selected dataset includes SEC statements", async () => {
+  const dataset = {
+    id: "prices",
+    name: "Prices",
+    kind: "imported" as const,
+    start: "2022-01-03",
+    end: "2025-12-31",
+    symbols: ["ABC"],
+    row_count: 1000,
+    symbol_count: 1,
+    source: "Fixture",
+    digest: "hash",
+    warnings: [],
+    created_at: "",
+  };
+  const strategies = state.strategies.map((s) => ({ ...s, implemented: true }));
+  render(
+    wrapper(
+      <TaskDialog
+        kind="backtest"
+        state={{ ...state, strategies, datasets: [dataset] }}
+        initial="value_momentum"
+        onClose={() => {}}
+        onQueued={() => {}}
+      />,
+    ),
+  );
+  expect(screen.getByRole("button", { name: "Run backtest" })).toBeDisabled();
+  expect(
+    screen.getByText(/Add SEC fundamentals to this market dataset/),
+  ).toBeVisible();
+  await userEvent.selectOptions(screen.getByLabelText("Strategy"), "momentum");
+  expect(screen.getByRole("button", { name: "Run backtest" })).toBeEnabled();
+});
+
+it("shows the actual selected decision's filing and excluded-stock audit", async () => {
+  const components = {
+    profitability: "0.2",
+    earnings_yield: "0.04",
+    momentum: 0.12,
+    filing: {
+      start: "2022-01-01",
+      end: "2022-12-31",
+      filed: "2023-02-10",
+      available_at: "2023-02-13T21:15:00Z",
+      accession: "0000000001-23-000001",
+      url: "https://www.sec.gov/Archives/edgar/data/1/000000000123000001/",
+      sources: { gross_profit: "Revenues - CostOfRevenue" },
+      issues: [],
+    },
+  };
+  render(
+    <SignalAudit
+      decisions={[
+        {
+          session: "2023-08-25",
+          execute_session: "2023-08-28",
+          eligible: 1,
+          signals: [{ symbol: "ABC", score: 0.5, components }],
+          exclusions: [
+            { symbol: "MISSING", reason: "No annual filing available." },
+          ],
+        },
+        {
+          session: "2023-09-01",
+          execute_session: "2023-09-05",
+          eligible: 1,
+          signals: [{ symbol: "XYZ", score: 0.5, components }],
+          exclusions: [],
+        },
+      ]}
+    />,
+  );
+  expect(screen.getByText("XYZ")).toBeVisible();
+  await userEvent.selectOptions(
+    screen.getByLabelText("Signal decision"),
+    "2023-08-25",
+  );
+  expect(screen.getByText("ABC")).toBeVisible();
+  expect(screen.queryByText("XYZ")).not.toBeInTheDocument();
+  expect(screen.getByText("20.00%")).toBeVisible();
+  await userEvent.click(
+    screen.getByText("Fiscal end 2022-12-31 · filed 2023-02-10"),
+  );
+  expect(screen.getByRole("link", { name: /SEC filing/ })).toHaveAttribute(
+    "href",
+    components.filing.url,
+  );
+  await userEvent.click(screen.getByText("Excluded stocks (1)"));
+  expect(screen.getByText(/No annual filing available/)).toBeVisible();
+});
+
+it("keeps zero-eligible fundamental decisions inspectable", async () => {
+  render(
+    <SignalAudit
+      fundamental
+      decisions={[
+        {
+          session: "2023-01-09",
+          execute_session: "2023-01-10",
+          eligible: 0,
+          signals: [],
+          exclusions: [{ symbol: "ABC", reason: "No filing was available." }],
+        },
+      ]}
+    />,
+  );
+  expect(
+    screen.getByRole("heading", { name: "Why these stocks?" }),
+  ).toBeVisible();
+  expect(screen.getByLabelText("Signal decision")).toHaveValue("2023-01-09");
+  await userEvent.click(screen.getByText("Excluded stocks (1)"));
+  expect(screen.getByText(/No filing was available/)).toBeVisible();
+});
+
+it("queues SEC enrichment for the chosen saved dataset through Data", async () => {
+  const dataset = {
+    id: "prices",
+    name: "Prices",
+    kind: "imported" as const,
+    start: "2022-01-03",
+    end: "2025-12-31",
+    symbols: ["ABC"],
+    row_count: 1000,
+    symbol_count: 1,
+    source: "Fixture",
+    digest: "hash",
+    warnings: [],
+    created_at: "",
+  };
+  const fetch = vi.fn(async (path: string) => ({
+    ok: true,
+    json: async () =>
+      path === "/api/providers"
+        ? {
+            sec_configured: true,
+            alpaca_configured: false,
+            latest_session: "2025-12-31",
+            first_session: "2016-01-04",
+            watchlist: {
+              name: "My list",
+              symbols: ["ABC"],
+              start: "2022-01-03",
+            },
+          }
+        : { ...state, datasets: [dataset] },
+  }));
+  vi.stubGlobal("fetch", fetch);
+  render(wrapper(<App />));
+  await userEvent.click(await screen.findByRole("link", { name: "Data" }));
+  const add = await screen.findByRole("button", { name: "Add fundamentals" });
+  await waitFor(() => expect(add).toBeEnabled());
+  await userEvent.click(add);
+  expect(
+    await screen.findByRole("heading", { name: "Your work, kept in view." }),
+  ).toBeVisible();
+  const call = fetch.mock.calls.find(
+    (c) => c[0] === "/api/fundamentals/prices",
+  );
+  expect(call).toBeDefined();
 });

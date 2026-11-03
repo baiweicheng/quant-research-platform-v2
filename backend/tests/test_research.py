@@ -93,7 +93,7 @@ def test_missing_or_late_observation_is_not_forward_filled(history):
 
 def test_signal_needs_warmup_and_fundamental_strategies_blocked(history):
     assert rank(history, "momentum", date(2023, 3, 1))[0] == []
-    with pytest.raises(ResearchError, match="point-in-time"):
+    with pytest.raises(ResearchError, match="Add SEC fundamentals"):
         rank(history, "value_momentum", date(2024, 8, 30))
 
 
