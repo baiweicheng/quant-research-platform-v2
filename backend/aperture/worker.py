@@ -22,9 +22,21 @@ def execute(store: Store, job: dict):
     payload = job["payload"]
     update = lambda value, message: store.progress(job["id"], value, message)
     if job["kind"] == "membership":
-        from .membership import refresh, summary
+        from .membership import refresh, refresh_all, summary
 
         update(10, "Refreshing dated S&P 500 membership")
+        if payload["kind"] == "all":
+            saved = refresh_all(store)
+            store.finish(
+                job,
+                {
+                    "completion_message": "Current and historical S&P 500 membership refreshed. Dates and source details are available in Data.",
+                    "membership": {
+                        kind: summary(value) for kind, value in saved.items()
+                    },
+                },
+            )
+            return
         saved = refresh(store, payload["kind"])
         store.finish(
             job,
@@ -187,6 +199,7 @@ def execute(store: Store, job: dict):
                 f"Dataset ends {end}; the latest completed session is {latest}. Import updated data before preparing a current review."
             )
         ranked, excluded = rank(dataset, identifier, latest)
+        ranked_by_symbol = {stock.symbol: stock for stock in ranked}
         targets, notes = target_weights(ranked, policy)
         if not targets:
             notes.append("No stocks currently qualify. The allocation is 100% cash.")
@@ -206,10 +219,8 @@ def execute(store: Store, job: dict):
                 {
                     "symbol": symbol,
                     "weight": str(weight),
-                    "sector": dataset.sectors.get(symbol, "Unknown"),
-                    "components": next(
-                        stock.components for stock in ranked if stock.symbol == symbol
-                    ),
+                    "sector": ranked_by_symbol[symbol].sector,
+                    "components": ranked_by_symbol[symbol].components,
                 }
                 for symbol, weight in targets.items()
             ],

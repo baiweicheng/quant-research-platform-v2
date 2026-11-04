@@ -194,7 +194,9 @@ class Store:
             raise ResearchError("That dataset was not found. Choose one from Data.")
         body = decode(row[0])
         summary = body["summary"]
-        bars: dict[str, list[Bar]] = {}
+        # Preserve requested securities with zero returned bars, such as a
+        # current member whose listing began after a historical download period.
+        bars: dict[str, list[Bar]] = {s: [] for s in summary["symbols"]}
         for item in body["bars"]:
             item["session"] = date.fromisoformat(item["session"])
             item["pay_date"] = (

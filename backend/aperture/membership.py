@@ -134,7 +134,12 @@ def parse_history(text):
 def summary(snapshot):
     if not snapshot:
         return None
-    return {k: v for k, v in snapshot.items() if k not in ("rosters", "members")}
+    result = {k: v for k, v in snapshot.items() if k not in ("rosters", "members")}
+    if snapshot["kind"] == "historical":
+        result["unique_member_count"] = len(
+            {s for row in snapshot["rosters"] for s in row["symbols"]}
+        )
+    return result
 
 
 def refresh(store: Store, kind: str, client=None):
@@ -213,10 +218,42 @@ def fresh(store, kind):
     return refresh(store, kind)
 
 
+def refresh_all(store):
+    saved = {}
+    try:
+        for kind in ("current", "historical"):
+            saved[kind] = refresh(store, kind)
+    except ResearchError as error:
+        raise ResearchError(
+            "The two-source membership refresh did not complete. Any successful "
+            f"capture is retained in Data; no price dataset changed. {error}"
+        ) from None
+    return saved
+
+
+def history_slice(snapshot, start, end):
+    start = max(str(start), snapshot["coverage_start"])
+    end = min(str(end), snapshot["coverage_end"])
+    if start > end:
+        return None
+    index = bisect_right([r["effective"] for r in snapshot["rosters"]], start) - 1
+    return {
+        **snapshot,
+        "coverage_start": start,
+        "coverage_end": end,
+        "rosters": [r for r in snapshot["rosters"][index:] if r["effective"] <= end],
+    }
+
+
 def historical_names(snapshot, day):
+    if snapshot is None:
+        raise ResearchError(
+            "This price snapshot has no supported historical S&P 500 membership "
+            "for the selected dates. Download an earlier period or refresh membership."
+        )
     if not snapshot["coverage_start"] <= str(day) <= snapshot["coverage_end"]:
         raise ResearchError(
-            f"Historical S&P 500 membership covers {snapshot['coverage_start']} through {snapshot['coverage_end']}. Refresh membership or choose dates inside this range; the last roster is never extrapolated."
+            f"Historical S&P 500 membership covers {snapshot['coverage_start']} through {snapshot['coverage_end']}. Refresh membership or choose dates inside this range; the last roster is never extrapolated without verified later coverage."
         )
     index = bisect_right([r["effective"] for r in snapshot["rosters"]], str(day)) - 1
     return set(snapshot["rosters"][index]["symbols"])
@@ -229,6 +266,26 @@ def resolve(store, payload, start, end):
     extra = symbols(payload.get("symbols", []), allow_empty=mode != "custom")
     if mode == "custom":
         return sorted(set(extra) | {"SPY"}), None, {}
+    if mode == "sp500":
+        current = fresh(store, "current")
+        historical = fresh(store, "historical")
+        history = history_slice(historical, start, end)
+        names = {m["symbol"] for m in current["members"]}
+        if history:
+            names.update(s for row in history["rosters"] for s in row["symbols"])
+        result = symbols(names | set(extra) | {"SPY"})
+        return (
+            result,
+            {
+                "kind": "combined",
+                "mode": mode,
+                "current": current,
+                "historical": history,
+                "historical_source": summary(historical),
+                "additional_symbols": extra,
+            },
+            {},
+        )
     if mode not in ("sp500_current", "sp500_historical"):
         raise ResearchError("Choose an S&P 500 universe or an explicit custom list.")
     kind = "historical" if mode == "sp500_historical" else "current"
@@ -266,22 +323,36 @@ def eligible(dataset: Dataset, decision: date):
     audit = dataset.metadata.get("membership")
     if not audit:
         return set(dataset.bars) - {"SPY"}
-    if audit["kind"] == "current":
-        if str(decision) < audit["coverage_start"]:
-            raise ResearchError(
-                "This snapshot contains today's S&P 500 members, not historical membership. Choose Historical S&P 500 members in Data for a historical backtest."
-            )
-        captured = datetime.fromisoformat(audit["captured_at"])
-        if decision > (captured + timedelta(days=7)).date():
-            raise ResearchError(
-                "S&P 500 roster was not yet observed or is over seven days old at this decision. Refresh membership and download a new snapshot."
-            )
-        names = {m["symbol"] for m in audit["members"]}
+    if audit["kind"] == "combined":
+        history = audit["historical"]
+        if (
+            history
+            and history["coverage_start"] <= str(decision) <= history["coverage_end"]
+        ):
+            names = historical_names(history, decision)
+        elif str(decision) >= audit["current"]["coverage_start"]:
+            names = current_names(audit["current"], decision)
+        else:
+            # A current capture cannot fill the gap after the last dated row.
+            names = historical_names(history, decision)
+    elif audit["kind"] == "current":
+        names = current_names(audit, decision)
     else:
         names = historical_names(audit, decision)
-    # Extras are an explicitly retrospective supplement and remain labelled
-    # as such; they never replace or remove the core roster.
     return (names | set(audit["additional_symbols"])) - {"SPY"}
+
+
+def current_names(audit, decision):
+    if str(decision) < audit["coverage_start"]:
+        raise ResearchError(
+            "This snapshot contains today's S&P 500 members, not historical membership. Download S&P 500 current and historical members in Data for a historical backtest."
+        )
+    captured = datetime.fromisoformat(audit["captured_at"])
+    if decision > (captured + timedelta(days=7)).date():
+        raise ResearchError(
+            "S&P 500 roster was not yet observed or is over seven days old at this decision. Refresh membership and download a new snapshot."
+        )
+    return {m["symbol"] for m in audit["members"]}
 
 
 def validate_coverage(dataset, start, end):
@@ -290,8 +361,10 @@ def validate_coverage(dataset, start, end):
         return
     if audit["kind"] == "current":
         raise ResearchError(
-            "Current S&P 500 membership is for current reviews only. Historical backtests require Historical S&P 500 members; today's roster cannot be backdated."
+            "Current S&P 500 membership is for current reviews only. Download S&P 500 current and historical members for historical backtests; today's roster cannot be backdated."
         )
+    if audit["kind"] == "combined":
+        audit = audit["historical"]
     historical_names(audit, start)
     historical_names(audit, end)
     by_day = {s: {b.session for b in bars} for s, bars in dataset.bars.items()}

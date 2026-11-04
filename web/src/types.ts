@@ -77,8 +77,8 @@ export type Dataset = {
       expected: number;
       missing_count: number;
       missing_examples: string[];
-      start: string;
-      end: string;
+      start: string | null;
+      end: string | null;
     }[];
     [key: string]: unknown;
   };

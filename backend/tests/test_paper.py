@@ -71,7 +71,7 @@ class FakeBroker:
         return {
             "account_key": self.account_key,
             "source": "Deterministic contract fixture — not broker fills",
-            "checked_at": datetime.now(UTC).isoformat(),
+            "checked_at": self.at.isoformat(),
             "cash": str(self.cash),
             "equity": str(self.cash + sum((q * 100 for q in self.held.values()), D(0))),
             "spendable_cash": str(
@@ -163,6 +163,19 @@ class FakeBroker:
 def paper(tmp_path, monkeypatch):
     store = Store(tmp_path / "paper.sqlite")
     broker = FakeBroker()
+
+    # These contracts model Nov 3 during trading, using Nov 2 closing prices.
+    # Keep preparation/approval clocks on that fixture rather than wall time.
+    class FixtureClock(datetime):
+        @classmethod
+        def now(cls, tz=None):
+            return broker.at.astimezone(tz) if tz else broker.at.replace(tzinfo=None)
+
+    monkeypatch.setattr("aperture.paper.datetime", FixtureClock)
+    latest_complete = calendar.latest_complete
+    monkeypatch.setattr(
+        calendar, "latest_complete", lambda at=None: latest_complete(at or broker.at)
+    )
     days = calendar.sessions(date(2025, 1, 2), date(2026, 11, 2))
     ds = Dataset(
         "prices",

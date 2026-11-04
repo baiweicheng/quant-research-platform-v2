@@ -180,6 +180,151 @@ def test_union_includes_departures_and_supplements_without_replacing_core(tmp_pa
         )
 
 
+def test_combined_resolves_both_sources_without_extending_history(tmp_path):
+    store = Store(tmp_path / "a.sqlite")
+    history = refresh_fixture(store, "historical", history_csv())
+    current = refresh_fixture(
+        store, "current", html([f"S{i:03}" for i in range(502)] + ["CURRENT"])
+    )
+    names, audit, sectors = membership.resolve(
+        store,
+        {"universe": "sp500", "symbols": ["EXTRA", "CURRENT", "EXTRA"]},
+        date(2024, 5, 6),
+        date(2024, 5, 13),
+    )
+    assert {"S000", "S502", "NEW", "CURRENT", "EXTRA", "SPY"} <= set(names)
+    assert len(names) == len(set(names)) == 507
+    assert audit["current"]["id"] == current["id"]
+    assert audit["historical"]["id"] == history["id"]
+    assert audit["historical"]["coverage_end"] == "2024-05-10"
+    assert audit["historical_source"]["unique_member_count"] == 504
+    assert sectors == {}  # Do not backfill historical sectors.
+    assert audit["additional_symbols"] == ["CURRENT", "EXTRA"]
+    names, audit, _ = membership.resolve(
+        store, {"universe": "sp500"}, date(2024, 5, 13), date(2024, 5, 17)
+    )
+    assert audit["historical"] is None
+    assert "CURRENT" in names and "NEW" not in names
+
+
+def test_combined_ranking_backtests_and_current_reviews_respect_the_gap(
+    timeline, tmp_path, monkeypatch
+):
+    history = {**timeline.metadata["membership"], "coverage_end": "2025-01-07"}
+    audit = {
+        "kind": "combined",
+        "historical": history,
+        "current": {
+            "coverage_start": "2025-01-10",
+            "captured_at": "2025-01-10T22:00:00+00:00",
+            "members": [{"symbol": "NEW", "sector": "Current sector"}],
+        },
+        "additional_symbols": ["EXTRA"],
+    }
+    combined = replace(timeline, metadata={"membership": audit})
+    past, _ = rank(combined, "momentum", date(2024, 7, 5))
+    assert {s.symbol for s in past} == {"OLD", "EXTRA"}
+    assert all(s.sector == "Industry" for s in past)
+    current, _ = rank(combined, "momentum", date(2025, 1, 10))
+    assert {s.symbol for s in current} == {"NEW", "EXTRA"}
+    assert next(s for s in current if s.symbol == "NEW").sector == "Current sector"
+    store = Store(tmp_path / "review.sqlite")
+    store.save_dataset(combined, b"combined fixture", [])
+    monkeypatch.setattr(calendar, "latest_complete", lambda: date(2025, 1, 10))
+    store.enqueue("review", {"dataset_id": combined.id, "strategy_id": "momentum"})
+    process_one(store)
+    job = store.jobs()[0]
+    assert job["state"] == "complete"
+    review = store.result(job["result_id"])
+    assert (
+        next(t for t in review["targets"] if t["symbol"] == "NEW")["sector"]
+        == "Current sector"
+    )
+    with pytest.raises(ResearchError, match="covers"):
+        rank(combined, "momentum", date(2025, 1, 8))
+    with pytest.raises(ResearchError, match="covers"):
+        run(
+            combined,
+            "momentum",
+            date(2025, 1, 6),
+            date(2025, 1, 10),
+            D(100000),
+            Policy(),
+        )
+    before = run(
+        timeline, "momentum", date(2024, 7, 1), date(2024, 7, 12), D(100000), Policy()
+    )
+    after = run(
+        combined, "momentum", date(2024, 7, 1), date(2024, 7, 12), D(100000), Policy()
+    )
+    assert before["curve"] == after["curve"]
+    assert before["trades"] == after["trades"]
+    changed = copy.deepcopy(audit)
+    changed["current"]["members"] = [{"symbol": "UNSEEN", "sector": "Future sector"}]
+    assert (
+        rank(
+            replace(combined, metadata={"membership": changed}),
+            "momentum",
+            date(2024, 7, 5),
+        )[0]
+        == past
+    )
+    gap = replace(
+        combined,
+        bars={
+            s: tuple(
+                b for b in bars if not (s == "OLD" and b.session == date(2024, 7, 5))
+            )
+            for s, bars in combined.bars.items()
+        },
+    )
+    with pytest.raises(ResearchError, match="Departed or missing"):
+        membership.validate_coverage(gap, date(2024, 7, 1), date(2024, 7, 12))
+
+
+@pytest.mark.parametrize("fail_history", [False, True])
+def test_combined_refresh_job_uses_both_sources_and_reports_incomplete_refresh(
+    tmp_path, monkeypatch, fail_history
+):
+    app = create_app(tmp_path / "a.sqlite")
+    store = app.state.store
+    original = membership.refresh
+    calls = []
+
+    def refresh(store, kind):
+        calls.append(kind)
+        if kind == "historical" and fail_history:
+            raise ResearchError("history unavailable")
+        with httpx.Client(
+            transport=httpx.MockTransport(
+                lambda r: httpx.Response(
+                    200, text=html() if kind == "current" else history_csv()
+                )
+            )
+        ) as client:
+            return original(store, kind, client)
+
+    monkeypatch.setattr(membership, "refresh", refresh)
+    with TestClient(app) as client:
+        assert client.post("/api/membership/all/refresh", json={}).status_code == 403
+        response = client.post(
+            "/api/membership/all/refresh", json={}, headers={"X-Aperture-Client": "1"}
+        )
+        assert response.status_code == 202
+    assert process_one(store)
+    job = store.jobs()[0]
+    assert calls == ["current", "historical"]
+    assert store.membership("current") is not None
+    assert store.datasets() == []
+    if fail_history:
+        assert job["state"] == "failed"
+        assert "Any successful capture is retained" in job["message"]
+        assert store.membership("historical") is None
+    else:
+        assert job["state"] == "complete"
+        assert store.membership("historical") is not None
+
+
 def test_effective_day_reentry_and_no_future_roster_leakage(timeline):
     before, exclusions = rank(timeline, "momentum", date(2024, 7, 5))
     assert {s.symbol for s in before} == {"OLD", "EXTRA"}
@@ -289,7 +434,7 @@ def test_default_api_is_full_index_and_navigation_does_not_refresh(
     )
     with TestClient(app) as client:
         info = client.get("/api/providers").json()
-        assert info["watchlist"]["universe"] == "sp500_current"
+        assert info["watchlist"]["universe"] == "sp500"
         assert info["watchlist"]["symbols"] == []
         job = client.post(
             "/api/downloads",
@@ -297,7 +442,7 @@ def test_default_api_is_full_index_and_navigation_does_not_refresh(
             headers={"X-Aperture-Client": "1"},
         )
         assert job.status_code == 202
-        assert app.state.store.claim()["payload"]["universe"] == "sp500_current"
+        assert app.state.store.claim()["payload"]["universe"] == "sp500"
         assert (
             client.post("/api/membership/current/refresh", json={}).status_code == 403
         )
@@ -310,34 +455,56 @@ def test_default_api_is_full_index_and_navigation_does_not_refresh(
 
 
 @pytest.mark.parametrize(
-    "historical,scenario",
+    "universe,scenario",
     [
-        (False, "normal"),
-        (True, "normal"),
-        (False, "large"),
-        (False, "reuse"),
-        (True, "reuse"),
-        (False, "omitted"),
-        (True, "missing_member"),
+        ("sp500_current", "normal"),
+        ("sp500_historical", "normal"),
+        ("sp500_current", "large"),
+        ("sp500_current", "reuse"),
+        ("sp500_historical", "reuse"),
+        ("sp500_current", "omitted"),
+        ("sp500_historical", "missing_member"),
+        ("sp500", "normal"),
+        ("sp500", "beyond"),
+        ("sp500", "outside"),
+        ("sp500", "outside_reuse"),
+        ("sp500", "future_member"),
+        ("sp500", "reuse"),
+        ("sp500", "missing_member"),
     ],
 )
 def test_full_index_download_batches_and_keeps_all_members(
-    tmp_path, historical, scenario
+    tmp_path, universe, scenario
 ):
     store = Store(tmp_path / "a.sqlite")
+    historical = universe != "sp500_current"
     snapshot = refresh_fixture(
         store,
         "historical" if historical else "current",
         history_csv() if historical else html(),
     )
+    if universe == "sp500":
+        refresh_fixture(store, "current", html())
+        if scenario == "future_member":
+            refresh_fixture(
+                store, "current", html([f"S{i:03}" for i in range(502)] + ["FUTURE"])
+            )
     core = {f"S{i:03}" for i in range(503)} | ({"NEW"} if historical else set())
     names = core | {"EXTRA", "SPY"}
+    if scenario == "future_member":
+        names.add("FUTURE")
+    if scenario in ("outside", "outside_reuse"):
+        names.remove("NEW")
     calls = []
     start, end = (
         (date(2024, 1, 2), date(2024, 11, 1))
         if scenario == "large"
         else (date(2024, 5, 6), date(2024, 5, 10))
     )
+    if scenario == "beyond":
+        end = date(2024, 5, 13)
+    if scenario in ("outside", "outside_reuse"):
+        start, end = date(2024, 5, 13), date(2024, 5, 17)
     days = calendar.sessions(start, end)
 
     def handler(request):
@@ -369,7 +536,7 @@ def test_full_index_download_batches_and_keeps_all_members(
                 if (s == "S000") == inactive
                 and not (scenario == "omitted" and s == "S000")
             ]
-            if inactive and scenario == "reuse":
+            if inactive and scenario in ("reuse", "outside_reuse"):
                 assets.append({**assets[0], "symbol": "S001", "id": "old-reused-id"})
             return httpx.Response(200, json=assets)
         requested = request.url.params["symbols"].split(",")
@@ -390,6 +557,7 @@ def test_full_index_download_batches_and_keeps_all_members(
                             "v": 10000,
                         }
                         for day in days
+                        if not (scenario == "future_member" and s == "FUTURE")
                         if not (
                             scenario == "missing_member"
                             and s == "S000"
@@ -404,7 +572,7 @@ def test_full_index_download_batches_and_keeps_all_members(
     with httpx.Client(transport=httpx.MockTransport(handler)) as client:
         provider = Provider(store, client, Settings("key", "secret"))
         payload = {
-            "universe": "sp500_historical" if historical else "sp500_current",
+            "universe": universe,
             "symbols": ["EXTRA"],
             "start": str(start),
             "end": str(end),
@@ -421,11 +589,33 @@ def test_full_index_download_batches_and_keeps_all_members(
             return
         result = download_market(store, payload, lambda *a: None, provider)
     assert set(result["symbols"]) == names
-    assert result["row_count"] == len(names) * len(days)
+    assert result["row_count"] == (len(names) - (scenario == "future_member")) * len(
+        days
+    )
     if scenario == "large":
         assert result["row_count"] > 80000
     ds = Store(store.path).dataset(result["id"])
-    assert ds.metadata["membership"]["id"] == snapshot["id"]
+    audit = ds.metadata["membership"]
+    if universe == "sp500":
+        assert audit["kind"] == "combined"
+        assert audit["historical_source"]["id"] == snapshot["id"]
+        if scenario in ("beyond", "outside", "outside_reuse"):
+            with pytest.raises(ResearchError, match="membership"):
+                membership.validate_coverage(ds, start, end)
+        else:
+            membership.validate_coverage(ds, start, end)
+        if scenario == "future_member":
+            assert ds.bars["FUTURE"] == ()
+            assert (
+                next(
+                    row
+                    for row in result["metadata"]["coverage"]
+                    if row["symbol"] == "FUTURE"
+                )["rows"]
+                == 0
+            )
+    else:
+        assert audit["id"] == snapshot["id"]
     assert "EXTRA" in ds.bars and "SPY" in ds.bars
     assert any(
         a["symbol"] == "S000" and a["status"] == "inactive"

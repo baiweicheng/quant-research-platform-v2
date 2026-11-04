@@ -23,6 +23,7 @@ type Membership = {
   captured_at: string;
   source: string;
   member_count: number;
+  unique_member_count?: number;
   coverage_start: string;
   coverage_end: string;
   added?: string[];
@@ -47,27 +48,11 @@ export default function MarketData() {
     },
   });
   const cfg = info.data;
-  const [universe, setUniverse] = useState("sp500_current");
-  const historical =
-    universe === "sp500_historical" ? cfg?.membership?.historical : null;
-  const end = historical
-    ? [
-        historical.coverage_end,
-        cfg?.latest_session ?? historical.coverage_end,
-      ].sort()[0]
-    : (cfg?.latest_session ?? "");
-  const requestedStart = cfg?.watchlist?.start ?? "2022-01-03";
-  const start =
-    historical && requestedStart >= end
-      ? end > "2022-01-03"
-        ? "2022-01-03"
-        : [
-            historical.coverage_start,
-            cfg?.first_session ?? historical.coverage_start,
-          ]
-            .sort()
-            .at(-1)
-      : requestedStart;
+  const [universe, setUniverse] = useState("sp500");
+  const current = cfg?.membership?.current;
+  const historical = cfg?.membership?.historical;
+  const end = cfg?.latest_session ?? "";
+  const start = cfg?.watchlist?.start ?? "2022-01-03";
   return (
     <section className="card market-data">
       <div className="card-header">
@@ -114,51 +99,60 @@ export default function MarketData() {
         </div>
         <div className="membership-status">
           <h3>S&P 500 membership</h3>
-          {(["current", "historical"] as const).map((kind) => {
-            const saved = cfg?.membership?.[kind];
-            return (
-              <div key={kind}>
-                <p>
-                  <strong>
-                    {kind === "current"
-                      ? "Current roster"
-                      : "Historical rosters"}
-                  </strong>
-                  {saved
-                    ? ` · ${saved.member_count} securities · captured ${new Date(saved.captured_at).toLocaleString()}`
-                    : " · Not downloaded yet"}
-                </p>
-                {saved && (
-                  <p className="field-hint">
-                    {kind === "historical"
-                      ? `Available history: ${saved.coverage_start} – ${saved.coverage_end}. The final roster is never extended beyond this date.`
-                      : saved.initial
-                        ? "First capture saved. Future refreshes report additions and removals."
-                        : `Changes since previous capture: added ${saved.added?.join(", ") || "none"}; removed ${saved.removed?.join(", ") || "none"}.`}{" "}
-                    <a href={saved.source} target="_blank" rel="noreferrer">
-                      Source
-                    </a>
-                  </p>
-                )}
-                <button
-                  type="button"
-                  className="button secondary small"
-                  disabled={enqueue.isPending}
-                  onClick={() =>
-                    enqueue.mutate({
-                      path: `/membership/${kind}/refresh`,
-                      body: {},
-                    })
-                  }
-                >
-                  Refresh{" "}
-                  {kind === "current"
-                    ? "current membership"
-                    : "historical membership"}
-                </button>
-              </div>
-            );
-          })}
+          <p>
+            {current
+              ? `${current.member_count} current securities`
+              : "Current roster not downloaded yet"}
+            {historical?.unique_member_count != null &&
+              ` · ${historical.unique_member_count.toLocaleString()} unique securities in the historical archive`}
+          </p>
+          <p className="field-hint">
+            {historical
+              ? `Historical backtest membership: ${historical.coverage_start} – ${historical.coverage_end}.`
+              : "Historical membership not downloaded yet."}{" "}
+            {cfg && `Prices can be downloaded through ${cfg.latest_session}.`}
+          </p>
+          <button
+            type="button"
+            className="button secondary small"
+            disabled={enqueue.isPending}
+            onClick={() =>
+              enqueue.mutate({ path: "/membership/all/refresh", body: {} })
+            }
+          >
+            Refresh S&P 500 membership
+          </button>
+          <details className="details">
+            <summary>Membership sources and changes</summary>
+            {(["current", "historical"] as const).map((kind) => {
+              const saved = cfg?.membership?.[kind];
+              return (
+                saved && (
+                  <div key={kind}>
+                    <p>
+                      <strong>
+                        {kind === "current"
+                          ? "Current roster"
+                          : "Historical archive"}
+                      </strong>
+                      {` · captured ${new Date(saved.captured_at).toLocaleString()}`}{" "}
+                      ·{" "}
+                      <a href={saved.source} target="_blank" rel="noreferrer">
+                        Source
+                      </a>
+                    </p>
+                    <p className="field-hint">
+                      {kind === "historical"
+                        ? `Last recorded change: ${saved.coverage_end}; ${saved.member_count} securities in that roster. A last change date is not an expiry date. Later membership must be verified before extending backtest coverage.`
+                        : saved.initial
+                          ? "First capture saved. Future refreshes report additions and removals."
+                          : `Changes since previous capture: added ${saved.added?.join(", ") || "none"}; removed ${saved.removed?.join(", ") || "none"}.`}
+                    </p>
+                  </div>
+                )
+              );
+            })}
+          </details>
         </div>
         <form
           className="form"
@@ -196,11 +190,8 @@ export default function MarketData() {
               value={universe}
               onChange={(e) => setUniverse(e.target.value)}
             >
-              <option value="sp500_current">
-                Current S&P 500 + optional supplements
-              </option>
-              <option value="sp500_historical">
-                Historical S&P 500 members + optional supplements
+              <option value="sp500">
+                S&P 500 — current and historical members
               </option>
               <option value="custom">Custom list only</option>
             </select>
@@ -222,17 +213,15 @@ export default function MarketData() {
             />
           </label>
           <p className="field-hint">
-            The full S&P 500 is included by default, with every listed share
-            class. Additional symbols supplement the index. SPY is always
-            included only as a benchmark. Downloads refresh membership when its
-            capture is over 24 hours old.
+            {universe === "sp500"
+              ? "Includes today's full S&P 500 and every historical member recorded during the selected period, including departures and separate share classes. Additional symbols supplement the index. Both membership sources refresh when over 24 hours old."
+              : "Downloads only your custom stock list."}{" "}
+            SPY is always included only as a benchmark.
           </p>
           <Notice>
-            {universe === "sp500_current"
-              ? "Current members support current reviews. To backtest history, choose Historical S&P 500 members; today's roster cannot be backdated."
-              : universe === "sp500_historical"
-                ? "Historical downloads include all members present during the selected period, including departures. Dates outside the source coverage and missing member prices stop the job. The public history is retrospective, with no certified announcement times or security identities; results remain exploratory."
-                : "A custom fixed list can introduce survivorship and selection bias in historical tests."}
+            {universe === "sp500"
+              ? "One download serves current reviews and historical research. Backtests automatically use dated membership and require supported membership coverage and member prices for the entire test period. Newer prices do not fill missing membership changes. Public history remains retrospective and exploratory."
+              : "A custom fixed list can introduce survivorship and selection bias in historical tests."}
           </Notice>
           <div className="form-row">
             <label>

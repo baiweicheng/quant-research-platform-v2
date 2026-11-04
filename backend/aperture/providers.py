@@ -192,7 +192,28 @@ def download_market(
     api = provider or Provider(store)
     try:
         securities = []
-        historical = membership_audit and membership_audit["kind"] == "historical"
+        combined = membership_audit and membership_audit["kind"] == "combined"
+        historical = membership_audit and membership_audit["kind"] in (
+            "historical",
+            "combined",
+        )
+        history = membership_audit["historical"] if combined else membership_audit
+        historical_symbols = (
+            {s for row in history["rosters"] for s in row["symbols"]}
+            if historical and history
+            else set()
+        )
+        required_symbols = set(symbols)
+        if combined:
+            required_symbols = (
+                historical_symbols
+                | set(membership_audit["additional_symbols"])
+                | {"SPY"}
+            )
+            if str(start) <= membership_audit["current"]["coverage_start"] <= str(end):
+                required_symbols.update(
+                    m["symbol"] for m in membership_audit["current"]["members"]
+                )
         asset_map = None
         if len(symbols) > 100:
             asset_map = {}
@@ -215,8 +236,8 @@ def download_market(
                             # evidence and must fail rather than guess.
                             if (
                                 not historical
-                                and asset_map[key].get("status") == "active"
-                            ):
+                                or (combined and key not in historical_symbols)
+                            ) and asset_map[key].get("status") == "active":
                                 continue
                             raise ResearchError(
                                 f"Ambiguous historical identity for {key}; ticker reuse cannot be guessed."
@@ -423,7 +444,7 @@ def download_market(
         health = []
         for symbol in symbols:
             rows = sorted(bars[symbol].values(), key=lambda b: b.session)
-            if not rows:
+            if not rows and symbol in required_symbols:
                 raise ResearchError(f"No bars were returned for {symbol}.")
             for before, current in zip(rows, rows[1:]):
                 if (
@@ -461,8 +482,8 @@ def download_market(
                     "expected": len(expected),
                     "missing_count": len(missing),
                     "missing_examples": [str(d) for d in missing[:10]],
-                    "start": str(rows[0].session),
-                    "end": str(rows[-1].session),
+                    "start": str(rows[0].session) if rows else None,
+                    "end": str(rows[-1].session) if rows else None,
                 }
             )
         provenance = {
@@ -536,12 +557,28 @@ def download_market(
             warnings.append(
                 "Some symbols have missing sessions. Signal warm-up excludes incomplete history; a missing held price stops a backtest."
             )
-        if historical:
+        if combined:
+            if history:
+                membership.validate_coverage(
+                    dataset,
+                    date.fromisoformat(history["coverage_start"]),
+                    date.fromisoformat(history["coverage_end"]),
+                )
+            warnings[0] = membership.HISTORY_NOTE
+            warnings.append(
+                "Combined current and historical S&P 500 download. Price coverage "
+                "does not extend verified membership history. Supported backtest "
+                f"membership: {history['coverage_start']} through {history['coverage_end']}."
+                if history
+                else "Combined S&P 500 download has no supported historical membership "
+                "overlap in this price period; historical backtests are blocked."
+            )
+        elif historical:
             membership.validate_coverage(dataset, start, end)
             warnings[0] = membership.HISTORY_NOTE
         elif membership_audit:
             warnings[0] = (
-                "Current S&P 500 roster plus optional supplements, for current reviews only. Historical backtests are blocked on this snapshot; download Historical S&P 500 members instead."
+                "Current S&P 500 roster plus optional supplements, for current reviews only. Historical backtests are blocked on this snapshot; download S&P 500 current and historical members instead."
             )
         if membership_audit and membership_audit["additional_symbols"]:
             warnings.append(

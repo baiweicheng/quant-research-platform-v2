@@ -46,6 +46,20 @@ def rank(
     ranked: list[RankedStock] = []
     excluded: list[dict] = []
     members = eligible(dataset, decision)
+    sectors = dataset.sectors
+    audit = dataset.metadata.get("membership")
+    if audit and audit["kind"] == "combined":
+        history = audit["historical"]
+        if (
+            not history
+            or not history["coverage_start"] <= str(decision) <= history["coverage_end"]
+        ):
+            # Current classifications apply only to an observed-current review.
+            # Historical decisions retain Unknown rather than current GICS.
+            sectors = {
+                **sectors,
+                **{m["symbol"]: m["sector"] for m in audit["current"]["members"]},
+            }
     missing = members - dataset.bars.keys()
     if missing:
         raise ResearchError(
@@ -103,9 +117,7 @@ def rank(
                 )
                 continue
             ranked.append(
-                RankedStock(
-                    symbol, 0.0, dataset.sectors.get(symbol, "Unknown"), components
-                )
+                RankedStock(symbol, 0.0, sectors.get(symbol, "Unknown"), components)
             )
             continue
         levels = total_return_levels(bars)
@@ -123,9 +135,7 @@ def rank(
             changes = [after / before - 1 for before, after in zip(levels, levels[1:])]
             score = -stdev(changes)
         if isfinite(score):
-            ranked.append(
-                RankedStock(symbol, score, dataset.sectors.get(symbol, "Unknown"))
-            )
+            ranked.append(RankedStock(symbol, score, sectors.get(symbol, "Unknown")))
     if fundamental:
         factors = {
             "quality": ("profitability",),

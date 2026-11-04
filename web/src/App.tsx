@@ -600,7 +600,9 @@ function DataPage({
                               </td>
                               <td>{row.missing_count}</td>
                               <td>
-                                {row.start} – {row.end}
+                                {row.rows
+                                  ? `${row.start} – ${row.end}`
+                                  : "No prices returned"}
                               </td>
                             </tr>
                           ))}
@@ -623,8 +625,9 @@ function DataPage({
           <h3>Which stocks should I start with?</h3>
           <p>
             Start with the full S&P 500. Additional symbols supplement the
-            index; SPY is reserved for comparisons. Choose historical members
-            for backtests and current members for current reviews. Public
+            index; SPY is reserved for comparisons. One download includes
+            current and recorded historical members; backtests apply dated
+            membership automatically within supported coverage. Public
             historical rosters and delisted-security coverage still need
             independent verification.
           </p>

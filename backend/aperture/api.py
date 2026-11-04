@@ -37,7 +37,7 @@ class TaskRequest(BaseModel):
 
 class DownloadRequest(BaseModel):
     name: str = Field(default="S&P 500 + supplements", min_length=1, max_length=100)
-    universe: Literal["sp500_current", "sp500_historical", "custom"] = "sp500_current"
+    universe: Literal["sp500", "sp500_current", "sp500_historical", "custom"] = "sp500"
     symbols: list[str] = Field(default_factory=list, max_length=1500)
     start: date
     end: date
@@ -267,7 +267,7 @@ def create_app(
             },
             "watchlist": {
                 "name": watchlist.get("name", "S&P 500 + supplements"),
-                "universe": watchlist.get("universe", "sp500_current"),
+                "universe": watchlist.get("universe", "sp500"),
                 "symbols": watchlist.get("symbols", []),
                 "start": watchlist.get("start", "2022-01-03"),
             },
@@ -281,7 +281,7 @@ def create_app(
         }
 
     @app.post("/api/membership/{kind}/refresh", status_code=202)
-    def refresh_membership(kind: Literal["current", "historical"]):
+    def refresh_membership(kind: Literal["all", "current", "historical"]):
         return store.enqueue("membership", {"kind": kind})
 
     @app.post("/api/providers/check", status_code=202)
