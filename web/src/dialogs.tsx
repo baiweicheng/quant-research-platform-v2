@@ -1,7 +1,7 @@
 import { useState, type FormEvent } from "react";
 import { useMutation, useQueryClient } from "@tanstack/react-query";
 import { ArrowRight, LoaderCircle, Upload } from "lucide-react";
-import { api } from "./api";
+import { api, datasetLabel } from "./api";
 import { Modal, Notice } from "./components";
 import type { State, Strategy } from "./types";
 
@@ -106,7 +106,7 @@ export function TaskDialog({
             </option>
             {state.datasets.map((d) => (
               <option key={d.id} value={d.id}>
-                {d.name}
+                {datasetLabel(d, state.datasets)}
                 {d.kind === "synthetic" ? " · Synthetic" : ""}
               </option>
             ))}

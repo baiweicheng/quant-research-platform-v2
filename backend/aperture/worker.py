@@ -49,7 +49,6 @@ def execute(store: Store, job: dict):
     if job["kind"].startswith("paper_"):
         from .paper import (
             Broker,
-            reconcile,
             prepare,
             cancel_pending,
             schedule,
@@ -60,7 +59,9 @@ def execute(store: Store, job: dict):
         broker = Broker()
         try:
             if job["kind"] == "paper_sync":
-                reconcile(store, broker, performance=True)
+                from .staged import fill_check
+
+                fill_check(store, broker, performance=True)
                 body = {
                     "completion_message": "Paper account, orders and daily performance refreshed. No orders submitted."
                 }
@@ -71,7 +72,7 @@ def execute(store: Store, job: dict):
                 }
             elif job["kind"] == "paper_prepare":
                 body = prepare(store, job, update, broker)
-                if job["payload"].get("automatic"):
+                if job["payload"].get("automatic") and "plan_id" in body:
                     cfg = configuration(store)
                     allowed = approval(store)
                     if (
@@ -110,13 +111,20 @@ def execute(store: Store, job: dict):
         from .providers import download_market
 
         saved = download_market(store, payload, update)
+        unavailable = len(saved.get("metadata", {}).get("unavailable_symbols", {}))
         store.finish(
             job,
             {
                 "dataset_id": saved["id"],
                 "dataset_name": saved["name"],
                 "dataset_kind": saved["kind"],
-                "completion_message": f"Saved {saved['row_count']:,} daily bars for {saved['symbol_count']} symbols. Coverage details are available in Data.",
+                "completion_message": f"Saved {saved['row_count']:,} daily bars for {saved['symbol_count']} requested symbols. "
+                + (
+                    f"{unavailable} securities need data/identity resolution; affected backtests and reviews are blocked. "
+                    if unavailable
+                    else ""
+                )
+                + "Coverage details are available in Data.",
                 "coverage": saved.get("metadata", {}).get("coverage", []),
             },
         )
@@ -263,6 +271,43 @@ def process_one(store: Store) -> bool:
     return True
 
 
+def reconcile_on_startup(store, broker=None):
+    """Read broker-held fills before work, even if approval is paused/revoked."""
+    from .paper import orders, Broker
+    from .staged import fill_check
+
+    if not orders(store):
+        return False
+    owned = broker is None
+    try:
+        broker = broker or Broker()
+        store.set_preference(
+            "paper_fill_check",
+            {"status": "checking", "checked_at": None, "counts": {}, "issues": []},
+        )
+        fill_check(store, broker)
+        return True
+    except Exception as error:
+        LOG.warning(
+            "Startup order reconciliation needs attention: %s", type(error).__name__
+        )
+        store.set_preference(
+            "paper_fill_check",
+            {
+                "status": "attention",
+                "checked_at": None,
+                "counts": {},
+                "issues": [
+                    "Startup fill check could not complete. Refresh the paper account before preparing another rebalance."
+                ],
+            },
+        )
+        return False
+    finally:
+        if owned and broker is not None:
+            broker.close()
+
+
 def main():
     parser = argparse.ArgumentParser()
     parser.add_argument("--db", default="var/aperture.sqlite3")
@@ -277,6 +322,7 @@ def main():
             raise SystemExit("A worker is already running for this database.")
         store = Store(args.db)
         store.recover()
+        reconcile_on_startup(store)
         last_tick = 0.0
         while True:
             if time.monotonic() - last_tick >= 5:

@@ -540,7 +540,7 @@ def test_broker_cash_ignores_margin_and_excludes_unsettled_sales():
     )
     s = b.snapshot(at)
     assert D(s["spendable_cash"]) == 800 and D(s["unsettled_sales"]) == 200
-    assert "buying_power" not in s
+    assert s["buying_power"] == "4000"
     assert (
         D(b.snapshot(datetime(2026, 11, 4, 15, tzinfo=UTC))["spendable_cash"]) == 1000
     )

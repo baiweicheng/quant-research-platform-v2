@@ -36,7 +36,7 @@ class TaskRequest(BaseModel):
 
 
 class DownloadRequest(BaseModel):
-    name: str = Field(default="S&P 500 + supplements", min_length=1, max_length=100)
+    name: str = Field(default="S&P 500", min_length=1, max_length=100)
     universe: Literal["sp500", "sp500_current", "sp500_historical", "custom"] = "sp500"
     symbols: list[str] = Field(default_factory=list, max_length=1500)
     start: date
@@ -59,12 +59,15 @@ class EvaluationRequest(BaseModel):
 class PaperConfigRequest(BaseModel):
     strategy_id: str = Field(max_length=40)
     mode: Literal["manual", "automatic"] = "manual"
-    symbols: list[str] = Field(min_length=1, max_length=1500)
+    execution: Literal["broker_market", "local_limit"] = "broker_market"
+    funding_policy: Literal["cash_only", "paper_margin"] = "paper_margin"
+    universe: Literal["sp500", "custom"] = "sp500"
+    symbols: list[str] = Field(default_factory=list, max_length=1500)
     data_start: date
     positions: int = Field(default=25, ge=1, le=100)
     max_weight: str = Field(default="0.05", max_length=20)
     sector_cap: str = Field(default="0.25", max_length=20)
-    cash_reserve: str = Field(default="0.02", max_length=20)
+    cash_reserve: str = Field(default="0.05", max_length=20)
     max_drift: str = Field(default="0.03", max_length=20)
 
 
@@ -218,6 +221,12 @@ def create_app(
         revoke(store)
         return {"revoked": True}
 
+    @app.post("/api/paper/membership/apply")
+    def apply_membership():
+        from .paper import apply_membership_update
+
+        return apply_membership_update(store)
+
     @app.post("/api/paper/actions/{kind}", status_code=202)
     def paper_action(kind: Literal["sync", "prepare", "cancel", "stop", "resume"]):
         from .paper import configuration, stop, resume
@@ -241,13 +250,13 @@ def create_app(
 
     @app.post("/api/paper/plans/{identifier}/approve")
     def approve_rebalance(identifier: str, payload: RebalanceApprovalRequest):
-        from .paper import schedule
+        from .staged import approve_and_stage
 
         if not payload.acknowledge:
             raise ResearchError(
                 "Acknowledge the specific paper orders and execution bounds before approving this rebalance."
             )
-        return schedule(store, identifier)
+        return approve_and_stage(store, identifier)
 
     @app.get("/api/providers")
     def providers():
@@ -266,10 +275,10 @@ def create_app(
                 "historical": membership.summary(store.membership("historical")),
             },
             "watchlist": {
-                "name": watchlist.get("name", "S&P 500 + supplements"),
+                "name": watchlist.get("name", "S&P 500"),
                 "universe": watchlist.get("universe", "sp500"),
                 "symbols": watchlist.get("symbols", []),
-                "start": watchlist.get("start", "2022-01-03"),
+                "start": watchlist.get("start", "2016-01-04"),
             },
             "paper_default_symbols": sorted(
                 {m["symbol"] for m in current["members"]}

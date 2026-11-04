@@ -114,7 +114,11 @@ def build(
         }
     curve = []
     unit = Decimal(100)
-    spy = {b.session: b for b in dataset.bars.get("SPY", ())} if dataset else {}
+    spy = (
+        {b.session: b for b in dataset.bars.get("SPY", ())}
+        if dataset and "SPY" not in dataset.metadata.get("unavailable_symbols", {})
+        else {}
+    )
     reference_days = calendar.sessions(
         date.fromisoformat(days[0]), date.fromisoformat(days[-1])
     )

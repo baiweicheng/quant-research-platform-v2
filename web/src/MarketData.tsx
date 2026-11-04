@@ -49,10 +49,16 @@ export default function MarketData() {
   });
   const cfg = info.data;
   const [universe, setUniverse] = useState("sp500");
+  const names: Record<string, string> = {
+    sp500: "S&P 500",
+    sp500_plus: "S&P 500 + custom list",
+    custom: "Custom stock list",
+  };
+  const [datasetName, setDatasetName] = useState("S&P 500");
   const current = cfg?.membership?.current;
   const historical = cfg?.membership?.historical;
   const end = cfg?.latest_session ?? "";
-  const start = cfg?.watchlist?.start ?? "2022-01-03";
+  const start = cfg?.first_session ?? "2016-01-04";
   return (
     <section className="card market-data">
       <div className="card-header">
@@ -164,8 +170,11 @@ export default function MarketData() {
               path: "/downloads",
               body: {
                 name: values.get("name"),
-                universe,
-                symbols: String(values.get("symbols"))
+                universe: universe === "sp500_plus" ? "sp500" : universe,
+                symbols: (universe === "sp500"
+                  ? ""
+                  : String(values.get("symbols"))
+                )
                   .split(/[\s,;]+/)
                   .filter(Boolean),
                 start: values.get("start"),
@@ -178,7 +187,8 @@ export default function MarketData() {
             Dataset name
             <input
               name="name"
-              defaultValue={"S&P 500 + supplements"}
+              value={datasetName}
+              onChange={(e) => setDatasetName(e.target.value)}
               maxLength={100}
               required
             />
@@ -188,39 +198,52 @@ export default function MarketData() {
             <select
               name="universe"
               value={universe}
-              onChange={(e) => setUniverse(e.target.value)}
+              onChange={(e) => {
+                const next = e.target.value;
+                setDatasetName((old) =>
+                  old === names[universe] ? names[next] : old,
+                );
+                setUniverse(next);
+              }}
             >
               <option value="sp500">
                 S&P 500 — current and historical members
               </option>
+              <option value="sp500_plus">S&P 500 + custom list</option>
               <option value="custom">Custom list only</option>
             </select>
           </label>
-          <label>
-            {universe === "custom"
-              ? "Stock symbols"
-              : "Additional stock symbols (optional)"}
-            <textarea
-              name="symbols"
-              rows={3}
-              defaultValue={
-                cfg?.watchlist?.symbols
-                  ?.filter((s) => s !== "SPY")
-                  .join(", ") ?? ""
-              }
-              required={universe === "custom"}
-              placeholder="Optional names outside the S&P 500"
-            />
-          </label>
+          {universe !== "sp500" && (
+            <label>
+              {universe === "custom"
+                ? "Stock symbols"
+                : "Additional stock symbols"}
+              <textarea
+                name="symbols"
+                rows={3}
+                defaultValue={
+                  cfg?.watchlist?.symbols
+                    ?.filter((s) => s !== "SPY")
+                    .join(", ") ?? ""
+                }
+                required
+                placeholder={
+                  universe === "custom"
+                    ? "AAPL, MSFT, …"
+                    : "Symbols outside the S&P 500"
+                }
+              />
+            </label>
+          )}
           <p className="field-hint">
-            {universe === "sp500"
-              ? "Includes today's full S&P 500 and every historical member recorded during the selected period, including departures and separate share classes. Additional symbols supplement the index. Both membership sources refresh when over 24 hours old."
+            {universe !== "custom"
+              ? "Includes today's full S&P 500 and every historical member recorded during the selected period, including departures and separate share classes. Both membership sources refresh when over 24 hours old."
               : "Downloads only your custom stock list."}{" "}
             SPY is always included only as a benchmark.
           </p>
           <Notice>
-            {universe === "sp500"
-              ? "One download serves current reviews and historical research. Backtests automatically use dated membership and require supported membership coverage and member prices for the entire test period. Newer prices do not fill missing membership changes. Public history remains retrospective and exploratory."
+            {universe !== "custom"
+              ? "One download collects available current and historical prices. Unresolved securities stay visible with per-stock reasons; tests and reviews requiring them are blocked. Backtests automatically use dated membership within supported coverage. Newer prices do not fill missing membership changes. Public history remains retrospective and exploratory."
               : "A custom fixed list can introduce survivorship and selection bias in historical tests."}
           </Notice>
           <div className="form-row">

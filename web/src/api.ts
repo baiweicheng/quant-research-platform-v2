@@ -1,3 +1,11 @@
+import type { Dataset } from "./types";
+
+export function datasetLabel(dataset: Dataset, all: Dataset[]) {
+  if (all.filter((d) => d.name === dataset.name).length < 2)
+    return dataset.name;
+  return `${dataset.name} · ${dataset.start}–${dataset.end} · saved ${new Date(dataset.created_at).toLocaleString()}`;
+}
+
 export async function api<T>(path: string, body?: unknown): Promise<T> {
   const response = await fetch(
     `/api${path}`,

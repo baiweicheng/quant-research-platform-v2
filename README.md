@@ -44,7 +44,7 @@ The app opens empty. Practice data is never silently loaded. Account metrics rem
 - Saved backtests, comparison, SPY benchmark, common chart periods, and read-only current allocation reviews.
 - Frozen research protocols, forward windows, cost/allocation/frequency sensitivity, trial audits, exposure labels and once-only final-test release.
 - Paper account reconciliation, immutable reviews and explicit strategy/policy approvals; manual and automatic weekly modes.
-- Cash-constrained fractional limit orders, durable client references, partial/rejected/uncertain-order handling, stop/cancel controls and restart reconciliation.
+- Broker-staged Market DAY orders with explicit paper-margin funding, durable client references, partial/rejected/uncertain-order handling, stop/cancel controls and restart reconciliation.
 - Actual broker holdings/equity, daily cash-flow-adjusted estimates and SPY comparison with explicit simulator limits.
 - Approved Weekly Focus layout, responsive top navigation, empty/error states and explanations.
 
@@ -57,8 +57,8 @@ AI-assisted discovery and broader operational reliability/automation remain futu
 1. Configure paper keys/contact below, then **Portfolio → Paper portfolio → Refresh paper account**. The app reads the actual account; it never resets its balance. Use a dedicated long-only USD paper account.
 2. Save the strategy, stock universe, history start, risk policy and mode. Manual is selected initially. Suggested limits remain proposals until explicitly approved.
 3. Review research, validation and data limits. Record explicit paper approval with the exact displayed strategy/version phrase and a rationale. Automatic operation needs its separate permission checkbox.
-4. Select **Prepare weekly paper review**. This single task reconciles the account, refreshes prices/actions and required SEC filings, calculates signals and freezes proposed targets/orders.
-5. In manual mode, inspect the specific review and separately approve its following-session paper rebalance. Keep Aperture running through orders/fills and any conservative T+1/bank-holiday funding wait. Regular-hours DAY limit orders can remain unfilled; acceptance is not completion.
+4. Select **Prepare weekly paper review**. This single task reconciles the account, refreshes membership, backfills new members and updates prices/required SEC filings before freezing proposed targets/orders. A changed index list requires adoption and new approval.
+5. In manual mode, inspect the specific review and separately approve its following-session paper rebalance. Keep Aperture running until all Market DAY instructions are confirmed accepted at Alpaca. You may then close it; the next launch checks fills, cash and positions. Actual fill prices may differ, and paper margin can bridge sale proceeds under an explicitly approved policy. A simulated debit can remain overnight; new settings default to a 5% cash reserve.
 6. Use **Stop future submissions**, **Stop & cancel Aperture orders**, account refresh and the order lifecycle table when anything needs attention. Cancellation can race fills and never reverses a fill.
 7. A new paper account has a separate identity/baseline and inherits no strategy approval. Update its keys privately and refresh/reapprove before use.
 
@@ -68,7 +68,7 @@ See [paper execution](docs/PAPER_TRADING.md) and [research validation](docs/RESE
 
 No software or free data source can guarantee zero errors. Passing tests establishes specific behavior under tested assumptions, not the absence of defects or future investment performance.
 
-Data defaults to **S&P 500 — current and historical members**, with optional additional stocks. One download includes today's roster and every recorded member during the selected period, including departures. One membership refresh updates both sources; Data shows price dates separately from supported historical backtest membership. Newer prices do not supply missing membership changes. See [the universe contract](docs/UNIVERSE.md). Public historical membership is retrospective; delisted-security coverage, historical security identities, sector histories and vendor adjustment conventions are not independently verified. These results are exploratory and must not be called survivorship-safe. Missing required member or held-stock prices stop validation; the engine never invents a delisting exit or forward-fills a held stock.
+Data defaults to **S&P 500 — current and historical members**, with separate S&P 500 + custom list and Custom list only choices, matching default dataset names, and a January 4, 2016 default start. One download includes today's roster and every recorded member during the selected period, including departures. One membership refresh updates both sources; Data shows price dates separately from supported historical backtest membership. Newer prices do not supply missing membership changes. See [the universe contract](docs/UNIVERSE.md). Public historical membership is retrospective; delisted-security coverage, historical security identities, sector histories and vendor adjustment conventions are not independently verified. These results are exploratory and must not be called survivorship-safe. Missing required member or held-stock prices stop validation; the engine never invents a delisting exit or forward-fills a held stock.
 
 For input requirements, formulas, timing and financial conventions see [the research contract](docs/RESEARCH_CONTRACT.md). For the service boundary and recovery behavior see [architecture](docs/ARCHITECTURE.md).
 

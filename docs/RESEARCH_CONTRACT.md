@@ -16,7 +16,7 @@ Positive finite prices, OHLC bounds, nonnegative integer volume, valid actions, 
 
 ## Universe membership
 
-Data defaults to the full current S&P 500 plus optional supplements; SPY is only a benchmark. See [universe contract](UNIVERSE.md) for immutable roster refreshes, historical effective dates, coverage limits, and free-source uncertainty. Current-roster snapshots are blocked from historical backtests. Historical downloads include the union of in-period members and use only the roster effective on each decision date; missing required member prices stop ingestion and backtests. Archived/inactive listings can supply historical prices without becoming tradable. Fixed-list CSV inputs remain explicitly exploratory.
+Data defaults to the full current S&P 500 plus optional supplements; SPY is only a benchmark. See [universe contract](UNIVERSE.md) for immutable roster refreshes, historical effective dates, coverage limits, and free-source uncertainty. Current-roster snapshots are blocked from historical backtests. Historical downloads include the union of in-period members and use only the roster effective on each decision date; unavailable identities/prices/actions remain visible in combined downloads and block affected backtests. Raw price availability does not certify action accounting; flagged SPY inputs suppress comparisons. Archived/inactive listings can supply historical prices without becoming tradable. Fixed-list CSV inputs remain explicitly exploratory.
 
 ## Signals and allocation
 

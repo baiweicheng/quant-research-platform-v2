@@ -2062,6 +2062,11 @@ textarea:focus-visible {
   gap: 1rem;
   margin: 1rem 0;
 }
+.paper-workspace .notice .button {
+  max-width: 100%;
+  white-space: normal;
+  margin-top: 0.75rem;
+}
 .paper-cash-grid strong {
   font-size: 1.45rem;
 }

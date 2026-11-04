@@ -185,6 +185,7 @@ def download_market(
     )
     symbols = validate_symbols(symbols)
     expected = calendar.sessions(start, end)
+    available_at = {day: calendar.available_time(day) for day in expected}
     if len(expected) * len(symbols) > membership.MAX_BARS:
         raise ResearchError(
             "This request exceeds 4,000,000 daily bars. Reduce the period or stock list."
@@ -193,6 +194,7 @@ def download_market(
     try:
         securities = []
         combined = membership_audit and membership_audit["kind"] == "combined"
+        capture_available = combined or bool(payload.get("capture_available"))
         historical = membership_audit and membership_audit["kind"] in (
             "historical",
             "combined",
@@ -204,6 +206,8 @@ def download_market(
             else set()
         )
         required_symbols = set(symbols)
+        unavailable = {}
+        identity_audit = {}
         if combined:
             required_symbols = (
                 historical_symbols
@@ -217,6 +221,7 @@ def download_market(
         asset_map = None
         if len(symbols) > 100:
             asset_map = {}
+            candidates = {}
             for status in ["active", "inactive"]:
                 assets = api.get(
                     "alpaca",
@@ -228,51 +233,130 @@ def download_market(
                     raise ResearchError("The provider asset directory changed format.")
                 for asset in assets:
                     key = asset.get("symbol")
-                    if key in asset_map and asset_map[key].get("id") != asset.get("id"):
-                        if key in symbols:
-                            # The current universe pins Alpaca's active identity
-                            # with asof=latest. An older reused ticker cannot
-                            # displace it. Historical rosters have no such ID
-                            # evidence and must fail rather than guess.
-                            if (
-                                not historical
-                                or (combined and key not in historical_symbols)
-                            ) and asset_map[key].get("status") == "active":
-                                continue
-                            raise ResearchError(
-                                f"Ambiguous historical identity for {key}; ticker reuse cannot be guessed."
-                            )
-                    asset_map[key] = asset
+                    if key in symbols:
+                        candidates.setdefault(key, {})[asset.get("id")] = asset
+            current_members = (
+                {m["symbol"]: m for m in membership_audit["current"]["members"]}
+                if combined
+                else {}
+            )
+            for key, by_id in candidates.items():
+                rows = list(by_id.values())
+                if len(rows) == 1:
+                    asset_map[key] = rows[0]
+                    continue
+                active = [a for a in rows if a.get("status") == "active"]
+                observed = current_members.get(key, {})
+                first_member = min(
+                    (
+                        max(str(start), r["effective"])
+                        for r in (history or {}).get("rosters", [])
+                        if key in r["symbols"]
+                    ),
+                    default=str(end),
+                )
+                same_listing = len(
+                    {
+                        (
+                            a.get("symbol"),
+                            a.get("name"),
+                            a.get("exchange"),
+                            a.get("class"),
+                        )
+                        for a in rows
+                    }
+                ) == 1 and all(a.get("name") and a.get("exchange") for a in rows)
+                current_only = not historical or (
+                    combined and key not in historical_symbols
+                )
+                supported_listing = (
+                    combined
+                    and same_listing
+                    and observed.get("date_added")
+                    and first_member >= observed["date_added"]
+                )
+                identity_audit[key] = {
+                    "candidate_ids": sorted(by_id),
+                    "basis": "unresolved",
+                }
+                if len(active) == 1 and (current_only or supported_listing):
+                    resolved = (
+                        api.get(
+                            "alpaca",
+                            PAPER_URL + "/v2/assets/" + quote(key, safe=""),
+                            ttl=86400,
+                        )
+                        if supported_listing
+                        else active[0]
+                    )
+                    if (
+                        resolved.get("id") == active[0].get("id")
+                        and resolved.get("symbol") == key
+                        and all(
+                            resolved.get(k) == active[0].get(k)
+                            for k in ("name", "exchange", "class")
+                        )
+                    ):
+                        asset_map[key] = resolved
+                        identity_audit[key].update(
+                            basis="provider_symbol_lookup_matching_listing"
+                            if supported_listing
+                            else "observed_current_listing",
+                            selected_id=resolved["id"],
+                            date_added=observed.get("date_added"),
+                        )
+                        continue
+                reason = f"Ambiguous historical identity for {key}; ticker reuse cannot be guessed."
+                if not capture_available:
+                    raise ResearchError(reason)
+                unavailable[key] = reason
         for index, symbol in enumerate(symbols):
             progress(
                 2 + round(index / len(symbols) * 15), f"Checking US listing: {symbol}"
             )
-            asset = (
-                asset_map[symbol]
-                if asset_map is not None and symbol in asset_map
-                else api.get(
-                    "alpaca",
-                    PAPER_URL + "/v2/assets/" + quote(symbol, safe=""),
-                    ttl=86400,
+            if symbol in unavailable:
+                continue
+            try:
+                asset = (
+                    asset_map[symbol]
+                    if asset_map is not None and symbol in asset_map
+                    else api.get(
+                        "alpaca",
+                        PAPER_URL + "/v2/assets/" + quote(symbol, safe=""),
+                        ttl=86400,
+                    )
                 )
-            )
+            except ResearchError as error:
+                if (
+                    not capture_available
+                    or "security/resource was not found" not in str(error)
+                ):
+                    raise
+                unavailable[symbol] = (
+                    f"{symbol}: provider listing metadata is unavailable."
+                )
+                continue
             if (
                 asset.get("class") != "us_equity"
                 or asset.get("exchange")
                 not in ("NYSE", "NASDAQ", "AMEX", "ARCA", "BATS", "NYSEARCA")
                 or asset.get("status") not in ("active", "inactive")
             ):
-                raise ResearchError(
-                    f"{symbol} has no unambiguous supported US exchange listing in the provider directory. It was not silently removed."
-                )
+                reason = f"{symbol} has no unambiguous supported US exchange listing in the provider directory."
+                if not capture_available:
+                    raise ResearchError(reason)
+                unavailable[symbol] = reason
+                continue
             import re
 
             if symbol != "SPY" and re.search(
                 r"\b(ETF|ETN|Fund|iShares|SPDR)\b", asset.get("name", ""), re.IGNORECASE
             ):
-                raise ResearchError(
-                    f"{symbol} appears to be a fund, rather than an ordinary company listing. SPY is reserved for the benchmark."
-                )
+                reason = f"{symbol} maps to a fund rather than an ordinary company listing; historical identity requires resolution."
+                if not capture_available:
+                    raise ResearchError(reason)
+                unavailable[symbol] = reason
+                continue
             securities.append(
                 {
                     k: asset.get(k)
@@ -289,8 +373,13 @@ def download_market(
             )
         # Date-only end parameters are midnight, so explicitly include the entire
         # last NY session, while staying outside the latest 15-minute SIP window.
+        available_symbols = [s for s in symbols if s not in unavailable]
+        if not available_symbols:
+            raise ResearchError(
+                "No securities have a resolved provider identity; no dataset was saved."
+            )
         query = {
-            "symbols": ",".join(symbols),
+            "symbols": ",".join(available_symbols),
             "timeframe": "1Day",
             "start": start.isoformat(),
             "end": calendar.close_time(expected[-1]).isoformat(),
@@ -303,6 +392,14 @@ def download_market(
         progress(20, "Downloading consolidated daily bars")
         bar_pages = batch_pages(api, "/v2/stocks/bars", query, "bars")
         bars: dict[str, dict[date, Bar]] = {s: {} for s in symbols}
+
+        def reject_symbol(symbol, reason, *, keep_prices=False):
+            if not capture_available:
+                raise ResearchError(reason)
+            unavailable.setdefault(symbol, reason)
+            if not keep_prices:
+                bars[symbol] = {}
+
         for page in bar_pages:
             for symbol, items in page.get("bars", {}).items():
                 if symbol not in bars:
@@ -313,7 +410,7 @@ def download_market(
                         .astimezone(ZoneInfo("America/New_York"))
                         .date()
                     )
-                    if day not in expected:
+                    if day not in available_at:
                         continue
                     if day in bars[symbol]:
                         raise ResearchError(f"Duplicate provider bar: {symbol} {day}.")
@@ -327,14 +424,14 @@ def download_market(
                         day,
                         *(decimal(row[k], k) for k in ("o", "h", "l", "c")),
                         int(volume),
-                        available_at=calendar.available_time(day),
+                        available_at=available_at[day],
                     )
         progress(40, "Checking split and dividend events")
         action_pages = batch_pages(
             api,
             "/v1/corporate-actions",
             {
-                "symbols": ",".join(symbols),
+                "symbols": ",".join(available_symbols),
                 "start": str(start - timedelta(days=90)),
                 "end": str(latest + timedelta(days=90)),
                 "limit": 1000,
@@ -386,16 +483,27 @@ def download_market(
             if not effective:
                 raise ResearchError("A corporate action is missing its effective date.")
             day = date.fromisoformat(effective)
-            if symbol is None or not start <= day <= end or kind == "name_changes":
+            if (
+                symbol is None
+                or symbol not in available_symbols
+                or not start <= day <= end
+                or kind == "name_changes"
+            ):
                 continue
             if kind not in ("forward_splits", "reverse_splits", "cash_dividends"):
-                raise ResearchError(
-                    f"{symbol} has an unsupported {kind.replace('_', ' ')} on {day}. Choose a supported period; the event cannot be ignored."
+                reject_symbol(
+                    symbol,
+                    f"{symbol} has an unsupported {kind.replace('_', ' ')} on {day}. Choose a supported period; the event cannot be ignored.",
+                    keep_prices=True,
                 )
+                continue
             if day not in bars[symbol]:
-                raise ResearchError(
-                    f"Missing {symbol} bar on corporate-action date {day}."
+                reject_symbol(
+                    symbol,
+                    f"Missing {symbol} bar on corporate-action date {day}.",
+                    keep_prices=True,
                 )
+                continue
             bar = bars[symbol][day]
             if kind == "cash_dividends":
                 if (
@@ -404,25 +512,44 @@ def download_market(
                     or event.get("due_bill_off_date")
                     or event.get("currency") not in (None, "", "USD")
                 ):
-                    raise ResearchError(
-                        f"{symbol} has a foreign/special/due-bill dividend requiring separate accounting. It was not treated as an ordinary USD dividend."
+                    reject_symbol(
+                        symbol,
+                        f"{symbol} has a foreign/special/due-bill dividend requiring separate accounting. It was not treated as an ordinary USD dividend.",
+                        keep_prices=True,
                     )
+                    continue
                 if not event.get("payable_date"):
-                    raise ResearchError(
-                        f"{symbol} dividend on {day} lacks a pay date. Cash timing cannot be guessed."
+                    reject_symbol(
+                        symbol,
+                        f"{symbol} dividend on {day} lacks a pay date. Cash timing cannot be guessed.",
+                        keep_prices=True,
                     )
+                    continue
                 pay = date.fromisoformat(event["payable_date"])
-                if bar.dividend and bar.pay_date != pay:
-                    raise ResearchError(
-                        "Same-day dividends have different pay dates; separate entitlements are required."
+                if pay < day:
+                    reject_symbol(
+                        symbol,
+                        f"{symbol} dividend on {day} has a pay date before its ex-date. Cash timing requires resolution.",
+                        keep_prices=True,
                     )
+                    continue
+                if bar.dividend and bar.pay_date != pay:
+                    reject_symbol(
+                        symbol,
+                        "Same-day dividends have different pay dates; separate entitlements are required.",
+                        keep_prices=True,
+                    )
+                    continue
                 bars[symbol][day] = replace(
                     bar, dividend=bar.dividend + decimal(event["rate"]), pay_date=pay
                 )
             else:
                 old, new = decimal(event["old_rate"]), decimal(event["new_rate"])
                 if old <= ZERO or new <= ZERO:
-                    raise ResearchError("Split ratios must be positive.")
+                    reject_symbol(
+                        symbol, "Split ratios must be positive.", keep_prices=True
+                    )
+                    continue
                 bars[symbol][day] = replace(bar, split=bar.split * new / old)
             applied.append(event)
         progress(65, "Cross-checking action adjustments and missing sessions")
@@ -444,36 +571,43 @@ def download_market(
         health = []
         for symbol in symbols:
             rows = sorted(bars[symbol].values(), key=lambda b: b.session)
-            if not rows and symbol in required_symbols:
-                raise ResearchError(f"No bars were returned for {symbol}.")
-            for before, current in zip(rows, rows[1:]):
-                if (
-                    before.session not in adjusted[symbol]
-                    or current.session not in adjusted[symbol]
-                ):
-                    raise ResearchError(
-                        "The split cross-check has incomplete coverage."
+            try:
+                if not rows and symbol in required_symbols:
+                    raise ResearchError(f"No bars were returned for {symbol}.")
+                for before, current in zip(rows, rows[1:]):
+                    if (
+                        before.session not in adjusted[symbol]
+                        or current.session not in adjusted[symbol]
+                    ):
+                        raise ResearchError(
+                            "The split cross-check has incomplete coverage."
+                        )
+                    previous_adjusted = adjusted[symbol][before.session]
+                    current_adjusted = adjusted[symbol][current.session]
+                    half_cent = Decimal("0.005")
+                    if min(previous_adjusted, current_adjusted) <= half_cent:
+                        raise ResearchError(
+                            f"Adjusted-price precision is insufficient to verify {symbol} on {current.session}."
+                        )
+                    # Adjusted USD prices are cent-rounded by this feed. Check
+                    # compatible rounding intervals rather than exact ratios.
+                    lower = (current_adjusted - half_cent) / (
+                        previous_adjusted + half_cent
                     )
-                previous_adjusted = adjusted[symbol][before.session]
-                current_adjusted = adjusted[symbol][current.session]
-                half_cent = Decimal("0.005")
-                if min(previous_adjusted, current_adjusted) <= half_cent:
-                    raise ResearchError(
-                        f"Adjusted-price precision is insufficient to verify {symbol} on {current.session}."
+                    upper = (current_adjusted + half_cent) / (
+                        previous_adjusted - half_cent
                     )
-                # Adjusted USD prices are cent-rounded by this feed. Check
-                # compatible rounding intervals rather than exact ratios.
-                lower = (current_adjusted - half_cent) / (previous_adjusted + half_cent)
-                upper = (current_adjusted + half_cent) / (previous_adjusted - half_cent)
-                expected_return = current.close * current.split / before.close
-                if (
-                    not lower - Decimal("0.00000001")
-                    <= expected_return
-                    <= upper + Decimal("0.00000001")
-                ):
-                    raise ResearchError(
-                        f"Split/action disagreement for {symbol} on {current.session}. No dataset was published."
-                    )
+                    expected_return = current.close * current.split / before.close
+                    if (
+                        not lower - Decimal("0.00000001")
+                        <= expected_return
+                        <= upper + Decimal("0.00000001")
+                    ):
+                        raise ResearchError(
+                            f"Split/action disagreement for {symbol} on {current.session}. No dataset was published."
+                        )
+            except ResearchError as error:
+                reject_symbol(symbol, str(error), keep_prices=True)
             missing = sorted(set(expected) - bars[symbol].keys())
             health.append(
                 {
@@ -481,6 +615,7 @@ def download_market(
                     "rows": len(rows),
                     "expected": len(expected),
                     "missing_count": len(missing),
+                    "reason": unavailable.get(symbol),
                     "missing_examples": [str(d) for d in missing[:10]],
                     "start": str(rows[0].session) if rows else None,
                     "end": str(rows[-1].session) if rows else None,
@@ -488,7 +623,7 @@ def download_market(
             )
         provenance = {
             "contract": "alpaca-raw-v1",
-            "normalizer_version": "1.0.0",
+            "normalizer_version": "1.2.0",
             "sectors": {
                 s: member_sectors.get(s, "Unknown")
                 if historical
@@ -501,6 +636,8 @@ def download_market(
             "securities": securities,
             "query": query,
             "membership": membership_audit,
+            "identity_resolution": identity_audit,
+            "unavailable_symbols": unavailable,
         }
         raw = json.dumps(provenance, sort_keys=True, separators=(",", ":")).encode()
         digest = hashlib.sha256(raw).hexdigest()
@@ -513,6 +650,8 @@ def download_market(
             "retrieved_at": now(),
             "securities": securities,
             "coverage": health,
+            "unavailable_symbols": unavailable,
+            "identity_resolution": identity_audit,
             "action_count": len(applied),
             "observation_ids": api.observations,
             "download": {"symbols": symbols, "start": str(start), "end": str(end)},
@@ -559,11 +698,18 @@ def download_market(
             )
         if combined:
             if history:
-                membership.validate_coverage(
-                    dataset,
-                    date.fromisoformat(history["coverage_start"]),
-                    date.fromisoformat(history["coverage_end"]),
-                )
+                try:
+                    membership.validate_coverage(
+                        dataset,
+                        date.fromisoformat(history["coverage_start"]),
+                        date.fromisoformat(history["coverage_end"]),
+                    )
+                except ResearchError as error:
+                    metadata["validation_issues"] = [str(error)]
+                    warnings.append(
+                        "Downloaded available data; historical validation is blocked: "
+                        + str(error)
+                    )
             warnings[0] = membership.HISTORY_NOTE
             warnings.append(
                 "Combined current and historical S&P 500 download. Price coverage "
@@ -573,6 +719,10 @@ def download_market(
                 else "Combined S&P 500 download has no supported historical membership "
                 "overlap in this price period; historical backtests are blocked."
             )
+            if unavailable:
+                warnings.append(
+                    f"{len(unavailable)} securities have unresolved identity or accounting inputs. Available raw prices and per-stock reasons are retained. Tests/reviews requiring these inputs are blocked; members are never silently removed."
+                )
         elif historical:
             membership.validate_coverage(dataset, start, end)
             warnings[0] = membership.HISTORY_NOTE
@@ -584,7 +734,15 @@ def download_market(
             warnings.append(
                 "Additional symbols are an explicitly selected fixed supplement, not a historical index; their selection can introduce survivorship/selection bias."
             )
+        if capture_available and not combined and unavailable:
+            warnings.append(
+                f"{len(unavailable)} backfill securities need input verification. Raw prices, when available, and per-stock reasons are retained; affected research/trading is blocked."
+            )
         progress(95, "Saving the immutable market snapshot")
+        if not any(bars.values()):
+            raise ResearchError(
+                "No usable price rows were returned. Captured provider observations are retained; no empty dataset was published."
+            )
         return store.save_dataset(dataset, raw, warnings)
     finally:
         if provider is None:

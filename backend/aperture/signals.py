@@ -32,7 +32,7 @@ def total_return_levels(bars: tuple[Bar, ...] | list[Bar]) -> list[float]:
 
 
 def rank(
-    dataset: Dataset, identifier: str, decision: date
+    dataset: Dataset, identifier: str, decision: date, exit_only: set[str] | None = None
 ) -> tuple[list[RankedStock], list[dict]]:
     strategy(identifier)
     fundamental = identifier in FUNDAMENTAL_STRATEGIES
@@ -45,7 +45,14 @@ def rank(
     expected = calendar.sessions(decision - timedelta(days=740), decision)[-required:]
     ranked: list[RankedStock] = []
     excluded: list[dict] = []
-    members = eligible(dataset, decision)
+    members = eligible(dataset, decision) - (exit_only or set())
+    blocked = members & dataset.metadata.get("unavailable_symbols", {}).keys()
+    if blocked:
+        raise ResearchError(
+            "Required universe members have unavailable/unverified data: "
+            + ", ".join(sorted(blocked)[:12])
+            + ". See Data for the per-stock reasons; they cannot be omitted from ranking."
+        )
     sectors = dataset.sectors
     audit = dataset.metadata.get("membership")
     if audit and audit["kind"] == "combined":

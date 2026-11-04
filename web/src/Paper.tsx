@@ -13,6 +13,8 @@ export type PaperSnapshot = {
   cash: string;
   equity: string;
   spendable_cash: string;
+  buying_power?: string;
+  margin_debit?: string;
   unsettled_sales: string;
   issues: string[];
   positions: {
@@ -27,7 +29,8 @@ export type PaperSnapshot = {
     symbol: string;
     side: string;
     status: string;
-    qty: string;
+    qty?: string | null;
+    notional?: string | null;
     filled_qty: string;
     client_order_id: string;
   }[];
@@ -42,6 +45,11 @@ type Config = {
   data_start: string;
   max_drift: string;
   policy: Record<string, string>;
+  execution_version?: string;
+  universe?: "sp500" | "custom";
+  supplements?: string[];
+  exit_symbols?: string[];
+  funding_policy?: "cash_only" | "paper_margin";
 };
 type Plan = {
   id: string;
@@ -71,6 +79,19 @@ type Plan = {
   notes: string[];
   signals: Decision["signals"];
   excluded: { symbol: string; reason: string }[];
+  config?: Config;
+  staged_orders?: {
+    symbol: string;
+    side: string;
+    notional?: string;
+    qty?: string;
+  }[];
+  deferred_buys?: { symbol: string; amount: string; reason: string }[];
+  funding?: {
+    reference_cash_after: string;
+    debit_if_buys_fill_first: string;
+    buy_budget: string;
+  };
 };
 type Order = {
   client_id: string;
@@ -79,7 +100,12 @@ type Order = {
   side: string;
   state: string;
   updated_at: string;
-  request: { qty: string; limit_price: string };
+  request: {
+    qty?: string;
+    notional?: string;
+    limit_price?: string;
+    type?: string;
+  };
   broker?: {
     id?: string;
     filled_qty?: string;
@@ -113,14 +139,36 @@ type PaperState = {
   last_error?: string | null;
   worker_seen?: string | null;
   automatic_status: string;
+  fill_check?: {
+    status: string;
+    checked_at: string | null;
+    counts: Record<string, number>;
+    issues: string[];
+  } | null;
+  membership_update?: {
+    added: string[];
+    removed: string[];
+    backfill_dataset_id: string | null;
+  } | null;
   quote_waits?: { plan_id: string; reasons: string[] } | null;
 };
 export function usePaper() {
-  return useQuery({
+  const query = useQuery({
     queryKey: ["paper"],
     queryFn: () => api<PaperState>("/paper"),
     refetchInterval: 2500,
   });
+  const checked = query.data?.fill_check?.checked_at;
+  const launchCheck = useQuery({
+    queryKey: ["paper-launch-fill-check"],
+    queryFn: () => api("/paper/actions/sync", {}),
+    enabled:
+      !!query.data?.orders.some((o) => o.state !== "planned") &&
+      (!checked || Date.now() - new Date(checked).getTime() >= 60000),
+    staleTime: Infinity,
+    retry: false,
+  });
+  return { ...query, launchError: launchCheck.error };
 }
 function useAction() {
   const client = useQueryClient();
@@ -222,6 +270,12 @@ export function PaperWeekly({ onPortfolio }: { onPortfolio: () => void }) {
   const data = q.data;
   const cfg = data?.config;
   const latest = data?.plans?.[0];
+  const reviewExisting = data?.plans.some(
+    (p) =>
+      !["complete", "blocked", "stopped", "expired", "superseded"].includes(
+        p.state,
+      ),
+  );
   return (
     <section className="weekly-card">
       <div className="weekly-overline">
@@ -252,10 +306,16 @@ export function PaperWeekly({ onPortfolio }: { onPortfolio: () => void }) {
           className="button light"
           disabled={act.isPending}
           onClick={() =>
-            cfg ? act.mutate({ path: "/actions/prepare" }) : onPortfolio()
+            cfg && !reviewExisting
+              ? act.mutate({ path: "/actions/prepare" })
+              : onPortfolio()
           }
         >
-          {cfg ? "Prepare weekly paper review" : "Set up paper trading"}
+          {reviewExisting
+            ? "Review current paper plan"
+            : cfg
+              ? "Prepare weekly paper review"
+              : "Set up paper trading"}
           <ArrowRight size={16} />
         </button>
         <button className="text-link" onClick={onPortfolio}>
@@ -288,9 +348,49 @@ export default function PaperWorkspace({ state }: { state: State }) {
       }>("/providers"),
   });
   const [editing, setEditing] = useState(false);
+  const [universe, setUniverse] = useState<"sp500" | "sp500_plus" | "custom">(
+    "sp500",
+  );
+  useEffect(() => {
+    setUniverse(
+      cfg
+        ? cfg.universe === "sp500"
+          ? cfg.supplements?.length
+            ? "sp500_plus"
+            : "sp500"
+          : "custom"
+        : "sp500",
+    );
+  }, [cfg?.hash]);
   const [selected, setSelected] = useState("");
   const [ack, setAck] = useState(false);
   const p = data?.plans?.find((p) => p.id === selected) ?? data?.plans?.[0];
+  const latest = data?.plans?.[0];
+  const unfinished = data?.orders.filter(
+    (o) =>
+      o.plan_id === latest?.id &&
+      ["canceled", "expired", "rejected", "replaced"].includes(o.state),
+  );
+  const canReviewRemaining =
+    !!unfinished?.length &&
+    !!latest &&
+    ["blocked", "stopped", "expired", "complete"].includes(latest.state) &&
+    data?.orders.every((o) =>
+      ["filled", "canceled", "expired", "rejected", "replaced"].includes(
+        o.state,
+      ),
+    );
+  const references = new Map(
+    data?.plans.flatMap((plan) =>
+      plan.changes.map(
+        (change) =>
+          [
+            `${plan.id}:${change.symbol}:${change.side}`,
+            Number(change.reference_price),
+          ] as const,
+      ),
+    ),
+  );
   useEffect(() => {
     setAck(false);
   }, [p?.id, p?.state]);
@@ -311,7 +411,10 @@ export default function PaperWorkspace({ state }: { state: State }) {
       body: {
         strategy_id: f.get("strategy_id"),
         mode: f.get("mode"),
-        symbols: String(f.get("symbols"))
+        execution: "broker_market",
+        funding_policy: "paper_margin",
+        universe: universe === "custom" ? "custom" : "sp500",
+        symbols: (universe === "sp500" ? "" : String(f.get("symbols")))
           .split(/[\s,]+/)
           .filter(Boolean),
         data_start: f.get("data_start"),
@@ -319,7 +422,7 @@ export default function PaperWorkspace({ state }: { state: State }) {
         max_weight: String(Number(f.get("max_weight")) / 100),
         sector_cap: String(Number(f.get("sector_cap")) / 100),
         cash_reserve: String(Number(f.get("cash_reserve")) / 100),
-        max_drift: String(Number(f.get("max_drift")) / 100),
+        max_drift: cfg?.max_drift ?? "0.03",
       },
     });
   }
@@ -348,14 +451,76 @@ export default function PaperWorkspace({ state }: { state: State }) {
         broker’s actual balance and never resets it.
       </Notice>
       {query.error && <Notice error>{query.error.message}</Notice>}
+      {query.launchError && (
+        <Notice error>
+          Automatic broker fill check could not be queued:{" "}
+          {query.launchError.message}. Refresh the paper account before
+          preparing another rebalance.
+        </Notice>
+      )}
       {action.error && <Notice error>{action.error.message}</Notice>}
       {action.isSuccess && (
         <Notice>
-          Action saved or queued. Check the current status below and task
-          progress in Activity.
+          {action.variables?.path.endsWith("/approve") && p?.staged_orders
+            ? "Alpaca acceptance confirmed. You may close Aperture; accepted orders remain active. Check actual fills next time you open the platform."
+            : "Action saved or queued. Check the current status below and task progress in Activity."}
         </Notice>
       )}
       {data?.last_error && <Notice error>{data.last_error}</Notice>}
+      {data?.fill_check && (
+        <Notice error={data.fill_check.status === "attention"}>
+          <strong>Broker fill check: {data.fill_check.status}</strong>{" "}
+          {data.fill_check.checked_at
+            ? `Checked ${new Date(data.fill_check.checked_at).toLocaleString()}. `
+            : "Checking is required before another rebalance. "}
+          {Object.entries(data.fill_check.counts)
+            .map(([status, count]) => `${count} ${status}`)
+            .join(" · ")}
+          {data.fill_check.issues.join(" ")}
+        </Notice>
+      )}
+      {data?.membership_update && (
+        <Notice>
+          <strong>S&P 500 membership changed.</strong> Added:{" "}
+          {data.membership_update.added.join(", ") || "none"}. Removed:{" "}
+          {data.membership_update.removed.join(", ") || "none"}.{" "}
+          {data.membership_update.backfill_dataset_id
+            ? "New-member history was captured in Data. "
+            : "Inspect the backfill task in Activity. "}
+          Trading settings stay frozen until you adopt the roster and obtain new
+          matching approval.
+          <button
+            className="button secondary"
+            disabled={
+              action.isPending ||
+              (!!data.membership_update.added.length &&
+                !data.membership_update.backfill_dataset_id)
+            }
+            onClick={() => action.mutate({ path: "/membership/apply" })}
+          >
+            Use updated roster in settings
+          </button>
+        </Notice>
+      )}
+      {!!unfinished?.length && (
+        <Notice>
+          Some orders finished without filling completely. Confirmed fills are
+          retained. Reconcile any open or uncertain orders first, then prepare a
+          fresh next-session review using current prices and remaining holdings.
+          Nothing is resent automatically.
+          <button
+            className="button secondary"
+            disabled={
+              !canReviewRemaining ||
+              action.isPending ||
+              data?.fill_check?.status === "checking"
+            }
+            onClick={() => action.mutate({ path: "/actions/prepare" })}
+          >
+            Review remaining trades
+          </button>
+        </Notice>
+      )}
       <div className="paper-status">
         <Badge tone={workerFresh ? "green" : "amber"}>
           {workerFresh ? "Worker online" : "Worker unavailable or delayed"}
@@ -385,7 +550,8 @@ export default function PaperWorkspace({ state }: { state: State }) {
               <p>{snap.source ?? "Alpaca paper broker"}</p>
               <p>
                 Last checked {new Date(snap.checked_at).toLocaleString()}.
-                Refresh to reconcile; screen changes do not contact the broker.
+                Startup checks owned orders automatically. Refresh to reconcile
+                subsequent broker changes.
               </p>
             </div>
           </div>
@@ -393,17 +559,39 @@ export default function PaperWorkspace({ state }: { state: State }) {
             <div className="card education">
               <h3>Account cash</h3>
               <strong>{money(snap.cash)}</strong>
-              <p>Margin buying power is ignored.</p>
+              <p>
+                {cfg?.funding_policy === "paper_margin"
+                  ? "Negative cash is a simulated margin debit, even if sales were intended to cover it."
+                  : "Margin buying power is ignored by this saved cash-funded policy."}
+              </p>
             </div>
             <div className="card education">
-              <h3>Conservative spendable cash</h3>
-              <strong>{money(snap.spendable_cash)}</strong>
-              <p>Before the policy cash reserve and order-level checks.</p>
+              <h3>
+                {cfg?.funding_policy === "paper_margin"
+                  ? "Paper buying power"
+                  : "Conservative spendable cash"}
+              </h3>
+              <strong>
+                {money(
+                  cfg?.funding_policy === "paper_margin"
+                    ? (snap.buying_power ?? "0")
+                    : snap.spendable_cash,
+                )}
+              </strong>
+              <p>
+                {cfg?.funding_policy === "paper_margin"
+                  ? "Broker-reported regular buying power; orders remain subject to Alpaca checks."
+                  : "Before the policy cash reserve and order-level checks."}
+              </p>
             </div>
             <div className="card education">
               <h3>Unsettled sale proceeds</h3>
               <strong>{money(snap.unsettled_sales)}</strong>
-              <p>Reserved until the next exchange session.</p>
+              <p>
+                {cfg?.funding_policy === "paper_margin"
+                  ? "Shown separately; paper margin can bridge funding before sales settle."
+                  : "Reserved until the next exchange session."}
+              </p>
             </div>
           </div>
           {snap.issues.map((n) => (
@@ -471,35 +659,52 @@ export default function PaperWorkspace({ state }: { state: State }) {
                     Manual — approve each prepared rebalance
                   </option>
                   <option value="automatic">
-                    Automatic — approved policy, running worker required
+                    Automatic — prepare and stage while Aperture is open
                   </option>
                 </select>
               </label>
               <label>
-                US stock universe
-                <textarea
-                  name="symbols"
-                  required
-                  defaultValue={(
-                    cfg?.symbols ??
-                    providers.data?.paper_default_symbols ??
-                    providers.data?.watchlist.symbols ??
-                    []
-                  ).join(" ")}
-                  placeholder="AAPL MSFT … SPY"
-                />
+                Stock universe
+                <select
+                  value={universe}
+                  onChange={(e) =>
+                    setUniverse(
+                      e.target.value as "sp500" | "sp500_plus" | "custom",
+                    )
+                  }
+                >
+                  <option value="sp500">S&P 500 only</option>
+                  <option value="sp500_plus">S&P 500 + custom list</option>
+                  <option value="custom">Custom list only</option>
+                </select>
               </label>
+              {universe !== "sp500" && (
+                <label>
+                  {universe === "sp500_plus"
+                    ? "Additional stock symbols"
+                    : "US stock universe"}
+                  <textarea
+                    name="symbols"
+                    key={universe}
+                    required
+                    defaultValue={(universe === "sp500_plus"
+                      ? (cfg?.supplements ?? [])
+                      : (cfg?.symbols ??
+                        providers.data?.paper_default_symbols ??
+                        providers.data?.watchlist.symbols ??
+                        [])
+                    ).join(" ")}
+                    placeholder="AAPL MSFT … SPY"
+                  />
+                </label>
+              )}
               <label>
-                Historical data starts
+                Backfill history starts
                 <input
                   name="data_start"
                   type="date"
                   required
-                  defaultValue={
-                    cfg?.data_start ??
-                    providers.data?.watchlist.start ??
-                    "2022-01-03"
-                  }
+                  defaultValue={cfg?.data_start ?? "2016-01-04"}
                 />
               </label>
               <div className="form-row">
@@ -548,36 +753,40 @@ export default function PaperWorkspace({ state }: { state: State }) {
                     step="0.1"
                     required
                     defaultValue={
-                      Number(cfg?.policy.cash_reserve ?? 0.02) * 100
+                      Number(cfg?.policy.cash_reserve ?? 0.05) * 100
                     }
-                  />
-                </label>
-                <label>
-                  Maximum price change (%)
-                  <input
-                    type="number"
-                    name="max_drift"
-                    min="0.1"
-                    max="5"
-                    step="0.1"
-                    required
-                    defaultValue={Number(cfg?.max_drift ?? 0.03) * 100}
                   />
                 </label>
               </div>
               <p className="field-hint">
-                Suggested initial policy: 25 names, 5% per stock, 25% per
-                sector, 2% cash and a 3% execution price band. Saving settings
-                does not approve a strategy. No borrowing, shorts or
-                extended-hours orders. Allocation limits are not relaxed to
-                force investment.
+                Suggested initial policy: 25 names, 5% per stock, 25% per sector
+                and 5% cash. Saving settings does not approve a strategy. Paper
+                margin funding permits a simulated debit; no shorts or
+                extended-hours orders. Target limits are not relaxed to force
+                investment.
               </p>
+              <Notice>
+                Broker-staged Market DAY orders execute in the next regular
+                session while your Mac may be off. There is no price cap: actual
+                fill prices, shares and weights can differ from references. Buys
+                use fixed dollar budgets and paper margin buying power so buys
+                and sells can be staged together. A simulated debit can remain
+                overnight if sales fail or fall short. Saving replaces a legacy
+                limit or cash-funded policy and requires matching paper
+                approval.
+              </Notice>
               <button className="button" disabled={action.isPending}>
                 Save paper settings
               </button>
             </form>
           ) : (
             <>
+              <p>
+                Funding:{" "}
+                {cfg.funding_policy === "paper_margin"
+                  ? "Paper margin — simultaneous buys and sells; an overnight simulated debit is possible."
+                  : "Cash-funded — sale-dependent amounts are deferred."}
+              </p>
               <p>
                 <strong>
                   {state.strategies.find((s) => s.id === cfg.strategy_id)?.name}{" "}
@@ -589,13 +798,23 @@ export default function PaperWorkspace({ state }: { state: State }) {
                 positions · {percent(Number(cfg.policy.max_weight))} stock cap ·{" "}
                 {percent(Number(cfg.policy.sector_cap))} sector cap ·{" "}
                 {percent(Number(cfg.policy.cash_reserve))} cash floor ·{" "}
-                {percent(Number(cfg.max_drift))} price band
+                {cfg.execution_version === "paper-broker-market-day-v1"
+                  ? "Broker-staged Market DAY"
+                  : `${percent(Number(cfg.max_drift))} legacy limit price band`}
               </p>
               <p>
-                {cfg.mode === "automatic"
-                  ? "Automatic weekly preparation runs after the week’s final market close and submits in the next regular session, only under explicit automatic paper approval. Keep the worker running through execution and any settlement wait."
-                  : "Manual mode: prepare after a completed close, inspect the plan and separately approve the following session’s paper orders. Keep Aperture running through fills and settlement."}
+                {cfg.execution_version === "paper-broker-market-day-v1"
+                  ? "Prepare and approve outside market hours. Keep Aperture open until every instruction is confirmed accepted at Alpaca, then you may close the app. Closing does not cancel broker-held orders. The next launch checks actual fills before another rebalance."
+                  : cfg.mode === "automatic"
+                    ? "Automatic weekly preparation runs after the week’s final market close and submits in the next regular session, only under explicit automatic paper approval. Keep the worker running through execution and any settlement wait."
+                    : "Manual mode: prepare after a completed close, inspect the plan and separately approve the following session’s paper orders. Keep Aperture running through fills and settlement."}
               </p>
+              {!!cfg.exit_symbols?.length && (
+                <p>
+                  Exit-only holdings: {cfg.exit_symbols.join(", ")}. They can be
+                  reduced, and are excluded from new-buy ranking.
+                </p>
+              )}
             </>
           )}
           {cfg && (
@@ -660,14 +879,17 @@ export default function PaperWorkspace({ state }: { state: State }) {
             <div>
               <h2>Your weekly review</h2>
               <p>
-                One background task reconciles the account, refreshes
-                prices/filings and saves signals, allocations and proposed
-                orders.
+                Preparation reconciles fills, refreshes membership and market
+                inputs, and saves a review. Approval confirms broker acceptance
+                before reporting success; Alpaca handles accepted orders while
+                Aperture is closed.
               </p>
             </div>
             <button
               className="button"
-              disabled={action.isPending}
+              disabled={
+                action.isPending || data?.fill_check?.status === "checking"
+              }
               onClick={() => action.mutate({ path: "/actions/prepare" })}
             >
               Prepare weekly paper review
@@ -709,9 +931,8 @@ export default function PaperWorkspace({ state }: { state: State }) {
                   <p>{p.message}</p>
                 </div>
                 <p>
-                  Signals after {p.decision_session} close · first execution{" "}
-                  {p.execute_session} · settlement continuation through{" "}
-                  {p.last_execution_session}. Target cash{" "}
+                  Signals after {p.decision_session} close · regular-session
+                  execution {p.execute_session}. Target cash{" "}
                   {percent(Number(p.cash_weight))}.
                 </p>
                 <p>
@@ -726,7 +947,11 @@ export default function PaperWorkspace({ state }: { state: State }) {
                         <th>Action</th>
                         <th>Before</th>
                         <th>Target</th>
-                        <th>Maximum shares</th>
+                        <th>
+                          {p.staged_orders
+                            ? "Reference shares"
+                            : "Maximum shares"}
+                        </th>
                         <th>Reference dollars</th>
                       </tr>
                     </thead>
@@ -750,17 +975,45 @@ export default function PaperWorkspace({ state }: { state: State }) {
                 {!p.changes.length && (
                   <p>No orders are needed under this allocation.</p>
                 )}
+                {p.staged_orders && (
+                  <Notice>
+                    {p.staged_orders.length} instructions to stage:{" "}
+                    {p.staged_orders
+                      .map(
+                        (o) =>
+                          `${o.side} ${o.symbol} ${o.notional ? money(o.notional) : `${o.qty} shares`}`,
+                      )
+                      .join(" · ")}
+                    .{" "}
+                    {p.deferred_buys?.length
+                      ? `Deferred buys: ${p.deferred_buys.map((o) => `${o.symbol} ${money(o.amount)}`).join(" · ")}. Prepare a fresh review when cash/capacity is available.`
+                      : p.config?.funding_policy === "paper_margin"
+                        ? "All reviewed dollar budgets are included; paper margin may bridge sale proceeds."
+                        : "No sale-dependent buy amounts are included."}
+                  </Notice>
+                )}
+                {p.funding && p.config?.funding_policy === "paper_margin" && (
+                  <Notice>
+                    Cash after all trades at reference prices:{" "}
+                    {money(p.funding.reference_cash_after)}. Simulated debit if
+                    all buys fill before sells:{" "}
+                    {money(p.funding.debit_if_buys_fill_first)}. These are
+                    estimates; failed sells or price gaps can leave an overnight
+                    debit. No running app is required for accepted orders, and
+                    no automatic liquidation is scheduled.
+                  </Notice>
+                )}
                 {p.notes.map((n) => (
                   <p className="field-hint" key={n}>
                     {n}
                   </p>
                 ))}
                 <Notice>
-                  Fixed-list universe and free annual fundamentals remain
-                  exploratory. Inspect excluded stocks and filings. Buy
-                  quantities may shrink within the reviewed dollar/target/cash
-                  bounds; material changes stop execution and require a new
-                  review.
+                  Free-source inputs remain exploratory. Inspect excluded stocks
+                  and filings.{" "}
+                  {p.staged_orders
+                    ? "Market buys use the displayed dollar budgets; actual shares and portfolio weights depend on fills. Closing Aperture does not cancel accepted orders. Deferred amounts require a fresh review."
+                    : "Buy quantities may shrink within the reviewed dollar/target/cash bounds; material changes require a fresh review."}
                 </Notice>
                 {p.state === "prepared" && (
                   <div className="validation-actions">
@@ -770,8 +1023,9 @@ export default function PaperWorkspace({ state }: { state: State }) {
                         checked={ack}
                         onChange={(e) => setAck(e.target.checked)}
                       />
-                      I reviewed this plan and approve its following-session
-                      PAPER orders within the displayed policy and price bounds.
+                      {p.staged_orders
+                        ? `I reviewed this plan and approve its Market DAY PAPER orders. I accept price gaps, fixed dollar buys and ${p.config?.funding_policy === "paper_margin" ? "paper margin use, including a possible overnight debit" : "the deferred amounts shown"}.`
+                        : "I reviewed this plan and approve its following-session PAPER orders within the displayed policy and price bounds."}
                     </label>
                     <button
                       className="button"
@@ -788,7 +1042,11 @@ export default function PaperWorkspace({ state }: { state: State }) {
                         })
                       }
                     >
-                      Approve paper rebalance
+                      {action.isPending && p.staged_orders
+                        ? "Confirming acceptance at Alpaca…"
+                        : p.staged_orders
+                          ? "Approve & stage at Alpaca"
+                          : "Approve paper rebalance"}
                     </button>
                   </div>
                 )}
@@ -916,7 +1174,10 @@ export default function PaperWorkspace({ state }: { state: State }) {
                         <td>{o.side}</td>
                         <td>{o.status}</td>
                         <td>
-                          {o.filled_qty} / {o.qty}
+                          {o.filled_qty} shares /{" "}
+                          {o.notional
+                            ? money(o.notional)
+                            : `${o.qty ?? "—"} shares`}
                         </td>
                       </tr>
                     ))}
@@ -947,9 +1208,12 @@ export default function PaperWorkspace({ state }: { state: State }) {
                   <th>Stock</th>
                   <th>Action</th>
                   <th>Status</th>
+                  <th>Order type</th>
                   <th>Requested</th>
                   <th>Filled</th>
                   <th>Average fill</th>
+                  <th>Reference price</th>
+                  <th>Fill vs reference</th>
                   <th>Client reference</th>
                 </tr>
               </thead>
@@ -962,11 +1226,40 @@ export default function PaperWorkspace({ state }: { state: State }) {
                       {o.state}
                       <small>{o.broker?.reason}</small>
                     </td>
-                    <td>{o.request.qty}</td>
+                    <td>
+                      {o.request.type === "market" ? "Market DAY" : "Limit DAY"}
+                    </td>
+                    <td>
+                      {o.request.notional
+                        ? money(o.request.notional)
+                        : `${o.request.qty ?? "—"} shares`}
+                    </td>
                     <td>{o.broker?.filled_qty ?? "0"}</td>
                     <td>
                       {o.broker?.filled_avg_price
                         ? money(o.broker.filled_avg_price)
+                        : "—"}
+                    </td>
+                    <td>
+                      {references.get(`${o.plan_id}:${o.symbol}:${o.side}`)
+                        ? money(
+                            references.get(
+                              `${o.plan_id}:${o.symbol}:${o.side}`,
+                            )!,
+                          )
+                        : "—"}
+                    </td>
+                    <td>
+                      {references.get(`${o.plan_id}:${o.symbol}:${o.side}`) &&
+                      o.broker?.filled_avg_price
+                        ? percent(
+                            Number(o.broker.filled_avg_price) /
+                              references.get(
+                                `${o.plan_id}:${o.symbol}:${o.side}`,
+                              )! -
+                              1,
+                            true,
+                          )
                         : "—"}
                     </td>
                     <td>
@@ -1043,6 +1336,8 @@ function Approval({
           departed stocks, annual-filing timing/share basis and static sectors
           remain limited. This permission manages the dedicated paper account’s
           approved universe. No live approval is included.
+          {cfg.execution_version === "paper-broker-market-day-v1" &&
+            ` This policy stages Market DAY orders before the open without a price cap. Fills can gap beyond references. ${cfg.funding_policy === "paper_margin" ? "Paper margin may fund buys before sales fill, and a simulated debit can remain overnight. The cash reserve is a reference target, not a guaranteed final balance." : "Buy dollar budgets use available cash; sale-dependent amounts remain deferred."}`}
         </Notice>
         <label>
           Approval rationale
@@ -1071,12 +1366,16 @@ function Approval({
             onChange={(e) => setAck(e.target.checked)}
           />
           I accept these research/data limits and the displayed policy for this
-          dedicated, long-only, unleveraged PAPER account.
+          dedicated, long-only PAPER account
+          {cfg.funding_policy === "paper_margin"
+            ? ", including simulated margin and possible overnight debit"
+            : ", without margin borrowing"}
+          .
         </label>
         <label className="check-label">
           <input type="checkbox" name="allow_automatic" />
-          Also permit automatic weekly PAPER execution under this exact policy
-          while the worker runs.
+          Also permit automatic weekly PAPER preparation and staging under this
+          exact policy while Aperture is open.
         </label>
         <button className="button" disabled={!connected || !ack || busy}>
           Record paper strategy approval

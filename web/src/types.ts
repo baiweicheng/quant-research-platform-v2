@@ -77,9 +77,12 @@ export type Dataset = {
       expected: number;
       missing_count: number;
       missing_examples: string[];
+      reason?: string | null;
       start: string | null;
       end: string | null;
     }[];
+    unavailable_symbols?: Record<string, string>;
+    validation_issues?: string[];
     [key: string]: unknown;
   };
 };

@@ -236,7 +236,7 @@ export default function App() {
                 onClose={() => setDialog(null)}
                 onQueued={() => {
                   setToast(
-                    "Task queued. Results are saved even if you switch pages.",
+                    "Task submitted. Activity shows its current status; saved results stay available.",
                   );
                   navigate("/activity");
                 }}
@@ -574,6 +574,24 @@ function DataPage({
                 <p className="data-source">
                   <strong>Source</strong> {dataset.source}
                 </p>
+                {!!Object.keys(dataset.metadata?.unavailable_symbols ?? {})
+                  .length && (
+                  <Notice error>
+                    {
+                      Object.keys(dataset.metadata?.unavailable_symbols ?? {})
+                        .length
+                    }{" "}
+                    securities have unavailable or unverified inputs. Available
+                    raw prices are retained. Affected backtests and reviews are
+                    blocked. Open coverage below for each reason; these members
+                    remain in the dataset.
+                  </Notice>
+                )}
+                {dataset.metadata?.validation_issues?.map((reason) => (
+                  <Notice error key={reason}>
+                    {reason}
+                  </Notice>
+                ))}
                 {dataset.metadata?.fundamentals && (
                   <FundamentalDetails data={dataset.metadata.fundamentals} />
                 )}
@@ -603,6 +621,7 @@ function DataPage({
                                 {row.rows
                                   ? `${row.start} – ${row.end}`
                                   : "No prices returned"}
+                                {row.reason && <small>{row.reason}</small>}
                               </td>
                             </tr>
                           ))}
@@ -635,10 +654,12 @@ function DataPage({
         <div className="card education">
           <h3>What about automatic downloads?</h3>
           <p>
-            Alpaca downloads run in a background task and preserve source
-            responses. Point-in-time fundamentals use a separate SEC pipeline.
-            Yahoo was evaluated as a possible cross-check; its default adjusted
-            history is not substituted into the as-traded ledger.
+            Weekly paper preparation refreshes S&P membership, backfills new
+            members and updates prices and required SEC filings. Ordinary weekly
+            use needs no separate Data download. Membership changes pause for
+            your review and new approval. Keep Aperture open through preparation
+            and confirmed order acceptance; Alpaca then holds the orders while
+            your Mac is off.
           </p>
         </div>
       </div>

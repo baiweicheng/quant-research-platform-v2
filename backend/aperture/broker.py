@@ -123,13 +123,9 @@ class Broker:
             for k in ("trading_blocked", "account_blocked", "trade_suspended_by_user")
         ):
             issues.append("The broker has blocked trading on this account.")
-        if (
-            cash < ZERO
-            or equity <= ZERO
-            or decimal(account.get("short_market_value", "0")) != ZERO
-        ):
+        if equity <= ZERO or decimal(account.get("short_market_value", "0")) != ZERO:
             issues.append(
-                "This account has borrowing, short exposure or nonpositive equity. Resolve it at the broker first."
+                "This account has short exposure or nonpositive equity. Resolve it at the broker first."
             )
         clean = []
         for p in positions:
@@ -187,7 +183,8 @@ class Broker:
             )
             if funded >= day:
                 funding_reserve += amount
-        # Neither account buying_power nor margin multipliers can fund this planner.
+        # Preserve both measures. The explicitly approved funding policy decides
+        # whether paper margin may fund orders; cash-only plans still ignore it.
         nonmargin = decimal(account.get("non_marginable_buying_power", cash))
         spendable = max(ZERO, min(cash, nonmargin) - unsettled - funding_reserve)
         if any(
@@ -210,13 +207,27 @@ class Broker:
             "cash": str(cash),
             "equity": str(equity),
             "spendable_cash": str(spendable),
+            "buying_power": str(
+                max(
+                    ZERO,
+                    min(
+                        decimal(account.get("buying_power", cash)),
+                        decimal(
+                            account.get(
+                                "regt_buying_power", account.get("buying_power", cash)
+                            )
+                        ),
+                    ),
+                )
+            ),
+            "margin_debit": str(max(ZERO, -cash)),
             "unsettled_sales": str(unsettled),
             "recent_funding_reserve": str(funding_reserve),
             "positions": clean,
             "open_orders": orders,
             "clock": clock,
             "issues": issues,
-            "account_type": "Paper account; margin buying power is ignored",
+            "account_type": "Paper account; funding follows the approved platform policy",
             "settlement_policy": "Conservative T+1 sale-proceeds exclusion; broker restrictions can be stricter.",
         }
 

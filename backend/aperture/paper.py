@@ -2,7 +2,7 @@
 
 import hashlib
 import json
-from datetime import UTC, date, datetime
+from datetime import UTC, date, datetime, timedelta
 from decimal import ROUND_DOWN
 from uuid import uuid4
 
@@ -72,7 +72,55 @@ def save_configuration(store, data):
         raise ResearchError("Choose a maximum price change between 0.1% and 5%.")
     from .providers import validate_symbols
 
-    symbols = validate_symbols(data["symbols"])
+    universe = data.get("universe", "custom")
+    extras = []
+    exit_symbols = []
+    captured = None
+    exit_sectors = {}
+    if universe == "sp500":
+        from . import membership
+
+        captured = membership.fresh(store, "current")
+        if (
+            data.get("expected_membership_id")
+            and captured["id"] != data["expected_membership_id"]
+        ):
+            raise ResearchError(
+                "Membership changed since the displayed review. Prepare a fresh membership review before changing settings."
+            )
+        extras = membership.symbols(data["symbols"], allow_empty=True)
+        symbols = sorted(
+            {m["symbol"] for m in captured["members"]} | set(extras) | {"SPY"}
+        )
+        previous = configuration(store) or {}
+        held = {
+            p["symbol"]
+            for p in store.preference("paper_snapshot", {}).get("positions", [])
+            if decimal(p["qty"]) > ZERO
+        }
+        known = set(previous.get("symbols", []))
+        exit_symbols = sorted(
+            (known & held) - set(symbols)
+            | (set(previous.get("exit_symbols", [])) - set(symbols))
+        )
+        prior_roster = (
+            store.membership("current", previous["membership_id"])
+            if previous.get("membership_id")
+            else None
+        )
+        prior_sectors = (
+            {m["symbol"]: m["sector"] for m in prior_roster["members"]}
+            if prior_roster
+            else {}
+        )
+        exit_sectors = {
+            s: previous.get("exit_sectors", {}).get(s, prior_sectors.get(s, "Unknown"))
+            for s in exit_symbols
+        }
+        symbols = sorted(set(symbols) | set(exit_symbols))
+    else:
+        symbols = validate_symbols(data["symbols"])
+    symbols = validate_symbols(symbols)
     if not any(s != "SPY" for s in symbols):
         raise ResearchError("Choose at least one US stock for the paper universe.")
     symbols = sorted(set(symbols) | {"SPY"})
@@ -96,12 +144,23 @@ def save_configuration(store, data):
         "max_drift": str(decimal(data["max_drift"])),
         "symbols": symbols,
         "data_start": str(start),
-        "execution_version": "paper-limits-v1",
+        "execution_version": "paper-broker-market-day-v1"
+        if data.get("execution") == "broker_market"
+        else "paper-limits-v1",
+        "universe": universe,
+        "supplements": extras,
+        "membership_id": captured["id"] if captured else None,
+        "exit_symbols": exit_symbols,
+        "exit_sectors": exit_sectors,
         "environment": "paper",
+        "funding_policy": data.get("funding_policy", "cash_only")
+        if data.get("execution") == "broker_market"
+        else "cash_only",
     }
     body["hash"] = digest(body)
     body.update(mode=data["mode"], paused=False, updated_at=now())
     store.set_preference("paper_config", body)
+    store.set_preference("paper_membership_update", None)
     event(
         store,
         "Paper settings saved. Matching strategy, account and policy approval is required before submission.",
@@ -124,6 +183,52 @@ def approval(store, cfg=None, snapshot=None):
         if row
         else None
     )
+
+
+def apply_membership_update(store):
+    cfg = configuration(store)
+    pending = store.preference("paper_membership_update")
+    current = store.membership("current")
+    if (
+        not cfg
+        or not pending
+        or pending["config_hash"] != cfg["hash"]
+        or not current
+        or current["id"] != pending["membership_id"]
+    ):
+        raise ResearchError(
+            "Membership/settings changed. Prepare a fresh weekly membership review first."
+        )
+    if pending["added"] and not pending["backfill_dataset_id"]:
+        raise ResearchError(
+            "The new-member backfill needs attention. Retry weekly preparation before adopting this roster."
+        )
+    saved = save_configuration(
+        store,
+        {
+            "strategy_id": cfg["strategy_id"],
+            "mode": cfg["mode"],
+            "universe": "sp500",
+            "execution": "broker_market"
+            if cfg["execution_version"] == "paper-broker-market-day-v1"
+            else "local_limit",
+            "symbols": cfg.get("supplements", []),
+            "expected_membership_id": pending["membership_id"],
+            "data_start": cfg["data_start"],
+            "max_drift": cfg["max_drift"],
+            "funding_policy": cfg.get("funding_policy", "cash_only"),
+            **cfg["policy"],
+        },
+    )
+    if saved["symbols"] != pending["expected_symbols"]:
+        raise ResearchError(
+            "Roster changed during settings update. Inspect settings and prepare a fresh review before approval."
+        )
+    if cfg["paused"]:
+        saved["paused"] = True
+        store.set_preference("paper_config", saved)
+    store.set_preference("paper_membership_update", None)
+    return saved
 
 
 def approve_strategy(store, data):
@@ -274,6 +379,8 @@ def public_state(store):
         "automatic_status": store.preference(
             "paper_auto_status", "Manual mode. Prepare a weekly review when ready."
         ),
+        "fill_check": store.preference("paper_fill_check"),
+        "membership_update": store.preference("paper_membership_update"),
     }
 
 
@@ -291,6 +398,13 @@ def signature(snap):
 
 def reconcile(store, broker, performance=False, dataset=None):
     snap = broker.snapshot()
+    if (
+        decimal(snap["cash"]) < ZERO
+        and (configuration(store) or {}).get("funding_policy") != "paper_margin"
+    ):
+        snap["issues"].append(
+            "This cash-funded policy does not permit a margin debit. Resolve negative cash at the broker first."
+        )
     store.set_preference("paper_snapshot", snap)
     store.set_preference("paper_error", None)
     # Track every known broker order by immutable client identifier, including after restart.
@@ -388,13 +502,96 @@ def prepare(store, job, progress, broker):
     from .providers import download_market
 
     latest = calendar.latest_complete()
+    # Current signals need a bounded rolling window, not a repeated ten-year
+    # research download. New-member backfills still use the full saved start.
+    current_start = (
+        max(date.fromisoformat(cfg["data_start"]), latest - timedelta(days=740))
+        if cfg["execution_version"] == "paper-broker-market-day-v1"
+        else date.fromisoformat(cfg["data_start"])
+    )
+    index = cfg.get("universe") == "sp500"
+    if index:
+        from . import membership
+
+        progress(12, "Refreshing S&P membership and checking additions/removals")
+        captures = membership.refresh_all(store)
+        current = captures["current"]
+        eligible_names = (
+            {m["symbol"] for m in current["members"]}
+            | set(cfg.get("supplements", []))
+            | {"SPY"}
+        )
+        old_exits = set(cfg.get("exit_symbols", []))
+        old_eligible = set(cfg["symbols"]) - old_exits
+        added, removed = (
+            sorted(eligible_names - old_eligible),
+            sorted(old_eligible - eligible_names),
+        )
+        held_symbols = {
+            p["symbol"] for p in snap["positions"] if decimal(p["qty"]) > ZERO
+        }
+        expected_exits = (old_exits | (set(removed) & held_symbols)) - eligible_names
+        expected = eligible_names | expected_exits
+        if added or removed:
+            pending = {
+                "config_hash": cfg["hash"],
+                "membership_id": current["id"],
+                "added": added,
+                "removed": removed,
+                "expected_symbols": sorted(expected),
+                "checked_at": now(),
+                "backfill_dataset_id": None,
+                "exit_symbols": sorted(expected_exits),
+            }
+            store.set_preference("paper_membership_update", pending)
+            if added:
+                progress(
+                    15,
+                    "Backfilling available history for new members; trading list stays frozen",
+                )
+                backfill = download_market(
+                    store,
+                    {
+                        "name": "New S&P members — approval pending",
+                        "universe": "custom",
+                        "capture_available": True,
+                        "symbols": added,
+                        "start": cfg["data_start"],
+                        "end": str(latest),
+                    },
+                    lambda n, t: progress(15 + round(n * 0.7), t),
+                )
+                pending["backfill_dataset_id"] = backfill["id"]
+                if cfg != configuration(store):
+                    raise ResearchError(
+                        "Paper settings changed during backfill. Captured data is retained; prepare a fresh review under the current settings."
+                    )
+                store.set_preference("paper_membership_update", pending)
+            return {
+                "completion_message": "Membership changed. New-member history was captured where available. Review additions/removals in Portfolio, update settings and obtain matching paper approval before a new plan. No orders submitted.",
+                "membership_update": pending,
+            }
+        store.set_preference("paper_membership_update", None)
     saved = download_market(
         store,
         {
             "name": "Paper universe",
             "symbols": cfg["symbols"],
-            "start": cfg["data_start"],
+            "start": str(current_start),
             "end": str(latest),
+            **(
+                {
+                    "universe": "sp500_current",
+                    "symbols": cfg.get("supplements", [])
+                    + [
+                        s
+                        for s in cfg.get("exit_symbols", [])
+                        if s in {h["symbol"] for h in snap["positions"]}
+                    ],
+                }
+                if index
+                else {}
+            ),
         },
         lambda n, t: progress(10 + round(n * 0.5), t),
     )
@@ -405,11 +602,19 @@ def prepare(store, job, progress, broker):
             store, saved["id"], lambda n, t: progress(60 + round(n * 0.25), t)
         )
     ds = store.dataset(saved["id"])
+    if cfg.get("exit_sectors"):
+        from dataclasses import replace
+
+        ds = replace(ds, sectors={**ds.sectors, **cfg["exit_sectors"]})
     if ds.kind == "synthetic" or ds.metadata.get("provider") != "alpaca":
         raise ResearchError("Paper preparation requires captured actual Alpaca prices.")
     if max(b.session for rows in ds.bars.values() for b in rows) != latest:
         raise ResearchError("Data is not current through the latest completed session.")
-    ranked, excluded = rank(ds, cfg["strategy_id"], latest)
+    ranked, excluded = (
+        rank(ds, cfg["strategy_id"], latest, set(cfg.get("exit_symbols", [])))
+        if cfg.get("exit_symbols")
+        else rank(ds, cfg["strategy_id"], latest)
+    )
     policy = policy_from(
         {**cfg["policy"], "positions": int(cfg["policy"]["positions"])}
     )
@@ -493,6 +698,42 @@ def prepare(store, job, progress, broker):
             "Prices, positions, cash, approval and caps are rechecked before every submission; a changed plan requires a fresh review.",
         ],
     }
+    from .staged import VERSION, instructions
+
+    if cfg["execution_version"] == VERSION:
+        body["last_execution_session"] = body["execute_session"]
+        body["staged_orders"], body["deferred_buys"] = instructions(
+            identifier, cfg, snap, changes, body["targets"]
+        )
+        buy_budget = sum(
+            (
+                decimal(o["notional"])
+                for o in body["staged_orders"]
+                if o["side"] == "buy"
+            ),
+            ZERO,
+        )
+        sale_reference = sum(
+            (decimal(c["max_notional"]) for c in changes if c["side"] == "sell"), ZERO
+        )
+        body["funding"] = {
+            "policy": cfg.get("funding_policy", "cash_only"),
+            "buy_budget": str(buy_budget),
+            "reference_sale_proceeds": str(sale_reference),
+            "reference_cash_after": str(
+                decimal(snap["cash"]) + sale_reference - buy_budget
+            ),
+            "debit_if_buys_fill_first": str(
+                max(ZERO, buy_budget - decimal(snap["cash"]))
+            ),
+        }
+        body["notes"] = notes + [
+            "Regular-session Market DAY orders are sent to Alpaca before the next open, with extended hours disabled. Actual fills can differ without a price cap; reference share counts and weights are estimates.",
+            "Paper margin funding stages buys and sells together within broker buying power. The reference portfolio retains the approved cash reserve, but buys can fill first and sales can fail or fall short. A simulated debit or allocation drift may remain overnight; the app does not need to run during execution or automatically liquidate positions."
+            if cfg.get("funding_policy") == "paper_margin"
+            else "Buys use frozen dollar budgets funded from available cash, with cash/fee reserves. They do not depend on staged sells filling. Sale-dependent buys are deferred to a fresh review on a later launch.",
+            "Keep Aperture open until all instructions are confirmed accepted at Alpaca. Then the Mac may be off; closing the app does not cancel accepted orders. Actual fills and positions are checked on the next launch.",
+        ]
     if cfg != configuration(store):
         raise ResearchError(
             "Paper settings changed during preparation. No plan was published."
@@ -531,17 +772,26 @@ def schedule(store, identifier):
         )
     if a["account_key"] != p["account_key"]:
         raise ResearchError("The paper account changed. Prepare a new review.")
-    if datetime.now(UTC) >= calendar.close_time(
-        date.fromisoformat(p["execute_session"])
-    ):
+    from .staged import VERSION
+
+    deadline = (
+        calendar.open_time
+        if cfg["execution_version"] == VERSION
+        else calendar.close_time
+    )
+    if datetime.now(UTC) >= deadline(date.fromisoformat(p["execute_session"])):
         raise ResearchError(
-            "The intended execution session has closed. Prepare a new review with current data."
+            "The staging deadline has passed. Prepare a current review for the next regular session."
+            if cfg["execution_version"] == VERSION
+            else "The intended execution session has closed. Prepare a new review with current data."
         )
     set_state(
         store,
         identifier,
         "scheduled",
-        "Rebalance approved for the following regular session; worker must remain running.",
+        "Rebalance approved. Keep Aperture open until all orders are confirmed accepted at Alpaca."
+        if cfg["execution_version"] == VERSION
+        else "Rebalance approved for the following regular session; worker must remain running.",
     )
     return plan(store, identifier)
 
@@ -628,6 +878,10 @@ def expected_positions(p, local_orders):
 
 def execute_plan(store, p, broker, at=None):
     at = at or datetime.now(UTC)
+    from .staged import VERSION, execute as stage_orders
+
+    if p.get("config", {}).get("execution_version") == VERSION:
+        return stage_orders(store, p, broker, at)
     cfg = configuration(store)
     a = approval(store)
     if not cfg or cfg.get("paused") or cfg["hash"] != p["config_hash"] or not a:
@@ -925,7 +1179,12 @@ def tick(store, at=None, broker=None):
     following = calendar.next_session(latest)
     if latest.isocalendar()[:2] == following.isocalendar()[:2]:
         return
-    if at >= calendar.close_time(following):
+    deadline = (
+        calendar.open_time(following)
+        if cfg["execution_version"] == "paper-broker-market-day-v1"
+        else calendar.close_time(following)
+    )
+    if at >= deadline:
         store.set_preference(
             "paper_auto_status",
             "The weekly execution session was missed. Prepare a manual current review; no stale catch-up order will be submitted.",
@@ -940,5 +1199,7 @@ def tick(store, at=None, broker=None):
     store.enqueue("paper_prepare", {"config_hash": cfg["hash"], "automatic": True})
     store.set_preference(
         "paper_auto_status",
-        f"Weekly preparation queued after {latest}. Worker must remain running for next-session execution.",
+        f"Weekly preparation queued after {latest}. Keep Aperture running until all orders are confirmed accepted at Alpaca."
+        if cfg["execution_version"] == "paper-broker-market-day-v1"
+        else f"Weekly preparation queued after {latest}. Worker must remain running for next-session execution.",
     )

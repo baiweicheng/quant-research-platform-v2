@@ -94,6 +94,9 @@ def parse_current(text):
                 "name": row[1],
                 "sector": row[2],
                 "cik": row[6].zfill(10),
+                "date_added": re.search(r"\d{4}-\d{2}-\d{2}", row[5]).group(0)
+                if re.search(r"\d{4}-\d{2}-\d{2}", row[5])
+                else None,
             }
         )
     if not 490 <= len(members) <= 520 or len({m["symbol"] for m in members}) != len(
@@ -211,6 +214,12 @@ def refresh(store: Store, kind: str, client=None):
 
 def fresh(store, kind):
     snapshot = store.membership(kind)
+    if (
+        kind == "current"
+        and snapshot
+        and any("date_added" not in m for m in snapshot["members"])
+    ):
+        return refresh(store, kind)
     if snapshot and datetime.now(timezone.utc) - datetime.fromisoformat(
         snapshot["captured_at"]
     ) < timedelta(hours=24):
@@ -369,6 +378,16 @@ def validate_coverage(dataset, start, end):
     historical_names(audit, end)
     by_day = {s: {b.session for b in bars} for s, bars in dataset.bars.items()}
     for day in calendar.sessions(start, end):
+        blocked = (
+            historical_names(audit, day)
+            & dataset.metadata.get("unavailable_symbols", {}).keys()
+        )
+        if blocked:
+            raise ResearchError(
+                "Historical S&P 500 coverage has unverified inputs for "
+                + ", ".join(sorted(blocked)[:12])
+                + ". See per-stock Data reasons; these members cannot be dropped."
+            )
         missing = sorted(
             s for s in historical_names(audit, day) if day not in by_day.get(s, set())
         )

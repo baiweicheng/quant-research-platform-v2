@@ -332,7 +332,7 @@ it("downloads a custom stock list from the interface without exposing credential
     .mock.calls.find((call) => call[0] === "/api/downloads")!;
   expect(JSON.parse(String(call[1]?.body))).toMatchObject({
     symbols: ["AAPL", "CUSTOM"],
-    start: "2022-01-03",
+    start: "2016-01-04",
     end: "2025-12-31",
   });
   expect(String(call[1]?.body)).not.toMatch(/secret|api_key/i);

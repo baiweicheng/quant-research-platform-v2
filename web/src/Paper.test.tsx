@@ -67,10 +67,13 @@ it("defaults to manual and saves exact policy and dates without activation", asy
   expect(
     await screen.findByRole("combobox", { name: "Rebalance mode" }),
   ).toHaveValue("manual");
+  fireEvent.change(screen.getByRole("combobox", { name: "Stock universe" }), {
+    target: { value: "custom" },
+  });
   fireEvent.change(screen.getByRole("textbox", { name: "US stock universe" }), {
     target: { value: "AAPL SPY" },
   });
-  fireEvent.change(screen.getByLabelText("Historical data starts"), {
+  fireEvent.change(screen.getByLabelText("Backfill history starts"), {
     target: { value: "2023-01-03" },
   });
   await userEvent.click(
@@ -81,7 +84,9 @@ it("defaults to manual and saves exact policy and dates without activation", asy
     mode: "manual",
     data_start: "2023-01-03",
     max_weight: "0.05",
-    cash_reserve: "0.02",
+    cash_reserve: "0.05",
+    execution: "broker_market",
+    universe: "custom",
   });
   expect(fetch.mock.calls.some((c) => String(c[0]).includes("/approval"))).toBe(
     false,
@@ -223,4 +228,124 @@ it("prepares read-only data through one action and exposes cash settlement separ
         String(c[0]).includes("/plans/") || String(c[0]).includes("/approval"),
     ),
   ).toBe(false);
+});
+
+it("shows staged dollar orders, actual fill checks and gap acknowledgement", async () => {
+  const paper = {
+    config: {
+      ...cfg,
+      execution_version: "paper-broker-market-day-v1",
+      universe: "sp500",
+    },
+    snapshot,
+    fill_check: {
+      status: "checked",
+      checked_at: new Date().toISOString(),
+      counts: { filled: 1 },
+      issues: [],
+    },
+    plans: [
+      {
+        ...savedPlan("market"),
+        staged_orders: [{ symbol: "AAPL", side: "buy", notional: "4995" }],
+        deferred_buys: [
+          { symbol: "MSFT", amount: "2000", reason: "Cash wait" },
+        ],
+      },
+    ],
+    orders: [
+      {
+        client_id: "one",
+        plan_id: "market",
+        symbol: "AAPL",
+        side: "buy",
+        state: "filled",
+        updated_at: new Date().toISOString(),
+        request: { notional: "4995", type: "market" },
+        broker: { filled_qty: "39.96", filled_avg_price: "125" },
+      },
+    ],
+    events: [],
+  };
+  mount(paper);
+  expect(await screen.findByText("Broker fill check: checked")).toBeVisible();
+  expect(screen.getByText(/1 filled/)).toBeVisible();
+  expect(screen.getByText("$125.00")).toBeVisible();
+  expect(
+    screen.getByRole("checkbox", { name: /I accept price gaps/ }),
+  ).not.toBeChecked();
+  expect(screen.getByText(/Deferred buys: MSFT/)).toBeVisible();
+  expect(
+    screen.getByRole("button", { name: "Approve & stage at Alpaca" }),
+  ).toBeDisabled();
+});
+
+it("offers a fresh review after expired orders and never directly resends them", async () => {
+  const fetch = mount({
+    config: cfg,
+    snapshot,
+    plans: [savedPlan("expired", "blocked", "An order expired")],
+    orders: [
+      {
+        client_id: "old",
+        plan_id: "expired",
+        symbol: "AAPL",
+        side: "buy",
+        state: "expired",
+        request: { notional: "100", type: "market" },
+      },
+    ],
+    events: [],
+  });
+  const review = await screen.findByRole("button", {
+    name: "Review remaining trades",
+  });
+  expect(review).toBeEnabled();
+  await userEvent.click(review);
+  expect(fetch).toHaveBeenCalledWith(
+    "/api/paper/actions/prepare",
+    expect.objectContaining({ method: "POST" }),
+  );
+  expect(fetch.mock.calls.some((c) => String(c[0]).includes("/approve"))).toBe(
+    false,
+  );
+});
+
+it("requires completed new-member backfill before adopting a changed roster", async () => {
+  const client = new QueryClient();
+  const paper = {
+    config: cfg,
+    snapshot,
+    plans: [],
+    orders: [],
+    events: [],
+    membership_update: {
+      added: ["NEW"],
+      removed: ["OLD"],
+      backfill_dataset_id: null,
+    },
+  };
+  const fetch = mount(paper, client);
+  const adopt = await screen.findByRole("button", {
+    name: "Use updated roster in settings",
+  });
+  expect(adopt).toBeDisabled();
+  await act(async () => {
+    client.setQueryData(["paper"], {
+      ...paper,
+      membership_update: {
+        ...paper.membership_update,
+        backfill_dataset_id: "history",
+      },
+    });
+  });
+  await waitFor(() => expect(adopt).toBeEnabled());
+  await userEvent.click(adopt);
+  expect(fetch).toHaveBeenCalledWith(
+    "/api/paper/membership/apply",
+    expect.objectContaining({ method: "POST" }),
+  );
+  expect(fetch.mock.calls.some((c) => String(c[0]).includes("/approval"))).toBe(
+    false,
+  );
 });

@@ -471,6 +471,10 @@ def test_default_api_is_full_index_and_navigation_does_not_refresh(
         ("sp500", "future_member"),
         ("sp500", "reuse"),
         ("sp500", "missing_member"),
+        ("sp500", "matching_duplicate"),
+        ("sp500", "duplicate_before_add"),
+        ("sp500", "unsupported_action"),
+        ("sp500", "invalid_pay_date"),
     ],
 )
 def test_full_index_download_batches_and_keeps_all_members(
@@ -485,6 +489,10 @@ def test_full_index_download_batches_and_keeps_all_members(
     )
     if universe == "sp500":
         refresh_fixture(store, "current", html())
+        if scenario == "duplicate_before_add":
+            refresh_fixture(
+                store, "current", html().replace("2020-01-01", "2024-05-08")
+            )
         if scenario == "future_member":
             refresh_fixture(
                 store, "current", html([f"S{i:03}" for i in range(502)] + ["FUTURE"])
@@ -510,15 +518,16 @@ def test_full_index_download_batches_and_keeps_all_members(
     def handler(request):
         calls.append(request)
         if "/assets/" in request.url.path:
+            requested_symbol = request.url.path.rsplit("/", 1)[-1]
             return httpx.Response(
                 200,
                 json={
-                    "id": "S000-id",
-                    "symbol": "S000",
+                    "id": requested_symbol + "-id",
+                    "symbol": requested_symbol,
                     "class": "us_equity",
                     "exchange": "NASDAQ",
-                    "status": "inactive",
-                    "name": "Archived Common Stock",
+                    "status": "inactive" if requested_symbol == "S000" else "active",
+                    "name": requested_symbol + " Common Stock",
                 },
             )
         if request.url.path.endswith("/assets"):
@@ -538,10 +547,45 @@ def test_full_index_download_batches_and_keeps_all_members(
             ]
             if inactive and scenario in ("reuse", "outside_reuse"):
                 assets.append({**assets[0], "symbol": "S001", "id": "old-reused-id"})
+            if inactive and scenario in ("matching_duplicate", "duplicate_before_add"):
+                assets.append(
+                    {
+                        **assets[0],
+                        "symbol": "S001",
+                        "name": "S001 Common Stock",
+                        "id": "old-duplicate-id",
+                    }
+                )
             return httpx.Response(200, json=assets)
         requested = request.url.params["symbols"].split(",")
         assert len(requested) <= 100
         if request.url.path.endswith("corporate-actions"):
+            if (
+                scenario in ("unsupported_action", "invalid_pay_date")
+                and "S000" in requested
+            ):
+                return httpx.Response(
+                    200,
+                    json={
+                        "corporate_actions": {
+                            "cash_dividends": [
+                                {
+                                    "id": "foreign-dividend",
+                                    "symbol": "S000",
+                                    "ex_date": "2024-05-07",
+                                    "payable_date": "2024-05-06"
+                                    if scenario == "invalid_pay_date"
+                                    else "2024-05-10",
+                                    "rate": "1",
+                                    "foreign": scenario == "unsupported_action",
+                                    "currency": "USD"
+                                    if scenario == "invalid_pay_date"
+                                    else None,
+                                }
+                            ]
+                        }
+                    },
+                )
             return httpx.Response(200, json={"corporate_actions": {}})
         return httpx.Response(
             200,
@@ -577,7 +621,7 @@ def test_full_index_download_batches_and_keeps_all_members(
             "start": str(start),
             "end": str(end),
         }
-        if historical and scenario in ("reuse", "missing_member"):
+        if universe == "sp500_historical" and scenario in ("reuse", "missing_member"):
             with pytest.raises(
                 ResearchError,
                 match="Ambiguous historical identity"
@@ -589,9 +633,13 @@ def test_full_index_download_batches_and_keeps_all_members(
             return
         result = download_market(store, payload, lambda *a: None, provider)
     assert set(result["symbols"]) == names
-    assert result["row_count"] == (len(names) - (scenario == "future_member")) * len(
-        days
-    )
+    assert result["row_count"] == (
+        len(names)
+        - (
+            scenario == "future_member"
+            or (universe == "sp500" and scenario in ("reuse", "duplicate_before_add"))
+        )
+    ) * len(days) - (scenario == "missing_member")
     if scenario == "large":
         assert result["row_count"] > 80000
     ds = Store(store.path).dataset(result["id"])
@@ -599,11 +647,36 @@ def test_full_index_download_batches_and_keeps_all_members(
     if universe == "sp500":
         assert audit["kind"] == "combined"
         assert audit["historical_source"]["id"] == snapshot["id"]
-        if scenario in ("beyond", "outside", "outside_reuse"):
-            with pytest.raises(ResearchError, match="membership"):
+        if scenario in (
+            "beyond",
+            "outside",
+            "outside_reuse",
+            "reuse",
+            "missing_member",
+            "duplicate_before_add",
+            "unsupported_action",
+            "invalid_pay_date",
+        ):
+            with pytest.raises(ResearchError, match="membership|coverage"):
                 membership.validate_coverage(ds, start, end)
+            if scenario == "reuse":
+                assert "S001" in ds.metadata["unavailable_symbols"]
+                with pytest.raises(ResearchError, match="unavailable/unverified"):
+                    rank(ds, "momentum", start)
         else:
             membership.validate_coverage(ds, start, end)
+        if scenario == "matching_duplicate":
+            assert (
+                ds.metadata["identity_resolution"]["S001"]["basis"]
+                == "provider_symbol_lookup_matching_listing"
+            )
+            assert ds.metadata["identity_resolution"]["S001"]["candidate_ids"] == [
+                "S001-id",
+                "old-duplicate-id",
+            ]
+        if scenario == "invalid_pay_date":
+            assert "before its ex-date" in ds.metadata["unavailable_symbols"]["S000"]
+            assert ds.bars["S000"] and all(b.dividend == 0 for b in ds.bars["S000"])
         if scenario == "future_member":
             assert ds.bars["FUTURE"] == ()
             assert (

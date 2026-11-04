@@ -53,8 +53,10 @@ def run(
     validate_coverage(dataset, days[0], days[-1])
     portfolio = Portfolio(capital)
     benchmark = Portfolio(capital)
-    benchmark_ready = "SPY" in all_by_day and all(
-        day in all_by_day["SPY"] for day in days
+    benchmark_ready = (
+        "SPY" not in dataset.metadata.get("unavailable_symbols", {})
+        and "SPY" in all_by_day
+        and all(day in all_by_day["SPY"] for day in days)
     )
     reference_policy = Policy(
         positions=1,

@@ -43,16 +43,18 @@ function setup() {
   return fetcher;
 }
 afterEach(() => vi.unstubAllGlobals());
-it("defaults to the entire index and allows an empty supplement", async () => {
+it("defaults to S&P only with the earliest supported start and no custom input", async () => {
   const fetcher = setup();
   await screen.findByText(/Historical backtest membership: 1996-01-02/);
   const select = screen.getByLabelText("Stock universe");
   expect(select).toHaveValue("sp500");
-  expect(screen.getAllByRole("option")).toHaveLength(2);
+  expect(screen.getAllByRole("option")).toHaveLength(3);
   expect(screen.getByText(/1,200 unique securities/)).toBeVisible();
   expect(
-    screen.getByLabelText("Additional stock symbols (optional)"),
-  ).not.toBeRequired();
+    screen.queryByLabelText("Additional stock symbols"),
+  ).not.toBeInTheDocument();
+  expect(screen.getByLabelText("Dataset name")).toHaveValue("S&P 500");
+  expect(screen.getByLabelText("History from")).toHaveValue("2016-01-04");
   await userEvent.click(
     screen.getByRole("button", { name: "Download & validate" }),
   );
@@ -68,12 +70,19 @@ it("defaults to the entire index and allows an empty supplement", async () => {
 it("submits supplements and keeps price dates separate from membership coverage", async () => {
   const fetcher = setup();
   await screen.findByText(/Historical backtest membership: 1996-01-02/);
+  await userEvent.selectOptions(
+    screen.getByLabelText("Stock universe"),
+    "sp500_plus",
+  );
+  expect(screen.getByLabelText("Dataset name")).toHaveValue(
+    "S&P 500 + custom list",
+  );
   await userEvent.type(
-    screen.getByLabelText("Additional stock symbols (optional)"),
+    screen.getByLabelText("Additional stock symbols"),
     "XYZ, ABC",
   );
   expect(screen.getByLabelText("Through session")).toHaveValue("2026-11-02");
-  expect(screen.getByLabelText("History from")).toHaveValue("2026-10-28");
+  expect(screen.getByLabelText("History from")).toHaveValue("2016-01-04");
   expect(
     screen.getByText(/Backtests automatically use dated membership/),
   ).toBeVisible();
@@ -87,7 +96,7 @@ it("submits supplements and keeps price dates separate from membership coverage"
   expect(JSON.parse(call![1].body)).toMatchObject({
     universe: "sp500",
     symbols: ["XYZ", "ABC"],
-    start: "2026-10-28",
+    start: "2016-01-04",
     end: "2026-11-02",
   });
 });
@@ -120,6 +129,9 @@ it("keeps custom lists explicit and explains the final change date", async () =>
     "custom",
   );
   expect(screen.getByLabelText("Stock symbols")).toBeRequired();
+  expect(screen.getByLabelText("Dataset name")).toHaveValue(
+    "Custom stock list",
+  );
   await userEvent.type(screen.getByLabelText("Stock symbols"), "ABC");
   await userEvent.click(
     screen.getByRole("button", { name: "Download & validate" }),
@@ -132,4 +144,16 @@ it("keeps custom lists explicit and explains the final change date", async () =>
     universe: "custom",
     symbols: ["ABC"],
   });
+});
+
+it("preserves a user-written dataset name when the universe changes", async () => {
+  setup();
+  await screen.findByText(/Historical backtest membership: 1996-01-02/);
+  await userEvent.clear(screen.getByLabelText("Dataset name"));
+  await userEvent.type(screen.getByLabelText("Dataset name"), "My research");
+  await userEvent.selectOptions(
+    screen.getByLabelText("Stock universe"),
+    "custom",
+  );
+  expect(screen.getByLabelText("Dataset name")).toHaveValue("My research");
 });

@@ -2,7 +2,7 @@ import { useState } from "react";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { useNavigate } from "react-router-dom";
 import { FileText, ArrowRight } from "lucide-react";
-import { api, percent, shortDate } from "./api";
+import { api, datasetLabel, percent, shortDate } from "./api";
 import { Badge, Notice } from "./components";
 import type { Dataset, Decision, FundamentalCoverage } from "./types";
 
@@ -73,7 +73,7 @@ export function FundamentalsPanel({ datasets }: { datasets: Dataset[] }) {
               >
                 {available.map((d) => (
                   <option value={d.id} key={d.id}>
-                    {d.name}
+                    {datasetLabel(d, available)}
                   </option>
                 ))}
               </select>
