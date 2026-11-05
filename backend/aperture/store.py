@@ -1,6 +1,7 @@
 """Transactional local persistence. Immutable inputs and results travel together."""
 
 import gzip
+import hashlib
 import json
 import sqlite3
 from contextlib import contextmanager
@@ -48,6 +49,7 @@ class Store:
                     resource TEXT NOT NULL, fetched_at TEXT NOT NULL,
                     digest TEXT NOT NULL, body BLOB NOT NULL);
                 CREATE INDEX IF NOT EXISTS observations_resource ON observations(provider,resource,fetched_at);
+                CREATE INDEX IF NOT EXISTS observations_digest ON observations(digest);
                 CREATE TABLE IF NOT EXISTS preferences (key TEXT PRIMARY KEY, value TEXT NOT NULL);
                 INSERT OR IGNORE INTO schema_version VALUES (2);
                 CREATE TABLE IF NOT EXISTS protocols (
@@ -61,6 +63,9 @@ class Store:
                     id TEXT PRIMARY KEY, kind TEXT NOT NULL, captured_at TEXT NOT NULL,
                     body BLOB NOT NULL, raw BLOB NOT NULL);
                 INSERT OR IGNORE INTO schema_version VALUES (4);
+                CREATE TABLE IF NOT EXISTS content_blobs (
+                    digest TEXT PRIMARY KEY, body BLOB NOT NULL);
+                INSERT OR IGNORE INTO schema_version VALUES (6);
             """)
         self.path.chmod(0o600)
         from .paper import initialize
@@ -99,6 +104,84 @@ class Store:
                 yield db
         finally:
             db.close()
+
+    @staticmethod
+    def _blob(db, raw: bytes) -> str:
+        digest = hashlib.sha256(raw).hexdigest()
+        if db.execute(
+            "SELECT 1 FROM content_blobs WHERE digest=?", (digest,)
+        ).fetchone():
+            return digest
+        db.execute(
+            "INSERT OR IGNORE INTO content_blobs VALUES (?,?)",
+            (digest, gzip.compress(raw, mtime=0)),
+        )
+        return digest
+
+    @staticmethod
+    def _read_blob(db, digest):
+        row = db.execute(
+            "SELECT body FROM content_blobs WHERE digest=?", (digest,)
+        ).fetchone()
+        if row is None:
+            raise ResearchError(
+                "A shared snapshot block is missing. Restore the complete workspace database from backup."
+            )
+        raw = gzip.decompress(row[0])
+        if hashlib.sha256(raw).hexdigest() != digest:
+            raise ResearchError(
+                "A shared snapshot block failed its content hash check. Restore the complete workspace database from backup."
+            )
+        return raw
+
+    def _share_bars(self, db, body):
+        if "bar_chunks" in body:
+            return
+        chunks = {}
+        for bar in body.pop("bars"):
+            key = (bar["symbol"], bar["session"][:7])
+            chunks.setdefault(key, []).append(bar)
+        body["bar_chunks"] = [
+            self._blob(
+                db,
+                json.dumps(
+                    sorted(rows, key=lambda row: row["session"]),
+                    sort_keys=True,
+                    separators=(",", ":"),
+                ).encode(),
+            )
+            for _, rows in sorted(chunks.items())
+        ]
+
+    def _share_fundamentals(self, db, body):
+        if "fundamental_chunks" not in body:
+            body["fundamental_chunks"] = {
+                s: self._blob(
+                    db, json.dumps(rows, sort_keys=True, separators=(",", ":")).encode()
+                )
+                for s, rows in body.pop("fundamentals", {}).items()
+            }
+
+    def share_dataset_storage(self, identifier):
+        """Convert legacy physical storage atomically; logical inputs/digest stay identical."""
+        with self.connect() as db:
+            row = db.execute(
+                "SELECT body FROM datasets WHERE id=?", (identifier,)
+            ).fetchone()
+            if row is None:
+                raise ResearchError("That dataset was not found.")
+            body = decode(row[0])
+            if "bar_chunks" not in body or "fundamental_chunks" not in body:
+                self._share_bars(db, body)
+                self._share_fundamentals(db, body)
+                db.execute(
+                    "UPDATE datasets SET body=? WHERE id=?", (encode(body), identifier)
+                )
+
+    def capture_source(self, raw: bytes) -> str:
+        """Retain a normalized acquisition input once, even without a dataset row."""
+        with self.connect() as db:
+            return self._blob(db, raw)
 
     def save_dataset(self, dataset: Dataset, raw: bytes, warnings: list[str]) -> dict:
         days = sorted({bar.session for rows in dataset.bars.values() for bar in rows})
@@ -164,6 +247,8 @@ class Store:
             ).fetchone()
             if existing:
                 return {**json.loads(existing[0]), "already_imported": True}
+            self._share_bars(db, body)
+            self._share_fundamentals(db, body)
             db.execute(
                 "INSERT INTO datasets VALUES (?,?,?,?,?)",
                 (
@@ -190,9 +275,20 @@ class Store:
             row = db.execute(
                 "SELECT body FROM datasets WHERE id=?", (identifier,)
             ).fetchone()
-        if not row:
-            raise ResearchError("That dataset was not found. Choose one from Data.")
-        body = decode(row[0])
+            if not row:
+                raise ResearchError("That dataset was not found. Choose one from Data.")
+            body = decode(row[0])
+            if "bar_chunks" in body:
+                body["bars"] = [
+                    bar
+                    for digest in body["bar_chunks"]
+                    for bar in json.loads(self._read_blob(db, digest))
+                ]
+            if "fundamental_chunks" in body:
+                body["fundamentals"] = {
+                    s: json.loads(self._read_blob(db, digest))
+                    for s, digest in body["fundamental_chunks"].items()
+                }
         summary = body["summary"]
         # Preserve requested securities with zero returned bars, such as a
         # current member whose listing began after a historical download period.
@@ -258,10 +354,13 @@ class Store:
             )
 
     def observe(self, provider: str, resource: str, raw: bytes) -> str:
-        import hashlib
-
         identifier = str(uuid4())
         with self.connect() as db:
+            digest = self._blob(db, raw)
+            db.execute(
+                "UPDATE observations SET body=? WHERE digest=? AND substr(body,1,6)!=?",
+                (b"@blob:" + digest.encode(), digest, b"@blob:"),
+            )
             db.execute(
                 "INSERT INTO observations VALUES (?,?,?,?,?,?)",
                 (
@@ -269,8 +368,8 @@ class Store:
                     provider,
                     resource,
                     now(),
-                    hashlib.sha256(raw).hexdigest(),
-                    gzip.compress(raw, mtime=0),
+                    digest,
+                    b"@blob:" + digest.encode(),
                 ),
             )
         return identifier
@@ -290,7 +389,13 @@ class Store:
             ).total_seconds()
             < seconds
         ):
-            return json.loads(gzip.decompress(row["body"])), row["id"]
+            packed = row["body"]
+            if packed.startswith(b"@blob:"):
+                with self.connect() as db:
+                    raw = self._read_blob(db, packed[6:].decode())
+            else:
+                raw = gzip.decompress(packed)
+            return json.loads(raw), row["id"]
         return None
 
     def enqueue(self, kind: str, payload: dict) -> dict:

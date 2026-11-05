@@ -50,6 +50,8 @@ The app opens empty. Practice data is never silently loaded. Account metrics rem
 
 For real research, download market data in Data, then add SEC fundamentals to create a combined snapshot. Select that snapshot when running a fundamental or blended strategy. Review factor values, filing availability and exclusions under “Why these stocks?” in the result. Annual US-GAAP support is deliberately limited; unsupported inputs are excluded. See the research contract before interpreting results.
 
+To bring existing research forward, use **Data → Update a saved dataset → Update dataset**, then select the new snapshot in Research. Existing stocks refresh a recent overlap plus new sessions; new members receive historical backfill, and SEC-enriched selections refresh filings too. Unchanged prices, filings and provider responses share storage. See [snapshot updates and storage](docs/SNAPSHOTS.md) for older-history, reproducibility, recovery and backup limits.
+
 AI-assisted discovery and broader operational reliability/automation remain future milestones. Real-money trading requires a separate later readiness review and explicit authorization.
 
 ## Start paper trading deliberately
@@ -88,6 +90,6 @@ Application state and submitted imports are local and Git-ignored. Stop Aperture
 
 ## Provider setup
 
-Copy `.env.example` to ignored `.env` and set `ALPACA_API_KEY`, `ALPACA_SECRET_KEY` with **paper** keys. Set `SEC_USER_AGENT` to a descriptive name and your contact email for SEC requests. Keys are read locally, are never sent to the browser, and must never be committed. In Data, test the connection, edit the watchlist/date range and select Download & validate. The default watchlist is a manageable research starting point, not a buy recommendation or historical index universe.
+Copy `.env.example` to ignored `.env` and set `ALPACA_API_KEY`, `ALPACA_SECRET_KEY` with **paper** keys. Set `SEC_USER_AGENT` to a descriptive name and your contact email for SEC requests. Keys are read locally, are never sent to the browser, and must never be committed. In Data, test the connection, select the universe and date range, then choose Download & validate. The default is the S&P 500 current and historical universe; custom lists remain exploratory and are not buy recommendations.
 
 See [milestone validation](docs/MILESTONES.md) for actual provider checks, coverage limits and subsequent build stages.

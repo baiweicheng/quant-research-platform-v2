@@ -361,6 +361,28 @@ def create_app(
             {"dataset_id": dataset.metadata.get("price_dataset_id", dataset.id)},
         )
 
+    @app.post("/api/datasets/{dataset_id}/update", status_code=202)
+    def update_dataset(dataset_id: str):
+        dataset = next((d for d in store.datasets() if d["id"] == dataset_id), None)
+        if dataset is None:
+            raise ResearchError("That dataset was not found. Choose one from Data.")
+        if (
+            dataset["kind"] == "synthetic"
+            or dataset.get("metadata", {}).get("provider") != "alpaca"
+        ):
+            raise ResearchError(
+                "Choose a downloaded Alpaca dataset to update. Import a new CSV for other sources."
+            )
+        settings().headers()
+        if (
+            dataset.get("metadata", {}).get("fundamentals")
+            and "@" not in settings().sec_agent
+        ):
+            raise ResearchError(
+                "Configure SEC_USER_AGENT before updating a dataset with SEC fundamentals."
+            )
+        return store.enqueue("dataset_update", {"dataset_id": dataset_id})
+
     @app.post("/api/tasks/{kind}", status_code=202)
     def task(kind: Literal["backtest", "review"], payload: TaskRequest):
         strategy(payload.strategy_id)

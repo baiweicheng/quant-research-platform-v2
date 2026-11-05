@@ -169,7 +169,13 @@ def batch_pages(api, path, query, key):
 
 
 def download_market(
-    store: Store, payload: dict, progress, provider: Provider | None = None
+    store: Store,
+    payload: dict,
+    progress,
+    provider: Provider | None = None,
+    *,
+    persist=True,
+    resolved=None,
 ) -> dict:
     start, end = (
         date.fromisoformat(payload["start"]),
@@ -180,10 +186,10 @@ def download_market(
         raise ResearchError(
             f"Choose dates from 2016-01-04 through the latest completed session, {latest}."
         )
-    symbols, membership_audit, member_sectors = membership.resolve(
+    symbols, membership_audit, member_sectors = resolved or membership.resolve(
         store, payload, start, end
     )
-    symbols = validate_symbols(symbols)
+    symbols = membership.symbols(symbols) if resolved else validate_symbols(symbols)
     expected = calendar.sessions(start, end)
     available_at = {day: calendar.available_time(day) for day in expected}
     if len(expected) * len(symbols) > membership.MAX_BARS:
@@ -743,7 +749,11 @@ def download_market(
             raise ResearchError(
                 "No usable price rows were returned. Captured provider observations are retained; no empty dataset was published."
             )
-        return store.save_dataset(dataset, raw, warnings)
+        return (
+            store.save_dataset(dataset, raw, warnings)
+            if persist
+            else (dataset, raw, warnings)
+        )
     finally:
         if provider is None:
             api.close()

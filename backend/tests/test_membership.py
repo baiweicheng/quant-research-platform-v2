@@ -3,6 +3,7 @@
 import copy
 import csv
 import io
+from unittest.mock import patch
 from dataclasses import replace
 from datetime import date, datetime, timedelta
 from decimal import Decimal as D
@@ -51,9 +52,19 @@ def history_csv():
 
 
 def refresh_fixture(store, kind, text):
-    with httpx.Client(
-        transport=httpx.MockTransport(lambda r: httpx.Response(200, text=text))
-    ) as client:
+    with (
+        httpx.Client(
+            transport=httpx.MockTransport(lambda r: httpx.Response(200, text=text))
+        ) as client,
+        patch(
+            "aperture.membership_sources.extend",
+            side_effect=lambda rows, *a: (
+                rows,
+                {"history_version": "legacy-fixture"},
+                [],
+            ),
+        ),
+    ):
         return membership.refresh(store, kind, client)
 
 
@@ -305,6 +316,10 @@ def test_combined_refresh_job_uses_both_sources_and_reports_incomplete_refresh(
             return original(store, kind, client)
 
     monkeypatch.setattr(membership, "refresh", refresh)
+    monkeypatch.setattr(
+        "aperture.membership_sources.extend",
+        lambda rows, *a: (rows, {"history_version": "legacy-fixture"}, []),
+    )
     with TestClient(app) as client:
         assert client.post("/api/membership/all/refresh", json={}).status_code == 403
         response = client.post(

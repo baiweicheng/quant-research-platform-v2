@@ -151,7 +151,8 @@ def refresh(store: Store, kind: str, client=None):
     url = CURRENT_URL if kind == "current" else HISTORY_URL
     owned = client is None
     client = client or httpx.Client(timeout=45, follow_redirects=False)
-    try:
+
+    def fetch(url):
         try:
             response = client.get(
                 url,
@@ -166,6 +167,11 @@ def refresh(store: Store, kind: str, client=None):
             ) from None
         if len(response.content) > 16 * 1024 * 1024:
             raise ResearchError("Membership response exceeded the 16 MB limit.")
+        return response
+
+    try:
+        response = fetch(url)
+        raw = response.content
         captured = now()
         body = {
             "kind": kind,
@@ -194,7 +200,13 @@ def refresh(store: Store, kind: str, client=None):
                 initial=previous is None,
             )
         else:
+            from .membership_sources import extend
+
             rosters = parse_history(response.text)
+            rosters, verification, evidence = extend(rosters, captured, fetch)
+            raw = json.dumps(
+                {"archive": response.text, "evidence": evidence}, sort_keys=True
+            ).encode()
             body.update(
                 rosters=rosters,
                 member_count=len(rosters[-1]["symbols"]),
@@ -203,10 +215,12 @@ def refresh(store: Store, kind: str, client=None):
                 roster_count=len(rosters),
                 limitation=HISTORY_NOTE,
             )
+            body.update(verification)
+            body["source_digest"] = hashlib.sha256(raw).hexdigest()
         body["id"] = hashlib.sha256(
             json.dumps(body, sort_keys=True).encode()
         ).hexdigest()[:24]
-        return store.save_membership(body, response.content)
+        return store.save_membership(body, raw)
     finally:
         if owned:
             client.close()
@@ -214,6 +228,17 @@ def refresh(store: Store, kind: str, client=None):
 
 def fresh(store, kind):
     snapshot = store.membership(kind)
+    if kind == "historical" and snapshot and not snapshot.get("history_version"):
+        return refresh(store, kind)
+    if (
+        snapshot
+        and (kind == "current" or snapshot.get("verified_through"))
+        and snapshot["coverage_end"] < str(calendar.latest_complete())
+    ):
+        # A new completed session needs a new verification even if yesterday's
+        # capture is less than 24 hours old. Otherwise daily downloads would
+        # reproduce the same stale-tail failure for the most recent session.
+        return refresh(store, kind)
     if (
         kind == "current"
         and snapshot
@@ -262,7 +287,7 @@ def historical_names(snapshot, day):
         )
     if not snapshot["coverage_start"] <= str(day) <= snapshot["coverage_end"]:
         raise ResearchError(
-            f"Historical S&P 500 membership covers {snapshot['coverage_start']} through {snapshot['coverage_end']}. Refresh membership or choose dates inside this range; the last roster is never extrapolated without verified later coverage."
+            f"Historical S&P 500 membership covers {snapshot['coverage_start']} through {snapshot['coverage_end']}. In Data, use Update dataset to capture verified later membership and prices in a new snapshot, or choose dates inside this range; the last roster is never extrapolated without verified later coverage."
         )
     index = bisect_right([r["effective"] for r in snapshot["rosters"]], str(day)) - 1
     return set(snapshot["rosters"][index]["symbols"])

@@ -248,19 +248,30 @@ def inputs(dataset: Dataset, symbol: str, decision: date) -> tuple[dict, str | N
 
 
 def attach(
-    store: Store, dataset_id: str, progress, provider: Provider | None = None
+    store: Store,
+    dataset_id: str,
+    progress,
+    provider: Provider | None = None,
+    *,
+    refresh=False,
 ) -> dict:
     requested = store.dataset(dataset_id)
     if requested.kind == "synthetic":
         raise ResearchError(
             "SEC fundamentals cannot be attached to fictional practice symbols. Choose an actual market dataset."
         )
-    base = store.dataset(requested.metadata.get("price_dataset_id", requested.id))
+    base = (
+        store.dataset(requested.metadata["price_dataset_id"])
+        if requested.metadata.get("price_dataset_id")
+        else requested
+    )
     api = provider or Provider(store)
     try:
         progress(3, "Loading the SEC issuer/ticker directory")
         directory = api.get(
-            "sec", "https://www.sec.gov/files/company_tickers_exchange.json", ttl=86400
+            "sec",
+            "https://www.sec.gov/files/company_tickers_exchange.json",
+            ttl=0 if refresh else 86400,
         )
         rows = [dict(zip(directory["fields"], row)) for row in directory["data"]]
         mapping = {}
@@ -290,12 +301,14 @@ def attach(
                 continue
             cik = next(iter(ciks))
             submissions = api.get(
-                "sec", f"https://data.sec.gov/submissions/CIK{cik}.json", ttl=3600
+                "sec",
+                f"https://data.sec.gov/submissions/CIK{cik}.json",
+                ttl=0 if refresh else 3600,
             )
             company = api.get(
                 "sec",
                 f"https://data.sec.gov/api/xbrl/companyfacts/CIK{cik}.json",
-                ttl=3600,
+                ttl=0 if refresh else 3600,
             )
             if (
                 str(company.get("cik", "")).zfill(10) != cik

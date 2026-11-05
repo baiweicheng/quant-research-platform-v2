@@ -129,6 +129,19 @@ def execute(store: Store, job: dict):
             },
         )
         return
+    if job["kind"] == "dataset_update":
+        from .dataset_updates import update as update_dataset
+
+        saved = update_dataset(store, payload["dataset_id"], update)
+        store.finish(
+            job,
+            {
+                "dataset_id": saved["id"],
+                "dataset_name": saved["name"],
+                "completion_message": f"Updated {saved['name']} through {saved['end']} in a new snapshot. Select the newest dataset in Research; previous snapshots are preserved and unchanged price blocks share storage. Inspect Data for unresolved inputs before backtesting.",
+            },
+        )
+        return
     if job["kind"] == "connection":
         from .providers import Provider
         from .config import PAPER_URL, DATA_URL

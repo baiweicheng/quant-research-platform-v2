@@ -28,6 +28,7 @@ import {
 import { ImportDialog, StrategyDialog, TaskDialog } from "./dialogs";
 import Research from "./Research";
 import MarketData from "./MarketData";
+import DatasetUpdates from "./DatasetUpdates";
 import PaperWorkspace, { PaperPerformance, PaperWeekly } from "./Paper";
 import {
   FundamentalDetails,
@@ -486,6 +487,7 @@ function DataPage({
         </button>
       </div>
       <MarketData />
+      <DatasetUpdates datasets={state.datasets} />
       <FundamentalsPanel datasets={state.datasets} />
       <div className="data-start card">
         <span className="soft-icon">
@@ -966,6 +968,7 @@ function ActivityPage({
                       {{
                         practice: "Prepare practice data",
                         download: "Download market data",
+                        dataset_update: "Update saved dataset",
                         connection: "Check paper/data access",
                         membership: "Refresh S&P 500 membership",
                         fundamentals: "Add SEC fundamentals",

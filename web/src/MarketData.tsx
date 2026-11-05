@@ -26,6 +26,10 @@ type Membership = {
   unique_member_count?: number;
   coverage_start: string;
   coverage_end: string;
+  last_change?: string;
+  verified_through?: string;
+  verification_basis?: string;
+  events?: { source: string }[];
   added?: string[];
   removed?: string[];
   initial?: boolean;
@@ -149,11 +153,26 @@ export default function MarketData() {
                     </p>
                     <p className="field-hint">
                       {kind === "historical"
-                        ? `Last recorded change: ${saved.coverage_end}; ${saved.member_count} securities in that roster. A last change date is not an expiry date. Later membership must be verified before extending backtest coverage.`
+                        ? `Last recorded change: ${saved.last_change ?? saved.coverage_end}; ${saved.member_count} securities in that roster. A last change date is not an expiry date. ${saved.verified_through ? `Verified through ${saved.verified_through} using dated announcements and current-roster reconciliation.` : "Update membership to verify later coverage."}`
                         : saved.initial
                           ? "First capture saved. Future refreshes report additions and removals."
                           : `Changes since previous capture: added ${saved.added?.join(", ") || "none"}; removed ${saved.removed?.join(", ") || "none"}.`}
                     </p>
+                    {saved.events && (
+                      <p className="field-hint">
+                        Dated primary evidence:{" "}
+                        {[
+                          ...new Set(saved.events.map((event) => event.source)),
+                        ].map((source, index) => (
+                          <span key={source}>
+                            {index > 0 && " · "}
+                            <a href={source} target="_blank" rel="noreferrer">
+                              Source {index + 1}
+                            </a>
+                          </span>
+                        ))}
+                      </p>
+                    )}
                   </div>
                 )
               );
@@ -237,7 +256,7 @@ export default function MarketData() {
           )}
           <p className="field-hint">
             {universe !== "custom"
-              ? "Includes today's full S&P 500 and every historical member recorded during the selected period, including departures and separate share classes. Both membership sources refresh when over 24 hours old."
+              ? "Includes today's full S&P 500 and every historical member recorded during the selected period, including departures and separate share classes. Membership refreshes when over 24 hours old or coverage trails a new completed session."
               : "Downloads only your custom stock list."}{" "}
             SPY is always included only as a benchmark.
           </p>
