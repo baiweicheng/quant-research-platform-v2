@@ -441,7 +441,10 @@ def test_default_api_is_full_index_and_navigation_does_not_refresh(
     tmp_path, monkeypatch
 ):
     app = create_app(tmp_path / "a.sqlite")
-    monkeypatch.setattr("aperture.api.settings", lambda: Settings("key", "secret"))
+    monkeypatch.setattr(
+        "aperture.api.settings",
+        lambda: Settings("key", "secret", "Research test test@example.com"),
+    )
     monkeypatch.setattr(
         membership,
         "refresh",

@@ -234,7 +234,16 @@ class Store:
                     else None,
                     **{
                         key: str(getattr(bar, key))
-                        for key in ("open", "high", "low", "close", "split", "dividend")
+                        for key in (
+                            "open",
+                            "high",
+                            "low",
+                            "close",
+                            "split",
+                            "dividend",
+                            "research_dividend",
+                            "research_distribution",
+                        )
                     },
                 }
                 for rows in dataset.bars.values()
@@ -303,7 +312,18 @@ class Store:
                 if item["available_at"]
                 else None
             )
-            for key in ("open", "high", "low", "close", "split", "dividend"):
+            for key in (
+                "open",
+                "high",
+                "low",
+                "close",
+                "split",
+                "dividend",
+                "research_dividend",
+                "research_distribution",
+            ):
+                if key not in item:
+                    continue
                 item[key] = decimal(item[key])
             bar = Bar(**item)
             bars.setdefault(bar.symbol, []).append(bar)
@@ -499,6 +519,10 @@ class Store:
         ):
             if key in body:
                 summary[key] = body[key]
+        if isinstance(body.get("coverage"), dict) and "mode" in body["coverage"]:
+            summary["coverage"] = {
+                k: body["coverage"][k] for k in ("mode", "excluded_count")
+            }
         if "windows" in body:
             summary["metrics"] = body["windows"]["All"]["metrics"]
         with self.connect() as db:

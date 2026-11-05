@@ -1,4 +1,3 @@
-import json
 from datetime import date
 
 import httpx
@@ -244,7 +243,9 @@ def test_api_configuration_is_redacted_and_download_payloads_have_no_keys(
             ).status_code
             == 422
         )
-        env.write_text("ALPACA_API_KEY=example-key\nALPACA_SECRET_KEY=example-secret\n")
+        env.write_text(
+            "ALPACA_API_KEY=example-key\nALPACA_SECRET_KEY=example-secret\nSEC_USER_AGENT=Test test@example.com\n"
+        )
         info = client.get("/api/providers")
         assert info.json()["alpaca_configured"]
         assert "example-secret" not in info.text and "example-key" not in info.text

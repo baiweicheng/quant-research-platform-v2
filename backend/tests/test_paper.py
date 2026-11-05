@@ -201,9 +201,7 @@ def paper(tmp_path, monkeypatch):
         {"provider": "alpaca"},
     )
     summary = store.save_dataset(ds, b"fixture", [])
-    monkeypatch.setattr(
-        "aperture.providers.download_market", lambda *args, **kw: summary
-    )
+    monkeypatch.setattr("aperture.bundles.download", lambda *args, **kw: summary)
     monkeypatch.setattr(
         "aperture.paper.rank",
         lambda *args: (

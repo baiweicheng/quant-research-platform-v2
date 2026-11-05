@@ -299,8 +299,8 @@ def test_api_fundamental_queue_gates_and_end_to_end(monkeypatch, tmp_path, datas
     app.state.store.save_dataset(base, b"prices", [])
     monkeypatch.setattr(
         "aperture.fundamentals.attach",
-        lambda store, identifier, progress: attach(
-            store, identifier, progress, FixtureProvider()
+        lambda store, identifier, progress, **kw: attach(
+            store, identifier, progress, FixtureProvider(), **kw
         ),
     )
     with TestClient(app) as client:

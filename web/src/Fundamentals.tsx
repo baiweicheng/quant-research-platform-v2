@@ -3,6 +3,7 @@ import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { useNavigate } from "react-router-dom";
 import { FileText, ArrowRight } from "lucide-react";
 import { api, datasetLabel, percent, shortDate } from "./api";
+import { snapshotGroups } from "./snapshots";
 import { Badge, Notice } from "./components";
 import type { Dataset, Decision, FundamentalCoverage } from "./types";
 
@@ -14,7 +15,15 @@ export function FundamentalsPanel({ datasets }: { datasets: Dataset[] }) {
     queryFn: () => api<{ sec_configured: boolean }>("/providers"),
     staleTime: 30000,
   });
-  const available = datasets.filter((d) => d.kind !== "synthetic");
+  const completed = new Set(datasets.map((d) => d.metadata?.price_dataset_id));
+  const available = snapshotGroups(
+    datasets.filter(
+      (d) =>
+        d.kind !== "synthetic" &&
+        !d.metadata?.fundamentals &&
+        !completed.has(d.id),
+    ),
+  ).latest;
   const [selected, setSelected] = useState("");
   const id = selected || available[0]?.id || "";
   const task = useMutation({
@@ -24,12 +33,13 @@ export function FundamentalsPanel({ datasets }: { datasets: Dataset[] }) {
       navigate("/activity");
     },
   });
+  if (!available.length) return null;
   return (
     <section className="card market-data">
       <div className="card-header">
         <div>
           <span className="eyebrow">A BUSINESS BEHIND EVERY PRICE</span>
-          <h2>Add SEC fundamentals</h2>
+          <h2>Complete SEC download</h2>
           <p>Annual financial statements, with the filing date preserved.</p>
         </div>
         <Badge tone={config.data?.sec_configured ? "green" : ""}>
@@ -40,8 +50,9 @@ export function FundamentalsPanel({ datasets }: { datasets: Dataset[] }) {
       </div>
       <div className="card-body">
         <p>
-          Unlock profitability, quality value, and Value + Momentum. Prices stay
-          in their original snapshot; a new combined dataset holds both inputs.
+          Retry the SEC stage for an unfinished download, or add SEC filings to
+          imported CSV data. The completed snapshot contains both prices and
+          fundamentals.
         </p>
         {!config.isPending && !config.data?.sec_configured && (
           <Notice>
@@ -84,7 +95,8 @@ export function FundamentalsPanel({ datasets }: { datasets: Dataset[] }) {
                 className="button secondary"
                 disabled={!config.data?.sec_configured || task.isPending}
               >
-                <FileText size={16} /> Add fundamentals <ArrowRight size={15} />
+                <FileText size={16} /> Complete snapshot{" "}
+                <ArrowRight size={15} />
               </button>
             </div>
           </form>
@@ -166,7 +178,9 @@ export function FundamentalDetails({ data }: { data: FundamentalCoverage }) {
 export function SignalAudit({
   decisions,
   fundamental = false,
+  auditPath,
 }: {
+  auditPath?: string;
   decisions: Decision[];
   fundamental?: boolean;
 }) {
@@ -176,8 +190,13 @@ export function SignalAudit({
       ? decisions
       : [];
   const [chosen, setChosen] = useState("");
-  const decision =
-    available.find((d) => d.session === chosen) || available.at(-1);
+  const brief = available.find((d) => d.session === chosen) || available.at(-1);
+  const details = useQuery({
+    queryKey: ["decision", auditPath, brief?.session],
+    queryFn: () => api<Decision>(`${auditPath}/decisions/${brief?.session}`),
+    enabled: !!auditPath && !!brief,
+  });
+  const decision = auditPath ? (details.data ?? brief) : brief;
   if (!decision) return null;
   return (
     <section className="card">
@@ -209,6 +228,10 @@ export function SignalAudit({
           stocks; ties share a rank.
         </p>
       </div>
+      {details.error && <Notice error>{details.error.message}</Notice>}
+      {details.isFetching && (
+        <p className="card-body">Loading saved decision inputs…</p>
+      )}
       <div className="table-scroll">
         <table className="fundamental-table">
           <thead>

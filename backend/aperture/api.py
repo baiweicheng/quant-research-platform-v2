@@ -18,6 +18,7 @@ from .ingest import MAX_BYTES, TEMPLATE, parse_csv
 from .store import Store
 from .config import settings
 from . import membership
+from .presentation import dataset_view, result_view, decision_view
 
 
 class ImportRequest(BaseModel):
@@ -33,6 +34,8 @@ class TaskRequest(BaseModel):
     start: date | None = None
     end: date | None = None
     capital: str = Field(default="100000", max_length=20)
+    dividend_model: Literal["ex_date", "pay_date"] = "ex_date"
+    coverage_mode: Literal["strict", "coverage_limited"] = "coverage_limited"
 
 
 class DownloadRequest(BaseModel):
@@ -41,6 +44,7 @@ class DownloadRequest(BaseModel):
     symbols: list[str] = Field(default_factory=list, max_length=1500)
     start: date
     end: date
+    include_fundamentals: Literal[True] = True
 
 
 class ProtocolRequest(TaskRequest):
@@ -141,7 +145,7 @@ def create_app(
         snapshot = store.preference("paper_snapshot")
         return {
             "version": __version__,
-            "datasets": store.datasets(),
+            "datasets": [dataset_view(d) for d in store.datasets()],
             "strategies": STRATEGIES,
             "jobs": store.jobs(),
             "runs": store.results("backtest"),
@@ -155,8 +159,32 @@ def create_app(
         }
 
     @app.get("/api/results/{identifier}")
-    def result(identifier: str):
-        return store.result(identifier)
+    def result(identifier: str, view: bool = False, download: bool = False):
+        body = store.result(identifier)
+        if download:
+            return JSONResponse(
+                body,
+                headers={
+                    "Content-Disposition": f'attachment; filename="aperture-{identifier}.json"'
+                },
+            )
+        return result_view(body, f"/results/{identifier}") if view else body
+
+    @app.get("/api/results/{identifier}/decisions/{session}")
+    def result_decision(identifier: str, session: date):
+        return decision_view(store.result(identifier), session.isoformat())
+
+    @app.get("/api/datasets/{identifier}/metadata")
+    def dataset_metadata(identifier: str):
+        body = next((d for d in store.datasets() if d["id"] == identifier), None)
+        if body is None:
+            raise ResearchError("That dataset was not found. Choose one from Data.")
+        return JSONResponse(
+            body,
+            headers={
+                "Content-Disposition": f'attachment; filename="aperture-dataset-{identifier}.json"'
+            },
+        )
 
     @app.get("/api/research/protocols")
     def research_protocols():
@@ -185,10 +213,24 @@ def create_app(
         return enqueue(store, identifier, payload.phase, payload.acknowledge)
 
     @app.get("/api/research/trials/{identifier}")
-    def research_trial(identifier: str):
+    def research_trial(identifier: str, view: bool = False, download: bool = False):
         from .experiments import trial
 
-        return trial(store, identifier)
+        body = trial(store, identifier)
+        if download:
+            return JSONResponse(
+                body,
+                headers={
+                    "Content-Disposition": f'attachment; filename="aperture-trial-{identifier}.json"'
+                },
+            )
+        return result_view(body, f"/research/trials/{identifier}") if view else body
+
+    @app.get("/api/research/trials/{identifier}/decisions/{session}")
+    def trial_decision(identifier: str, session: date):
+        from .experiments import trial
+
+        return decision_view(trial(store, identifier), session.isoformat())
 
     @app.post("/api/research/protocols/{identifier}/retire")
     def retire_protocol(identifier: str):
@@ -301,6 +343,10 @@ def create_app(
     @app.post("/api/downloads", status_code=202)
     def queue_download(payload: DownloadRequest):
         settings().headers()
+        if payload.include_fundamentals and "@" not in settings().sec_agent:
+            raise ResearchError(
+                "Configure SEC_USER_AGENT once in the private .env file. Downloads include market data and SEC filings together."
+            )
         data = payload.model_dump(mode="json")
         data["symbols"] = membership.symbols(
             data["symbols"], allow_empty=payload.universe != "custom"
@@ -374,14 +420,14 @@ def create_app(
                 "Choose a downloaded Alpaca dataset to update. Import a new CSV for other sources."
             )
         settings().headers()
-        if (
-            dataset.get("metadata", {}).get("fundamentals")
-            and "@" not in settings().sec_agent
-        ):
+        if "@" not in settings().sec_agent:
             raise ResearchError(
                 "Configure SEC_USER_AGENT before updating a dataset with SEC fundamentals."
             )
-        return store.enqueue("dataset_update", {"dataset_id": dataset_id})
+        from .snapshots import latest
+
+        source = latest(store, dataset_id)
+        return store.enqueue("dataset_update", {"dataset_id": source["id"]})
 
     @app.post("/api/tasks/{kind}", status_code=202)
     def task(kind: Literal["backtest", "review"], payload: TaskRequest):
@@ -391,11 +437,15 @@ def create_app(
         )
         if summary is None:
             raise ResearchError("Choose an available dataset from Data first.")
+        if summary.get("metadata", {}).get("bundle_role") == "prices":
+            raise ResearchError(
+                "This download's SEC stage is unfinished. In Data, use Complete SEC download before running research."
+            )
         from .fundamentals import FUNDAMENTAL_STRATEGIES
 
         if payload.strategy_id in FUNDAMENTAL_STRATEGIES and not summary.get(
             "metadata", {}
-        ).get("fundamentals"):
+        ).get("fundamentals", {}).get("record_count"):
             raise ResearchError(
                 "Add SEC fundamentals to this market dataset in Data first. Price-only inputs cannot run this strategy."
             )

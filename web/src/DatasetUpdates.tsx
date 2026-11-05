@@ -2,14 +2,19 @@ import { useState } from "react";
 import { useMutation, useQueryClient } from "@tanstack/react-query";
 import { useNavigate } from "react-router-dom";
 import { RefreshCw } from "lucide-react";
-import { api, datasetLabel } from "./api";
+import { api } from "./api";
+import { snapshotGroups, snapshotLabel } from "./snapshots";
 import { Notice } from "./components";
 import type { Dataset } from "./types";
 
 export default function DatasetUpdates({ datasets }: { datasets: Dataset[] }) {
-  const available = datasets.filter((d) => d.metadata?.provider === "alpaca");
+  const available = snapshotGroups(datasets).latest.filter(
+    (d) => d.metadata?.provider === "alpaca",
+  );
   const [selected, setSelected] = useState("");
-  const id = selected || available[0]?.id || "";
+  const id = available.some((dataset) => dataset.id === selected)
+    ? selected
+    : available[0]?.id || "";
   const chosen = available.find((d) => d.id === id);
   const client = useQueryClient();
   const navigate = useNavigate();
@@ -27,15 +32,15 @@ export default function DatasetUpdates({ datasets }: { datasets: Dataset[] }) {
         <div>
           <span className="eyebrow">KEEP YOUR RESEARCH CURRENT</span>
           <h2>Update a saved dataset</h2>
-          <p>Bring prices, membership and existing SEC coverage forward.</p>
+          <p>Bring prices, membership and SEC filings forward.</p>
         </div>
       </div>
       <div className="card-body">
         <p>
-          Refresh recent prices and actions, backfill new members, and refresh
-          filings when the selected dataset includes SEC data. A new snapshot
-          shares unchanged data with earlier snapshots. After completion, select
-          the newest snapshot in Research.
+          Update the latest snapshot with recent prices, corporate actions,
+          membership and SEC filings. New members receive historical backfill. A
+          new snapshot shares unchanged data with earlier snapshots. After
+          completion, select the newest snapshot in Research.
         </p>
         <form
           className="form"
@@ -44,7 +49,7 @@ export default function DatasetUpdates({ datasets }: { datasets: Dataset[] }) {
             task.mutate();
           }}
         >
-          <div className="form-grid">
+          <div className="snapshot-update-controls">
             <label>
               Dataset to update
               <select
@@ -56,7 +61,7 @@ export default function DatasetUpdates({ datasets }: { datasets: Dataset[] }) {
               >
                 {available.map((dataset) => (
                   <option key={dataset.id} value={dataset.id}>
-                    {datasetLabel(dataset, available)}
+                    {snapshotLabel(dataset)}
                   </option>
                 ))}
               </select>
@@ -76,8 +81,10 @@ export default function DatasetUpdates({ datasets }: { datasets: Dataset[] }) {
           <p className="field-hint">
             Currently through {chosen.end} ·{" "}
             {chosen.metadata?.fundamentals
-              ? "Prices + SEC filings"
-              : "Prices only"}
+              ? "Market data + SEC filings"
+              : chosen.metadata?.bundle_role === "prices"
+                ? "SEC download incomplete · complete it below"
+                : "Legacy snapshot · SEC filings will be added"}
             . Older prices and actions outside the recent 10-day refresh window
             stay frozen; a full download revalidates older history.
           </p>

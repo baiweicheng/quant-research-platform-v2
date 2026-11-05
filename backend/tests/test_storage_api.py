@@ -1,8 +1,7 @@
-from datetime import date
-
 import pytest
 from fastapi.testclient import TestClient
 
+from aperture import __version__
 from aperture.api import create_app
 from aperture.domain import ResearchError
 from aperture.ingest import parse_csv
@@ -125,7 +124,7 @@ def test_api_boundaries_and_real_background_backtest(tmp_path):
         assert state["jobs"][0]["state"] == "complete"
         result = client.get(f"/api/results/{state['runs'][0]['id']}").json()
         assert result["trade_count"] == 0  # warm-up absent, not manufactured
-        assert result["engine_version"] == "0.2.0"
+        assert result["engine_version"] == __version__
         assert result["input_contract"] == "as-traded-v1"
         assert result["windows"]["All"]["metrics"]["return"] == 0
         assert result["notes"]
@@ -153,3 +152,66 @@ def test_api_boundaries_and_real_background_backtest(tmp_path):
             ).status_code
             == 422
         )
+
+
+def test_screen_projections_preserve_full_export_and_dated_audit(tmp_path):
+    from aperture.presentation import dataset_view
+
+    app = create_app(tmp_path / "presentation.sqlite3")
+    client = TestClient(app)
+    store = app.state.store
+    source = {
+        "id": "data",
+        "metadata": {
+            "input_issues": [{"symbol": "OLD", "reason": "Unverified"}],
+            "membership": {
+                "mode": "historical",
+                "historical": {"rosters": ["large"]},
+                "additional_symbols": ["ABC"],
+            },
+            "identity_resolution": {"ABC": {"reviewed_alias": "PRE", "raw": "large"}},
+            "coverage": [{"symbol": "ABC", "reason": "captured coverage"}],
+        },
+    }
+    assert (
+        dataset_view({"metadata": {"membership": None}})["metadata"]["membership"]
+        is None
+    )
+    assert dataset_view({"metadata": None})["metadata"] == {}
+    brief = dataset_view(source)
+    assert "input_issues" not in brief["metadata"]
+    assert "historical" not in brief["metadata"]["membership"]
+    assert brief["metadata"]["coverage"] == source["metadata"]["coverage"]
+    assert source["metadata"]["input_issues"]  # Never mutate the capture.
+    body = {
+        "curve": [],
+        "trades": [{"sequence": i} for i in range(100)],
+        "trade_count": 100,
+        "input_audit": source,
+        "decisions": [
+            {
+                "session": "2026-11-04",
+                "eligible": 1,
+                "signals": [{"symbol": "ABC"}],
+                "exclusions": [{"symbol": "OLD", "reason": "Missing data"}],
+            }
+        ],
+    }
+    job = store.enqueue("download", {})
+    store.finish(job, body)
+    identifier = store.jobs()[0]["result_id"]
+    full = client.get(f"/api/results/{identifier}").json()
+    view = client.get(f"/api/results/{identifier}?view=true").json()
+    assert len(view["trades"]) == 50 and view["trade_count"] == 100
+    assert view["trades"] == full["trades"][-50:]
+    assert "input_audit" not in view and "signals" not in view["decisions"][0]
+    assert (
+        client.get(f"/api{view['audit_path']}/decisions/2026-11-04").json()
+        == full["decisions"][0]
+    )
+    assert (
+        client.get(f"/api{view['audit_path']}/decisions/2026-11-03").status_code == 422
+    )
+    export = client.get(f"/api/results/{identifier}?download=true")
+    assert "attachment" in export.headers["content-disposition"]
+    assert export.json() == full

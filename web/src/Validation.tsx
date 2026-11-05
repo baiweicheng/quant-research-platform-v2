@@ -1,7 +1,13 @@
 import { useState, type FormEvent } from "react";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
-import { api, download, percent } from "./api";
+import { api, download, percent, points } from "./api";
 import { Badge, Notice } from "./components";
+import {
+  snapshotGroups,
+  SnapshotOptions,
+  researchSnapshots,
+} from "./snapshots";
+import { afterWarmup, ResearchCoverageChoice } from "./dialogs";
 import { RunDetail } from "./Research";
 import type { Metrics, Period, Run, State } from "./types";
 
@@ -17,6 +23,8 @@ type Protocol = {
   end: string;
   holdout_state: string;
   holdout_label: string;
+  coverage_mode?: string;
+  dividend_model?: string;
   prior_exposures: string[];
   fingerprint: string;
 };
@@ -40,8 +48,7 @@ type Registry = {
 };
 
 function defaults(start: string, end: string) {
-  const a = new Date(`${start}T12:00:00Z`);
-  a.setUTCDate(a.getUTCDate() + 370);
+  const a = new Date(`${afterWarmup(start, end)}T12:00:00Z`);
   const b = new Date(`${end}T12:00:00Z`);
   b.setUTCDate(b.getUTCDate() - 180);
   return {
@@ -56,7 +63,9 @@ export default function Validation({ state }: { state: State }) {
     queryFn: () => api<Registry>("/research/protocols"),
     refetchInterval: 2500,
   });
-  const [datasetId, setDataset] = useState(state.datasets[0]?.id ?? "");
+  const [datasetId, setDataset] = useState(
+    snapshotGroups(researchSnapshots(state.datasets)).latest[0]?.id ?? "",
+  );
   const ds = state.datasets.find((d) => d.id === datasetId);
   const [selected, setSelected] = useState("");
   const [trialId, setTrial] = useState("");
@@ -69,7 +78,7 @@ export default function Validation({ state }: { state: State }) {
     registry.data?.trials.filter((t) => t.protocol_id === protocol?.id) ?? [];
   const result = useQuery({
     queryKey: ["trial", trialId],
-    queryFn: () => api<Run>(`/research/trials/${trialId}`),
+    queryFn: () => api<Run>(`/research/trials/${trialId}?view=true`),
     enabled: !!trialId,
   });
   const create = useMutation({
@@ -160,11 +169,7 @@ export default function Validation({ state }: { state: State }) {
                   <option value="" disabled>
                     Choose saved data
                   </option>
-                  {state.datasets.map((d) => (
-                    <option key={d.id} value={d.id}>
-                      {d.name}
-                    </option>
-                  ))}
+                  <SnapshotOptions datasets={state.datasets} />
                 </select>
               </label>
               <label>
@@ -175,6 +180,18 @@ export default function Validation({ state }: { state: State }) {
                       {s.name} · v{s.version}
                     </option>
                   ))}
+                </select>
+              </label>
+              <ResearchCoverageChoice />
+              <label>
+                Dividend accounting
+                <select name="dividend_model" defaultValue="ex_date">
+                  <option value="ex_date">
+                    Total-return research · ex-date
+                  </option>
+                  <option value="pay_date">
+                    Cash-flow simulation · payment dates
+                  </option>
                 </select>
               </label>
               <div className="form-row">
@@ -268,6 +285,12 @@ export default function Validation({ state }: { state: State }) {
               Final test: {protocol.holdout_start} – {protocol.end}
             </p>
             <Notice>
+              {protocol.coverage_mode === "coverage_limited"
+                ? "Coverage-limited exploratory research; data exclusions can bias every evaluation. "
+                : "Strict input coverage. "}
+              {protocol.dividend_model === "ex_date"
+                ? "Ex-date total-return accounting. "
+                : "Payment-date cash-flow accounting. "}
               {protocol.holdout_label}. {protocol.prior_exposures.length} prior
               overlapping attempts recorded. Final test:{" "}
               {protocol.holdout_state}.
@@ -346,7 +369,7 @@ export default function Validation({ state }: { state: State }) {
                         {t.error && <small>{t.error}</small>}
                       </td>
                       <td>{percent(t.metrics?.return, true)}</td>
-                      <td>{percent(t.metrics?.difference, true)}</td>
+                      <td>{points(t.metrics?.difference)}</td>
                       <td>{percent(t.metrics?.drawdown)}</td>
                       <td>{t.trade_count ?? "—"}</td>
                       <td>

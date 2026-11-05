@@ -10,6 +10,13 @@ import type { State } from "./types";
 import { percent, points } from "./api";
 import { SignalAudit } from "./Fundamentals";
 
+function ConnectedSignalAudit(props: React.ComponentProps<typeof SignalAudit>) {
+  return (
+    <QueryClientProvider client={new QueryClient()}>
+      <SignalAudit {...props} />
+    </QueryClientProvider>
+  );
+}
 const state: State = {
   version: "0.1.0",
   datasets: [],
@@ -397,7 +404,7 @@ it("blocks fundamental runs until the selected dataset includes SEC statements",
   );
   expect(screen.getByRole("button", { name: "Run backtest" })).toBeDisabled();
   expect(
-    screen.getByText(/Add SEC fundamentals to this market dataset/),
+    screen.getByText(/Select a downloaded market and SEC snapshot/),
   ).toBeVisible();
   await userEvent.selectOptions(screen.getByLabelText("Strategy"), "momentum");
   expect(screen.getByRole("button", { name: "Run backtest" })).toBeEnabled();
@@ -420,7 +427,7 @@ it("shows the actual selected decision's filing and excluded-stock audit", async
     },
   };
   render(
-    <SignalAudit
+    <ConnectedSignalAudit
       decisions={[
         {
           session: "2023-08-25",
@@ -462,7 +469,7 @@ it("shows the actual selected decision's filing and excluded-stock audit", async
 
 it("keeps zero-eligible fundamental decisions inspectable", async () => {
   render(
-    <SignalAudit
+    <ConnectedSignalAudit
       fundamental
       decisions={[
         {
@@ -518,7 +525,7 @@ it("queues SEC enrichment for the chosen saved dataset through Data", async () =
   vi.stubGlobal("fetch", fetch);
   render(wrapper(<App />));
   await userEvent.click(await screen.findByRole("link", { name: "Data" }));
-  const add = await screen.findByRole("button", { name: "Add fundamentals" });
+  const add = await screen.findByRole("button", { name: "Complete snapshot" });
   await waitFor(() => expect(add).toBeEnabled());
   await userEvent.click(add);
   expect(

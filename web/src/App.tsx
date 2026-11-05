@@ -29,10 +29,16 @@ import { ImportDialog, StrategyDialog, TaskDialog } from "./dialogs";
 import Research from "./Research";
 import MarketData from "./MarketData";
 import DatasetUpdates from "./DatasetUpdates";
+import {
+  snapshotGroups,
+  snapshotName,
+  aliasActionGaps,
+  mergerActionGaps,
+} from "./snapshots";
 import PaperWorkspace, { PaperPerformance, PaperWeekly } from "./Paper";
 import {
-  FundamentalDetails,
   FundamentalsPanel,
+  FundamentalDetails,
   SignalAudit,
 } from "./Fundamentals";
 import type { Review, State, Strategy } from "./types";
@@ -473,6 +479,11 @@ function DataPage({
   onPractice: () => void;
   busy: boolean;
 }) {
+  const [showOlder, setShowOlder] = useState(false);
+  const snapshots = snapshotGroups(state.datasets);
+  const visible = showOlder
+    ? [...snapshots.latest, ...snapshots.older]
+    : snapshots.latest;
   return (
     <>
       <div className="page-heading">
@@ -516,13 +527,13 @@ function DataPage({
       </div>
       <div className="section-heading">
         <div>
-          <h2>Your datasets</h2>
+          <h2>Your latest snapshots</h2>
           <p>
-            Immutable snapshots. Re-import identical source data safely; changed
-            inputs create a separate dataset.
+            Market data and SEC filings together. Older snapshots remain
+            available to reproduce saved research.
           </p>
         </div>
-        <Badge>{state.datasets.length} saved</Badge>
+        <Badge>{snapshots.latest.length} latest</Badge>
       </div>
       {!state.datasets.length ? (
         <div className="card">
@@ -540,12 +551,15 @@ function DataPage({
         </div>
       ) : (
         <div className="dataset-list">
-          {state.datasets.map((dataset) => (
+          {visible.map((dataset) => (
             <article className="card dataset-card" key={dataset.id}>
               <div className="card-header">
                 <div>
                   <div className="inline">
-                    <h2>{dataset.name}</h2>
+                    <h2>{snapshotName(dataset)}</h2>
+                    {snapshots.older.some((old) => old.id === dataset.id) && (
+                      <Badge>Older snapshot</Badge>
+                    )}
                     <Badge
                       tone={dataset.kind === "synthetic" ? "amber" : "green"}
                     >
@@ -566,7 +580,9 @@ function DataPage({
                   className="icon-button"
                   aria-label={`Export ${dataset.name} metadata`}
                   onClick={() =>
-                    download(`aperture-dataset-${dataset.id}.json`, dataset)
+                    window.location.assign(
+                      `/api/datasets/${dataset.id}/metadata`,
+                    )
                   }
                 >
                   <Download size={18} />
@@ -578,15 +594,31 @@ function DataPage({
                 </p>
                 {!!Object.keys(dataset.metadata?.unavailable_symbols ?? {})
                   .length && (
-                  <Notice error>
+                  <Notice>
                     {
                       Object.keys(dataset.metadata?.unavailable_symbols ?? {})
                         .length
                     }{" "}
-                    securities have unavailable or unverified inputs. Available
-                    raw prices are retained. Affected backtests and reviews are
-                    blocked. Open coverage below for each reason; these members
-                    remain in the dataset.
+                    securities have dated input limitations, including
+                    historical payment dates. Total-return and cash-flow modes
+                    have different requirements. Coverage-limited research
+                    records every exclusion; strict full-index calculations
+                    require complete inputs. See coverage below for reasons.
+                  </Notice>
+                )}
+                {!!aliasActionGaps(dataset).length && (
+                  <Notice>
+                    Historical ticker transitions still need corporate-action
+                    reconciliation: {aliasActionGaps(dataset).join(", ")}. Their
+                    affected periods are excluded in coverage-limited research.
+                  </Notice>
+                )}
+                {!!mergerActionGaps(dataset).length && (
+                  <Notice>
+                    Merger consideration still needs verified recipient, ratio
+                    or valuation terms: {mergerActionGaps(dataset).join(", ")}.
+                    These affected dates cannot be simulated at an assumed zero
+                    recovery.
                   </Notice>
                 )}
                 {dataset.metadata?.validation_issues?.map((reason) => (
@@ -640,6 +672,17 @@ function DataPage({
             </article>
           ))}
         </div>
+      )}
+      {!!snapshots.older.length && (
+        <button
+          className="button secondary snapshot-archive-toggle"
+          onClick={() => setShowOlder(!showOlder)}
+          aria-expanded={showOlder}
+        >
+          {showOlder
+            ? "Hide older snapshots"
+            : `Show older snapshots (${snapshots.older.length})`}
+        </button>
       )}
       <div className="two-columns">
         <div className="card education">
@@ -967,11 +1010,11 @@ function ActivityPage({
                     <h3>
                       {{
                         practice: "Prepare practice data",
-                        download: "Download market data",
+                        download: "Download research data",
                         dataset_update: "Update saved dataset",
                         connection: "Check paper/data access",
                         membership: "Refresh S&P 500 membership",
-                        fundamentals: "Add SEC fundamentals",
+                        fundamentals: "Complete SEC download",
                         backtest: "Run backtest",
                         review: "Prepare allocation review",
                         validation: "Evaluate frozen research protocol",

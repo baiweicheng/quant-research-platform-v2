@@ -96,7 +96,7 @@ def staged(paper, monkeypatch):  # noqa: F811 - imported pytest fixture
         },
     )
     saved = store.save_dataset(ds, b"staged fixture", [])
-    monkeypatch.setattr("aperture.providers.download_market", lambda *a, **kw: saved)
+    monkeypatch.setattr("aperture.bundles.download", lambda *a, **kw: saved)
     cfg = save_configuration(
         store,
         {

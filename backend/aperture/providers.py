@@ -36,6 +36,10 @@ SECTORS = {
 }
 
 
+class ResourceMissing(ResearchError):
+    """An official resource returned HTTP 404; other failures stay fatal."""
+
+
 class Provider:
     def __init__(
         self,
@@ -101,6 +105,15 @@ class Provider:
                     404: "the requested security/resource was not found",
                     429: "the rate limit was reached",
                 }.get(response.status_code, f"returned HTTP {response.status_code}")
+                if response.status_code == 404:
+                    self.observations.append(
+                        self.store.observe(
+                            provider, resource + "#not-found", response.content
+                        )
+                    )
+                    raise ResourceMissing(
+                        f"{provider.title()} {explanation}. No fallback feed or partial dataset was used."
+                    )
                 raise ResearchError(
                     f"{provider.title()} {explanation}. No fallback feed or partial dataset was used."
                 )

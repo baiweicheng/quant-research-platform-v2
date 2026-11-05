@@ -68,10 +68,10 @@ export default function MarketData() {
       <div className="card-header">
         <div>
           <span className="eyebrow">A CONNECTED RESEARCH WORKSPACE</span>
-          <h2>Download market data</h2>
+          <h2>Download research data</h2>
           <p>
-            Consolidated US daily prices, split events and cash-dividend pay
-            dates.
+            Daily market data, corporate actions and filing-dated SEC
+            fundamentals in one snapshot.
           </p>
         </div>
         <Badge tone={cfg?.alpaca_configured ? "green" : ""}>
@@ -91,6 +91,12 @@ export default function MarketData() {
             stores the keys. CSV and practice data remain available.
           </Notice>
         )}
+        {cfg && !cfg.sec_configured && (
+          <Notice>
+            Set SEC_USER_AGENT in the local .env file to your name and contact
+            email before downloading market data and SEC filings.
+          </Notice>
+        )}
         <div className="provider-summary">
           <span>
             <Database size={16} />
@@ -98,7 +104,11 @@ export default function MarketData() {
           </span>
           <button
             className="button secondary small"
-            disabled={!cfg?.alpaca_configured || enqueue.isPending}
+            disabled={
+              !cfg?.alpaca_configured ||
+              !cfg?.sec_configured ||
+              enqueue.isPending
+            }
             onClick={() =>
               enqueue.mutate({ path: "/providers/check", body: {} })
             }
@@ -262,7 +272,7 @@ export default function MarketData() {
           </p>
           <Notice>
             {universe !== "custom"
-              ? "One download collects available current and historical prices. Unresolved securities stay visible with per-stock reasons; tests and reviews requiring them are blocked. Backtests automatically use dated membership within supported coverage. Newer prices do not fill missing membership changes. Public history remains retrospective and exploratory."
+              ? "One download collects available current and historical prices with SEC filings. Gaps stay visible with per-stock reasons. Coverage-limited research saves its exclusions; strict full-index calculations require complete inputs. Backtests automatically use dated membership within supported coverage. Newer prices do not fill missing membership changes. Public history remains retrospective and exploratory."
               : "A custom fixed list can introduce survivorship and selection bias in historical tests."}
           </Notice>
           <div className="form-row">
@@ -292,7 +302,11 @@ export default function MarketData() {
           <div className="inline">
             <button
               className="button"
-              disabled={!cfg?.alpaca_configured || enqueue.isPending}
+              disabled={
+                !cfg?.alpaca_configured ||
+                !cfg?.sec_configured ||
+                enqueue.isPending
+              }
               type="submit"
             >
               <Download size={16} />
@@ -308,14 +322,15 @@ export default function MarketData() {
         <details className="details">
           <summary>What is checked, and what is still uncertain?</summary>
           <p>
-            Downloads check active and archived US listings, retaining inactive
-            names for historical prices. Unavailable or ambiguous identities
-            stop the download rather than silently dropping departures. Paper
-            trading separately requires tradable listings. Split ratios are
-            checked against adjusted provider bars; unsupported actions stop the
-            download. Per-stock gaps and raw response fingerprints are retained.
-            Historical membership, delisted coverage and historical sectors are
-            not certified. No alternate feed is silently substituted.
+            Downloads capture active and archived listing evidence, dated price
+            queries, corporate actions and SEC filings. Unavailable or ambiguous
+            inputs remain visible with dated reasons. Split ratios are checked
+            against a separate adjusted-price series. Coverage-limited research
+            reports exclusions; strict calculations and paper preparation retain
+            their required-input checks. Raw response fingerprints are
+            preserved. Historical membership, delisted coverage and historical
+            sectors are not certified. No alternate feed is silently
+            substituted.
           </p>
           <p>
             Data uses the latest completed session after close + 15 minutes.

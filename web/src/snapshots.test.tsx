@@ -1,0 +1,84 @@
+import { expect, it } from "vitest";
+import { render, screen } from "@testing-library/react";
+import { snapshotGroups, SnapshotOptions } from "./snapshots";
+import { afterWarmup, ResearchCoverageChoice } from "./dialogs";
+import type { Dataset } from "./types";
+
+function snapshot(n: number, extra = {}) {
+  return {
+    id: `d${n}`,
+    name: "S&P 500",
+    kind: "imported",
+    start: "2016-01-04",
+    end: `2026-11-${String(n).padStart(2, "0")}`,
+    created_at: `2026-11-${String(n).padStart(2, "0")}T23:00:00Z`,
+    symbols: ["ABC"],
+    row_count: 100,
+    symbol_count: 1,
+    source: "Fixture",
+    digest: "hash",
+    warnings: [],
+    metadata: {
+      provider: "alpaca",
+      series_id: "index",
+      fundamentals: {
+        record_count: 1,
+        coverage: [],
+        availability: "Fixture",
+        retrieved_at: "2026-11-01T23:00:00Z",
+      },
+      ...extra,
+    },
+  } as Dataset;
+}
+it("keeps twenty versions in one family and omits completed internal price parents", () => {
+  const rows = Array.from({ length: 20 }, (_, n) => snapshot(n + 1));
+  const parent = {
+    ...snapshot(20),
+    id: "price-parent",
+    metadata: { provider: "alpaca", series_id: "index" },
+  } as Dataset;
+  rows[19].metadata!.price_dataset_id = parent.id;
+  const groups = snapshotGroups([...rows, parent]);
+  expect(groups.latest.map((d) => d.id)).toEqual(["d20"]);
+  expect(groups.older).toHaveLength(19);
+});
+it("shows latest and older snapshots in separate option groups", () => {
+  render(
+    <select>
+      <SnapshotOptions datasets={[snapshot(1), snapshot(2)]} />
+    </select>,
+  );
+  expect(
+    screen.getByRole("group", { name: "Latest snapshots" }),
+  ).toHaveTextContent("through 2026-11-02");
+  expect(
+    screen.getByRole("group", { name: /Older snapshots/ }),
+  ).toHaveTextContent("through 2026-11-01");
+});
+it("does not replace a complete snapshot with an unfinished later SEC stage", () => {
+  const incomplete = snapshot(2, {
+    fundamentals: undefined,
+    bundle_role: "prices",
+  });
+  expect(snapshotGroups([snapshot(1), incomplete]).latest[0].id).toBe("d1");
+});
+it("keeps distinct saved data series selectable", () => {
+  expect(
+    snapshotGroups([snapshot(1), snapshot(2, { series_id: "custom" })]).latest,
+  ).toHaveLength(2);
+});
+it("defaults January data to January of the following year", () => {
+  expect(afterWarmup("2016-01-04", "2026-11-04")).toBe("2017-01-01");
+  expect(afterWarmup("2026-10-01", "2026-11-04")).toBe("2026-10-01");
+});
+it("makes both approved coverage policies explicit", () => {
+  render(<ResearchCoverageChoice />);
+  expect(screen.getByLabelText("Data coverage policy")).toHaveValue(
+    "coverage_limited",
+  );
+  expect(screen.getByRole("option", { name: /Strict coverage/ })).toHaveValue(
+    "strict",
+  );
+  expect(screen.getByText(/survivorship and selection bias/)).toBeVisible();
+});

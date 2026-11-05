@@ -6,7 +6,13 @@ from decimal import Decimal, ROUND_DOWN, ROUND_HALF_UP
 from .domain import Bar, CENT, ONE, SHARE, ZERO, Policy, Portfolio, ResearchError
 
 
-def apply_actions(portfolio: Portfolio, day: date, bars: dict[str, Bar]) -> None:
+def apply_actions(
+    portfolio: Portfolio,
+    day: date,
+    bars: dict[str, Bar],
+    dividend_model="pay_date",
+    opening_income=None,
+) -> None:
     """Apply splits and accrue only overnight holders' dividend entitlements."""
     for symbol, quantity in list(portfolio.positions.items()):
         if quantity <= ZERO:
@@ -18,7 +24,17 @@ def apply_actions(portfolio: Portfolio, day: date, bars: dict[str, Bar]) -> None
         bar = bars[symbol]
         quantity *= bar.split
         portfolio.positions[symbol] = quantity
-        if bar.dividend:
+        if dividend_model == "ex_date":
+            amount = (bar.research_dividend or bar.dividend) + bar.research_distribution
+            if amount:
+                portfolio.research_income.append((symbol, quantity * amount))
+                # Value entitlements at the execution-time opening mark, never
+                # the child's future closing price; income is not spendable.
+                portfolio.research_income_value += quantity * (
+                    (bar.research_dividend or bar.dividend)
+                    + (opening_income or {}).get(symbol, ZERO)
+                )
+        elif bar.dividend:
             portfolio.receivables.append((bar.pay_date, quantity * bar.dividend))
     paid = sum(
         (amount for pay_day, amount in portfolio.receivables if pay_day <= day), ZERO
@@ -27,6 +43,19 @@ def apply_actions(portfolio: Portfolio, day: date, bars: dict[str, Bar]) -> None
     portfolio.receivables = [
         (pay_day, amount) for pay_day, amount in portfolio.receivables if pay_day > day
     ]
+
+
+def reinvest_research_income(portfolio, day, bars):
+    """Closing-price research convention, never cash available at that day's open."""
+    for symbol, amount in portfolio.research_income:
+        if portfolio.positions.get(symbol, ZERO) > ZERO and symbol in bars:
+            shares = (amount / bars[symbol].close).quantize(SHARE, rounding=ROUND_DOWN)
+            portfolio.positions[symbol] += shares
+            portfolio.cash += amount - shares * bars[symbol].close
+        else:
+            portfolio.cash += amount
+    portfolio.research_income.clear()
+    portfolio.research_income_value = ZERO
 
 
 def fee(notional: Decimal, policy: Policy) -> Decimal:

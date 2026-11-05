@@ -334,6 +334,8 @@ def execute(store: Store, job: dict, progress) -> dict:
                 lambda n, text, i=i, label=label: progress(
                     round((i + n / 100) / len(specs) * 95), f"{label}: {text}"
                 ),
+                dividend_model=p.get("dividend_model"),
+                coverage_mode=p.get("coverage_mode", "strict"),
             )
             output.update(
                 id=identifier, created_at=now(), protocol_id=p["id"], trial_label=label

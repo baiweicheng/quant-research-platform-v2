@@ -115,6 +115,7 @@ export type RunSummary = {
   end: string;
   trade_count: number;
   metrics: Metrics;
+  coverage?: { mode: string; excluded_count: number };
 };
 export type ReviewSummary = {
   id: string;
@@ -142,7 +143,16 @@ export type State = {
 export const PERIODS = ["1W", "1M", "3M", "6M", "YTD", "1Y", "All"] as const;
 export type Period = (typeof PERIODS)[number];
 export type Run = Omit<RunSummary, "metrics"> & {
+  audit_path?: string;
   capital: string;
+  dividend_model?: string;
+  coverage?: {
+    mode: string;
+    excluded_count: number;
+    universe_count?: number;
+    warning?: string;
+    excluded?: { symbol: string; reasons: string[] }[];
+  };
   frequency: string;
   notes: string[];
   source_digest: string;

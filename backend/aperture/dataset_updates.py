@@ -21,6 +21,29 @@ def update(store, identifier, progress, provider=None):
     base = store.dataset(
         requested.get("metadata", {}).get("price_dataset_id", identifier)
     )
+    if base.metadata.get("normalizer_version") == "dated-research-inputs-v1":
+        from .bundles import download
+
+        audit = base.metadata.get("membership")
+        if audit:
+            progress(2, "Refreshing membership before the incremental update")
+            membership.refresh_all(store)
+        return download(
+            store,
+            {
+                "name": base.name,
+                "universe": "sp500" if audit else "custom",
+                "symbols": audit.get("additional_symbols", [])
+                if audit
+                else base.metadata.get("custom_symbols", list(base.bars)),
+                "start": base.metadata["download"]["start"],
+                "end": str(calendar.latest_complete()),
+            },
+            progress,
+            provider,
+            base=base,
+            refresh=True,
+        )
     if base.kind == "synthetic" or base.metadata.get("provider") != "alpaca":
         raise ResearchError(
             "Update dataset supports downloaded Alpaca snapshots. Import a new CSV for other sources."

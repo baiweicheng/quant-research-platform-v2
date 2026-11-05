@@ -42,13 +42,13 @@ export default function Research({
   const identifier = selected || state.runs[0]?.id;
   const result = useQuery({
     queryKey: ["result", identifier],
-    queryFn: () => api<Run>(`/results/${identifier}`),
+    queryFn: () => api<Run>(`/results/${identifier}?view=true`),
     enabled: !!identifier && section === "results",
   });
   const compared = useQueries({
     queries: compare.map((id) => ({
       queryKey: ["result", id],
-      queryFn: () => api<Run>(`/results/${id}`),
+      queryFn: () => api<Run>(`/results/${id}?view=true`),
     })),
   });
   const comparison = compared.flatMap((query) =>
@@ -229,6 +229,12 @@ export default function Research({
                       </td>
                       <td>
                         {run.dataset_name}
+                        {run.coverage?.mode === "coverage_limited" && (
+                          <small>
+                            Coverage-limited · {run.coverage.excluded_count}{" "}
+                            excluded
+                          </small>
+                        )}
                         {run.dataset_kind === "synthetic" && (
                           <Badge tone="amber">Synthetic</Badge>
                         )}
@@ -280,7 +286,7 @@ export default function Research({
                   {new Set(
                     comparison.map(
                       (r) =>
-                        `${r.dataset_id}/${r.windows[period].start}/${r.windows[period].end}/${r.capital}/${JSON.stringify(r.policy)}`,
+                        `${r.dataset_id}/${r.windows[period].start}/${r.windows[period].end}/${r.capital}/${JSON.stringify(r.policy)}/${r.dividend_model}/${JSON.stringify(r.coverage)}`,
                     ),
                   ).size > 1 && (
                     <Notice>
@@ -305,6 +311,12 @@ export default function Research({
                           <tr key={r.id}>
                             <td>
                               <strong>{r.strategy.name}</strong>
+                              {r.coverage?.mode === "coverage_limited" && (
+                                <small>
+                                  Coverage-limited · {r.coverage.excluded_count}{" "}
+                                  exclusions
+                                </small>
+                              )}
                               {r.dataset_kind === "synthetic" && (
                                 <small>Synthetic practice</small>
                               )}
@@ -375,6 +387,44 @@ export function RunDetail({
   const window = run.windows[period];
   return (
     <>
+      {run.coverage?.mode === "coverage_limited" && (
+        <section className="card">
+          <div className="card-body">
+            <Notice>
+              {run.coverage.warning ||
+                "Coverage-limited research; exclusions can introduce bias."}
+            </Notice>
+            <details className="details">
+              <summary>
+                Coverage audit · {run.coverage.excluded_count} stocks excluded
+              </summary>
+              <p>
+                {run.coverage.universe_count} stocks occurred in the requested
+                universe. The full-period availability policy was frozen before
+                simulation.
+              </p>
+              <div className="table-scroll">
+                <table>
+                  <thead>
+                    <tr>
+                      <th>Stock</th>
+                      <th>Excluded because</th>
+                    </tr>
+                  </thead>
+                  <tbody>
+                    {run.coverage.excluded?.map((row) => (
+                      <tr key={row.symbol}>
+                        <td>{row.symbol}</td>
+                        <td>{row.reasons.join(" · ")}</td>
+                      </tr>
+                    ))}
+                  </tbody>
+                </table>
+              </div>
+            </details>
+          </div>
+        </section>
+      )}
       <section className="card result-card">
         <div className="card-header">
           <div>
@@ -387,7 +437,11 @@ export function RunDetail({
           </div>
           <button
             className="button secondary small"
-            onClick={() => download(`aperture-${run.id}.json`, run)}
+            onClick={() => {
+              if (run.audit_path)
+                document.location.assign(`/api${run.audit_path}?download=true`);
+              else download(`aperture-${run.id}.json`, run);
+            }}
           >
             <Download size={15} />
             Export result
@@ -443,19 +497,28 @@ export function RunDetail({
             <dl className="facts">
               <div>
                 <dt>Stock limit</dt>
-                <dd>5% per position</dd>
+                <dd>
+                  {percent(Number(run.policy.max_weight ?? 0.05))} per position
+                </dd>
               </div>
               <div>
                 <dt>Sector limit</dt>
-                <dd>25% per sector</dd>
+                <dd>
+                  {percent(Number(run.policy.sector_cap ?? 0.25))} per sector
+                </dd>
               </div>
               <div>
                 <dt>Cash reserve</dt>
-                <dd>At least 2%</dd>
+                <dd>
+                  At least {percent(Number(run.policy.cash_reserve ?? 0.02))}
+                </dd>
               </div>
               <div>
                 <dt>Modeled costs</dt>
-                <dd>5 bps slippage + 1 bp fee, each side</dd>
+                <dd>
+                  {run.policy.slippage_bps ?? 5} bps slippage +{" "}
+                  {run.policy.fee_bps ?? 1} bp fee, each side
+                </dd>
               </div>
               <div>
                 <dt>Cash return</dt>
@@ -478,9 +541,9 @@ export function RunDetail({
               <summary>Execution, dividends & benchmark</summary>
               <p>{run.execution_model}</p>
               <p>
-                Splits adjust held shares. Dividends accrue to overnight holders
-                on ex-date and become spendable on pay date. Receivables are
-                included in portfolio value.
+                {run.dividend_model === "ex_date"
+                  ? "Total-return research: overnight holders’ distributions are reinvested at the ex-date close when still held, otherwise retained as cash. This is a research assumption, not payment-date cash availability."
+                  : "Splits adjust held shares. Dividends accrue to overnight holders on ex-date and become spendable on verified pay dates. Receivables are included in portfolio value."}
               </p>
               <p>{run.benchmark_model}</p>
               <p className="digest">Input fingerprint: {run.source_digest}</p>
@@ -503,6 +566,7 @@ export function RunDetail({
       </div>
       <SignalAudit
         decisions={run.decisions || []}
+        auditPath={run.audit_path}
         fundamental={["quality", "quality_value", "value_momentum"].includes(
           run.strategy.id,
         )}

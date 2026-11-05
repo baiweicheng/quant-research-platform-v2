@@ -1,12 +1,23 @@
 """A daily accounting loop with after-close decisions and next-session fills."""
 
+from dataclasses import replace
 from datetime import date
 from decimal import Decimal
 from typing import Callable
 
 from . import __version__, calendar
-from .domain import Dataset, ONE, ZERO, Policy, Portfolio, ResearchError, strategy
-from .ledger import apply_actions, buy, rebalance
+from .domain import (
+    Dataset,
+    ONE,
+    ZERO,
+    Policy,
+    Portfolio,
+    ResearchError,
+    strategy,
+    decimal,
+)
+from .ledger import apply_actions, buy, rebalance, reinvest_research_income
+from .research_data import blocked_inputs, security_events
 from .metrics import windows
 from .membership import validate_coverage, HISTORY_NOTE
 from .portfolio import target_weights
@@ -22,7 +33,16 @@ def run(
     policy: Policy,
     frequency: str = "weekly",
     progress: Callable[[int, str], None] | None = None,
+    dividend_model: str | None = None,
+    coverage_mode: str = "strict",
 ) -> dict:
+    dividend_model = dividend_model or dataset.metadata.get(
+        "default_dividend_model", "pay_date"
+    )
+    if dividend_model not in ("ex_date", "pay_date"):
+        raise ResearchError(
+            "Choose total-return research or payment-date cash simulation."
+        )
     recipe = strategy(identifier)
     if not capital.is_finite() or capital < Decimal("100"):
         raise ResearchError("Starting capital must be at least $100.")
@@ -50,11 +70,41 @@ def run(
         raise ResearchError(
             f"Choose dates within the stock data coverage: {first_available} to {last_available}."
         )
-    validate_coverage(dataset, days[0], days[-1])
+    from .coverage import plan as coverage_plan
+
+    coverage_audit = coverage_plan(
+        dataset, days[0], days[-1], identifier, dividend_model, coverage_mode
+    )
+    excluded_names = {row["symbol"] for row in coverage_audit["excluded"]}
+    if excluded_names:
+        dataset = replace(
+            dataset,
+            metadata={
+                **dataset.metadata,
+                "research_exclusions": sorted(excluded_names),
+            },
+        )
+    if dividend_model == "pay_date" and "input_issues" in dataset.metadata:
+        cash_blocked = {
+            i["symbol"]
+            for i in dataset.metadata["input_issues"]
+            if i["kind"] == "cash_payment"
+            and i["start"] <= str(days[-1])
+            and i["end"] >= str(days[0])
+            and i["symbol"] not in excluded_names
+            and i["symbol"] != "SPY"
+        }
+        if cash_blocked:
+            raise ResearchError(
+                "Payment-date cash simulation requires verified settlement/share-delivery inputs for "
+                + ", ".join(sorted(cash_blocked)[:12])
+                + ". Choose total-return research or coverage-limited research, or supply the verified dates."
+            )
+    validate_coverage(dataset, days[0], days[-1], dividend_model, excluded_names)
     portfolio = Portfolio(capital)
     benchmark = Portfolio(capital)
     benchmark_ready = (
-        "SPY" not in dataset.metadata.get("unavailable_symbols", {})
+        not blocked_inputs(dataset, {"SPY"}, days[0], days[-1], dividend_model)
         and "SPY" in all_by_day
         and all(day in all_by_day["SPY"] for day in days)
     )
@@ -75,9 +125,18 @@ def run(
         if dataset.metadata.get("membership")
         else "Exploratory fixed-list research: historical membership, delisted-stock coverage, and sector classifications have not been independently verified. Results must not be described as survivorship-safe."
     }
+    if coverage_mode == "coverage_limited":
+        notes.add(coverage_audit["warning"])
+        notes.add(
+            f"Excluded {coverage_audit['excluded_count']} of {coverage_audit['universe_count']} in-period stocks. Every exclusion and reason is retained in the coverage audit."
+        )
     if dataset.kind == "synthetic":
         notes.add(
             "Synthetic practice data. These returns are not evidence of strategy effectiveness."
+        )
+    if dividend_model == "ex_date":
+        notes.add(
+            "Total-return research: overnight holders' dividends and spin-off market value are reinvested at the ex-date close when the stock remains held, otherwise retained as cash. This is a research convention, not actual payment-date cash availability. Corporate merger consideration follows captured terms; absent cash-settlement dates use the effective date only in this research mode."
         )
     if not benchmark_ready:
         notes.add(
@@ -88,15 +147,41 @@ def run(
         today = {
             symbol: rows[day] for symbol, rows in investible.items() if day in rows
         }
-        apply_actions(portfolio, day, today)
+        corporate = dataset.metadata.get("corporate_actions", [])
+        security_events(portfolio, day, corporate, today, dividend_model)
+        opening_income = {
+            s: decimal(v)
+            for s, v in dataset.metadata.get("research_open_income", {})
+            .get(str(day), {})
+            .items()
+        }
+        apply_actions(portfolio, day, today, dividend_model, opening_income)
         if pending and pending[0] == day:
-            trades.extend(rebalance(portfolio, pending[1], today, policy, day))
+            ceased = {
+                e["source"]
+                for e in corporate
+                if e["effective"] == str(day)
+                and e["kind"]
+                in ("cash_mergers", "stock_mergers", "stock_and_cash_mergers")
+            }
+            targets = {s: w for s, w in pending[1].items() if s not in ceased}
+            if ceased & pending[1].keys():
+                notes.add(
+                    "A merger became effective between decision and execution; instructions to buy the ceased security were canceled."
+                )
+            trades.extend(rebalance(portfolio, targets, today, policy, day))
             pending = None
         if benchmark_ready:
             spy = all_by_day["SPY"][day]
-            apply_actions(benchmark, day, {"SPY": spy})
+            apply_actions(benchmark, day, {"SPY": spy}, dividend_model)
             if day >= first_fill_day:
                 buy(benchmark, "SPY", spy.open, benchmark.cash, reference_policy, day)
+        if dividend_model == "ex_date":
+            reinvest_research_income(portfolio, day, today)
+            if benchmark_ready:
+                reinvest_research_income(
+                    benchmark, day, {"SPY": all_by_day["SPY"][day]}
+                )
         closes = {symbol: bar.close for symbol, bar in today.items()}
         value = portfolio.value(closes)
         reference = (
@@ -175,7 +260,9 @@ def run(
     ]
     return {
         "engine_version": __version__,
-        "input_contract": "as-traded-v1",
+        "input_contract": "dated-research-v1"
+        if dataset.metadata.get("normalizer_version")
+        else "as-traded-v1",
         "strategy": recipe,
         "dataset_id": dataset.id,
         "dataset_name": dataset.name,
@@ -187,6 +274,8 @@ def run(
         "end": str(days[-1]),
         "capital": str(capital),
         "frequency": frequency,
+        "dividend_model": dividend_model,
+        "coverage": coverage_audit,
         "policy": {
             key: str(value) if isinstance(value, Decimal) else value
             for key, value in vars(policy).items()
@@ -198,6 +287,8 @@ def run(
         "holdings": holdings,
         "decisions": decision_log,
         "notes": sorted(notes),
-        "benchmark_model": "SPY buy-and-hold from the same next-session open, with the same costs and dividend reinvestment when cash is paid.",
+        "benchmark_model": "SPY buy-and-hold from the same next-session open, with the same costs and ex-date closing-price reinvestment."
+        if dividend_model == "ex_date"
+        else "SPY buy-and-hold from the same next-session open, with the same costs and dividend reinvestment when cash is paid.",
         "execution_model": "Targets decided after close; simulated fills at the next actual session open with explicit slippage, fees, fractional shares and cash checks. No opening-auction execution guarantee.",
     }

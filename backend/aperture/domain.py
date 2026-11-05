@@ -38,6 +38,8 @@ class Bar:
     dividend: Decimal = ZERO
     pay_date: date | None = None
     available_at: datetime | None = None
+    research_dividend: Decimal = ZERO
+    research_distribution: Decimal = ZERO
 
     def __post_init__(self):
         prices = (self.open, self.high, self.low, self.close)
@@ -60,6 +62,13 @@ class Bar:
         if not self.dividend.is_finite() or self.dividend < ZERO:
             raise ResearchError(
                 f"{self.symbol} {self.session}: dividends cannot be negative."
+            )
+        if any(
+            not v.is_finite() or v < ZERO
+            for v in (self.research_dividend, self.research_distribution)
+        ):
+            raise ResearchError(
+                "Research distributions must be finite and nonnegative."
             )
         if self.dividend > ZERO and (
             self.pay_date is None or self.pay_date < self.session
@@ -153,6 +162,8 @@ class Portfolio:
     cash: Decimal
     positions: dict[str, Decimal] = field(default_factory=dict)
     receivables: list[tuple[date, Decimal]] = field(default_factory=list)
+    research_income: list[tuple[str, Decimal]] = field(default_factory=list)
+    research_income_value: Decimal = ZERO
 
     def value(self, prices: dict[str, Decimal]) -> Decimal:
         missing = [
@@ -175,6 +186,7 @@ class Portfolio:
                 ZERO,
             )
             + sum((amount for _, amount in self.receivables), ZERO)
+            + self.research_income_value
         )
 
 

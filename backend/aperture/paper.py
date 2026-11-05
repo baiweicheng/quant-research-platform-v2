@@ -499,7 +499,7 @@ def prepare(store, job, progress, broker):
         )
     ensure_account(snap, cfg)
     progress(10, "Paper account reconciled; updating completed-session market data")
-    from .providers import download_market
+    from .bundles import download as download_market
 
     latest = calendar.latest_complete()
     # Current signals need a bounded rolling window, not a repeated ten-year
@@ -595,12 +595,6 @@ def prepare(store, job, progress, broker):
         },
         lambda n, t: progress(10 + round(n * 0.5), t),
     )
-    from .fundamentals import FUNDAMENTAL_STRATEGIES, attach
-
-    if cfg["strategy_id"] in FUNDAMENTAL_STRATEGIES:
-        saved = attach(
-            store, saved["id"], lambda n, t: progress(60 + round(n * 0.25), t)
-        )
     ds = store.dataset(saved["id"])
     if cfg.get("exit_sectors"):
         from dataclasses import replace

@@ -60,7 +60,7 @@ def test_weekly_preparation_refreshes_and_backfills_then_requires_new_approval(
         calls.append(payload)
         return saved
 
-    monkeypatch.setattr("aperture.providers.download_market", download)
+    monkeypatch.setattr("aperture.bundles.download", download)
     result = prepare(
         store, {"payload": {"config_hash": cfg["hash"]}}, lambda *a: None, broker
     )
@@ -92,7 +92,7 @@ def test_unchanged_roster_automatically_updates_approved_prices_without_separate
     calls = []
     saved = store.datasets()[0]
     monkeypatch.setattr(
-        "aperture.providers.download_market",
+        "aperture.bundles.download",
         lambda s, payload, progress: calls.append(payload) or saved,
     )
     result = prepare(
@@ -118,7 +118,7 @@ def test_backfill_failure_leaves_approved_universe_and_pending_change_visible(
     def fail(*args):
         raise ResearchError("new member data unavailable")
 
-    monkeypatch.setattr("aperture.providers.download_market", fail)
+    monkeypatch.setattr("aperture.bundles.download", fail)
     with pytest.raises(ResearchError, match="unavailable"):
         prepare(
             store, {"payload": {"config_hash": cfg["hash"]}}, lambda *a: None, broker

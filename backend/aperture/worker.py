@@ -97,7 +97,7 @@ def execute(store: Store, job: dict):
     if job["kind"] == "fundamentals":
         from .fundamentals import attach
 
-        saved = attach(store, payload["dataset_id"], update)
+        saved = attach(store, payload["dataset_id"], update, allow_empty=True)
         store.finish(
             job,
             {
@@ -110,7 +110,12 @@ def execute(store: Store, job: dict):
     if job["kind"] == "download":
         from .providers import download_market
 
-        saved = download_market(store, payload, update)
+        if payload.get("include_fundamentals"):
+            from .bundles import download
+
+            saved = download(store, payload, update)
+        else:
+            saved = download_market(store, payload, update)
         unavailable = len(saved.get("metadata", {}).get("unavailable_symbols", {}))
         store.finish(
             job,
@@ -120,7 +125,7 @@ def execute(store: Store, job: dict):
                 "dataset_kind": saved["kind"],
                 "completion_message": f"Saved {saved['row_count']:,} daily bars for {saved['symbol_count']} requested symbols. "
                 + (
-                    f"{unavailable} securities need data/identity resolution; affected backtests and reviews are blocked. "
+                    f"{unavailable} securities have dated input limitations. Coverage-limited research discloses exclusions; strict simulations require complete inputs. "
                     if unavailable
                     else ""
                 )
@@ -211,6 +216,8 @@ def execute(store: Store, job: dict):
             decimal(payload["capital"]),
             policy,
             progress=update,
+            dividend_model=payload.get("dividend_model"),
+            coverage_mode=payload.get("coverage_mode", "strict"),
         )
     elif job["kind"] == "review":
         latest = calendar.latest_complete()

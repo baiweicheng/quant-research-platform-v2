@@ -13,7 +13,7 @@ from decimal import Decimal
 
 from . import calendar
 from .domain import AnnualStatement, Dataset, ONE, ResearchError, ZERO, decimal
-from .providers import Provider
+from .providers import Provider, ResourceMissing
 from .store import Store, now
 
 VERSION = "annual-us-gaap-v1"
@@ -226,7 +226,11 @@ def inputs(dataset: Dataset, symbol: str, decision: date) -> tuple[dict, str | N
         values["profitability"] = statement.gross_profit / statement.assets
     action_days = calendar.sessions(statement.filed + timedelta(days=1), decision)
     known_days = {bar.session for bar in bars}
-    split_history_complete = all(day in known_days for day in action_days)
+    from .research_data import blocked_inputs
+
+    split_history_complete = all(
+        day in known_days for day in action_days
+    ) and not blocked_inputs(dataset, {symbol}, statement.filed, decision, "signals")
     if (
         statement.eps is not None
         and statement.eps_compatible
@@ -254,6 +258,7 @@ def attach(
     provider: Provider | None = None,
     *,
     refresh=False,
+    allow_empty=False,
 ) -> dict:
     requested = store.dataset(dataset_id)
     if requested.kind == "synthetic":
@@ -280,7 +285,11 @@ def attach(
                 str(row["cik"]).zfill(10)
             )
         statements, coverage, source_hashes = {}, [], {}
-        symbols = [s for s in base.bars if s != "SPY"]
+        symbols = [
+            s
+            for s in base.bars
+            if s != "SPY" and s not in base.metadata.get("dependency_symbols", [])
+        ]
         last_session = max(bar.session for bars in base.bars.values() for bar in bars)
         for index, symbol in enumerate(symbols):
             progress(
@@ -300,16 +309,29 @@ def attach(
                 )
                 continue
             cik = next(iter(ciks))
-            submissions = api.get(
-                "sec",
-                f"https://data.sec.gov/submissions/CIK{cik}.json",
-                ttl=0 if refresh else 3600,
-            )
-            company = api.get(
-                "sec",
-                f"https://data.sec.gov/api/xbrl/companyfacts/CIK{cik}.json",
-                ttl=0 if refresh else 3600,
-            )
+            try:
+                submissions = api.get(
+                    "sec",
+                    f"https://data.sec.gov/submissions/CIK{cik}.json",
+                    ttl=0 if refresh else 3600,
+                )
+                company = api.get(
+                    "sec",
+                    f"https://data.sec.gov/api/xbrl/companyfacts/CIK{cik}.json",
+                    ttl=0 if refresh else 3600,
+                )
+            except ResourceMissing:
+                coverage.append(
+                    {
+                        "symbol": symbol,
+                        "cik": cik,
+                        "records": 0,
+                        "reason": "SEC has no published submissions/companyfacts resource for this issuer (HTTP 404). No statements are synthesized.",
+                        "quality_ready": False,
+                        "value_ready": False,
+                    }
+                )
+                continue
             if (
                 str(company.get("cik", "")).zfill(10) != cik
                 or str(submissions.get("cik", "")).zfill(10) != cik
@@ -349,7 +371,7 @@ def attach(
                 }
             )
         count = sum(len(items) for items in statements.values())
-        if not count:
+        if not count and not allow_empty:
             raise ResearchError(
                 "No supported annual SEC statements were available for this dataset. No combined snapshot was created."
             )
@@ -368,6 +390,7 @@ def attach(
         digest = hashlib.sha256(raw).hexdigest()
         meta = {
             **base.metadata,
+            "bundle_role": "complete",
             "price_dataset_id": base.id,
             "price_digest": base.digest,
             "fundamentals": {
@@ -382,7 +405,7 @@ def attach(
         enriched = replace(
             base,
             id=digest[:24],
-            name=base.name + " + SEC",
+            name=base.name,
             digest=digest,
             metadata=meta,
             fundamentals=statements,

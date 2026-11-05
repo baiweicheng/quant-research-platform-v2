@@ -27,6 +27,7 @@ const sec = {
   name: "S&P 500 + SEC",
   metadata: {
     provider: "alpaca",
+    price_dataset_id: "prices",
     fundamentals: {
       record_count: 1,
       coverage: [],
@@ -63,7 +64,7 @@ afterEach(() => vi.unstubAllGlobals());
 it("updates the selected SEC vintage and explains sharing and older history", async () => {
   const fetcher = setup();
   expect(screen.getByLabelText("Dataset to update")).toHaveValue("sec");
-  expect(screen.getByText(/Prices \+ SEC filings/)).toBeVisible();
+  expect(screen.getByText(/Market data \+ SEC filings/)).toBeVisible();
   expect(screen.getByText(/shares unchanged data/)).toBeVisible();
   expect(screen.getByText(/10-day refresh window/)).toBeVisible();
   await userEvent.click(screen.getByRole("button", { name: "Update dataset" }));
@@ -77,15 +78,12 @@ it("updates the selected SEC vintage and explains sharing and older history", as
 
 it("preserves selection and displays a provider failure", async () => {
   const fetcher = setup([sec, price], true);
-  await userEvent.selectOptions(
-    screen.getByLabelText("Dataset to update"),
-    "prices",
-  );
+  expect(screen.getAllByRole("option")).toHaveLength(1);
   await userEvent.click(screen.getByRole("button", { name: "Update dataset" }));
   await screen.findByText(
     "Provider unavailable; existing snapshots preserved.",
   );
-  expect(screen.getByLabelText("Dataset to update")).toHaveValue("prices");
+  expect(screen.getByLabelText("Dataset to update")).toHaveValue("sec");
   expect(fetcher).toHaveBeenCalledTimes(1);
 });
 

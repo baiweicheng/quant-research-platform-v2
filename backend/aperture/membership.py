@@ -356,7 +356,7 @@ def resolve(store, payload, start, end):
 def eligible(dataset: Dataset, decision: date):
     audit = dataset.metadata.get("membership")
     if not audit:
-        return set(dataset.bars) - {"SPY"}
+        return set(dataset.metadata.get("custom_symbols", dataset.bars)) - {"SPY"}
     if audit["kind"] == "combined":
         history = audit["historical"]
         if (
@@ -389,7 +389,7 @@ def current_names(audit, decision):
     return {m["symbol"] for m in audit["members"]}
 
 
-def validate_coverage(dataset, start, end):
+def validate_coverage(dataset, start, end, dividend_model=None, excluded_names=None):
     audit = dataset.metadata.get("membership")
     if not audit:
         return
@@ -403,9 +403,15 @@ def validate_coverage(dataset, start, end):
     historical_names(audit, end)
     by_day = {s: {b.session for b in bars} for s, bars in dataset.bars.items()}
     for day in calendar.sessions(start, end):
-        blocked = (
-            historical_names(audit, day)
-            & dataset.metadata.get("unavailable_symbols", {}).keys()
+        from .research_data import blocked_inputs
+
+        blocked = blocked_inputs(
+            dataset,
+            historical_names(audit, day) - (excluded_names or set()),
+            day,
+            day,
+            dividend_model
+            or dataset.metadata.get("default_dividend_model", "pay_date"),
         )
         if blocked:
             raise ResearchError(
@@ -414,7 +420,9 @@ def validate_coverage(dataset, start, end):
                 + ". See per-stock Data reasons; these members cannot be dropped."
             )
         missing = sorted(
-            s for s in historical_names(audit, day) if day not in by_day.get(s, set())
+            s
+            for s in historical_names(audit, day) - (excluded_names or set())
+            if day not in by_day.get(s, set())
         )
         if missing:
             raise ResearchError(

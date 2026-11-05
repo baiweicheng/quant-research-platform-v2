@@ -21,7 +21,15 @@ def total_return_levels(bars: tuple[Bar, ...] | list[Bar]) -> list[float]:
         return []
     result = [1.0]
     for before, current in zip(bars, bars[1:]):
-        gross = float(current.split * (current.close + current.dividend) / before.close)
+        gross = float(
+            current.split
+            * (
+                current.close
+                + (current.research_dividend or current.dividend)
+                + current.research_distribution
+            )
+            / before.close
+        )
         level = result[-1] * gross
         if not isfinite(level) or level <= 0:
             raise ResearchError(
@@ -45,8 +53,13 @@ def rank(
     expected = calendar.sessions(decision - timedelta(days=740), decision)[-required:]
     ranked: list[RankedStock] = []
     excluded: list[dict] = []
-    members = eligible(dataset, decision) - (exit_only or set())
-    blocked = members & dataset.metadata.get("unavailable_symbols", {}).keys()
+    research_exclusions = set(dataset.metadata.get("research_exclusions", []))
+    members = eligible(dataset, decision) - (exit_only or set()) - research_exclusions
+    from .research_data import blocked_inputs
+
+    blocked = blocked_inputs(
+        dataset, members, expected[0] if expected else decision, decision, "signals"
+    )
     if blocked:
         raise ResearchError(
             "Required universe members have unavailable/unverified data: "
@@ -79,7 +92,9 @@ def rank(
             excluded.append(
                 {
                     "symbol": symbol,
-                    "reason": "Not an S&P 500 member on this decision date.",
+                    "reason": "Excluded by the saved coverage-limited research policy; see the complete coverage audit."
+                    if symbol in research_exclusions
+                    else "Not an S&P 500 member on this decision date.",
                 }
             )
             continue

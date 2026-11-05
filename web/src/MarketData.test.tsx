@@ -7,6 +7,7 @@ import MarketData from "./MarketData";
 
 const info = {
   alpaca_configured: true,
+  sec_configured: true,
   latest_session: "2026-11-02",
   first_session: "2016-01-04",
   watchlist: { name: "Old list", symbols: [], start: "2026-10-28" },

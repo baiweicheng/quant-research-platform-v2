@@ -1,13 +1,20 @@
 import { useState, type FormEvent } from "react";
 import { useMutation, useQueryClient } from "@tanstack/react-query";
 import { ArrowRight, LoaderCircle, Upload } from "lucide-react";
-import { api, datasetLabel } from "./api";
+import { api } from "./api";
+import {
+  snapshotGroups,
+  SnapshotOptions,
+  researchSnapshots,
+} from "./snapshots";
 import { Modal, Notice } from "./components";
 import type { State, Strategy } from "./types";
 
-function afterWarmup(start: string, end: string) {
+export function afterWarmup(start: string, end: string) {
   const day = new Date(`${start}T12:00:00Z`);
-  day.setUTCDate(day.getUTCDate() + 370);
+  if (start.slice(5) <= "01-07")
+    day.setUTCFullYear(day.getUTCFullYear() + 1, 0, 1);
+  else day.setUTCDate(day.getUTCDate() + 370);
   const candidate = day.toISOString().slice(0, 10);
   return candidate < end ? candidate : start;
 }
@@ -27,12 +34,12 @@ export function TaskDialog({
 }) {
   const [datasetId, setDatasetId] = useState(
     (
-      state.datasets.find(
+      snapshotGroups(researchSnapshots(state.datasets)).latest.find(
         (d) =>
           !["quality", "quality_value", "value_momentum"].includes(
             initial || "",
-          ) || d.metadata?.fundamentals,
-      ) || state.datasets[0]
+          ) || !!d.metadata?.fundamentals?.record_count,
+      ) || snapshotGroups(researchSnapshots(state.datasets)).latest[0]
     )?.id ?? "",
   );
   const [strategyId, setStrategyId] = useState(initial ?? "momentum");
@@ -43,7 +50,7 @@ export function TaskDialog({
     "value_momentum",
   ].includes(strategyId);
   const missingFundamentals =
-    needsFundamentals && !dataset?.metadata?.fundamentals;
+    needsFundamentals && !dataset?.metadata?.fundamentals?.record_count;
   const [start, setStart] = useState(
     dataset ? afterWarmup(dataset.start, dataset.end) : "",
   );
@@ -75,6 +82,8 @@ export function TaskDialog({
       start: kind === "backtest" ? String(values.get("start")) : null,
       end: kind === "backtest" ? String(values.get("end")) : null,
       capital: kind === "backtest" ? String(values.get("capital")) : "100000",
+      dividend_model: String(values.get("dividend_model") || "ex_date"),
+      coverage_mode: String(values.get("coverage_mode") || "strict"),
     });
   }
   return (
@@ -104,12 +113,7 @@ export function TaskDialog({
             <option value="" disabled>
               Choose a dataset
             </option>
-            {state.datasets.map((d) => (
-              <option key={d.id} value={d.id}>
-                {datasetLabel(d, state.datasets)}
-                {d.kind === "synthetic" ? " · Synthetic" : ""}
-              </option>
-            ))}
+            <SnapshotOptions datasets={state.datasets} />
           </select>
         </label>
         <label>
@@ -131,6 +135,13 @@ export function TaskDialog({
               ))}
           </select>
         </label>
+        {!dataset &&
+          state.datasets.some((d) => d.metadata?.bundle_role === "prices") && (
+            <Notice>
+              The download's SEC stage is still unfinished. Follow Activity, or
+              use Complete SEC download in Data before running research.
+            </Notice>
+          )}
         {dataset?.kind === "synthetic" && (
           <Notice>
             Synthetic practice data — useful for learning the workflow, never
@@ -139,9 +150,8 @@ export function TaskDialog({
         )}
         {missingFundamentals && (
           <Notice>
-            Add SEC fundamentals to this market dataset in Data first, then
-            select the combined snapshot. This strategy needs filing-dated
-            statements as well as prices.
+            Select a downloaded market and SEC snapshot. This strategy needs
+            filing-dated statements as well as prices.
           </Notice>
         )}
         {kind === "backtest" && (
@@ -180,6 +190,23 @@ export function TaskDialog({
                 : "Signals need 253 earlier price sessions."}{" "}
               Dates default to leave warm-up history when available. Earlier
               periods can remain in cash.
+            </p>
+            <ResearchCoverageChoice />
+            <label>
+              Dividend accounting
+              <select name="dividend_model" defaultValue="ex_date">
+                <option value="ex_date">
+                  Total-return research · reinvest on ex-date
+                </option>
+                <option value="pay_date">
+                  Cash-flow simulation · verified payment dates
+                </option>
+              </select>
+            </label>
+            <p className="field-hint">
+              Total-return research reinvests distributions at the ex-date
+              close. Cash-flow simulation waits for verified payment dates and
+              can require additional historical data.
             </p>
             <label>
               Starting capital · USD
@@ -488,5 +515,29 @@ export function StrategyDialog({
         </div>
       </div>
     </Modal>
+  );
+}
+
+export function ResearchCoverageChoice() {
+  return (
+    <>
+      <label>
+        Data coverage policy
+        <select name="coverage_mode" defaultValue="coverage_limited">
+          <option value="coverage_limited">
+            Coverage-limited research · exclusions disclosed
+          </option>
+          <option value="strict">
+            Strict coverage · require complete inputs
+          </option>
+        </select>
+      </label>
+      <p className="field-hint">
+        Coverage-limited research excludes stocks with missing or unverified
+        inputs across the test window. Every exclusion is saved. This can
+        introduce survivorship and selection bias; results do not represent the
+        complete S&P 500.
+      </p>
+    </>
   );
 }
