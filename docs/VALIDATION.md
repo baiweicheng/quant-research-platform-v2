@@ -1,5 +1,29 @@
 # Research milestone validation
 
+## 2026-11-05 — sector coverage and portfolio exposure repair
+
+**238 backend tests and 48 UI tests passed**, with TypeScript/production build, formatting, changed-module F lint and whitespace checks. Tests cover sector-source validation, cache/refresh, public requests without credentials, ticker/issuer ambiguity, normalized sector names, capped allocation, immutable shared metadata vintages, legacy exposure, acquisition/update/recovery, source audits and snapshot-parent visibility. Dependency deprecations and Vite bundle-size advisories are non-failing; accessibility and formal performance certification remain separate.
+
+Actual sector refresh classified **760 stock/warrant entries across 11 sectors, with zero unresolved**. SPY and one municipal bond fund are explicitly not applicable. Evidence comprises 503 current roster labels, 220 public archive labels, 4 reviewed historical ticker aliases, 15 dated public classifications, 14 explicitly marked issuer-business proxies and 4 warrant issuer-exposure mappings. This is the approved static current/last-known research compromise, not certified point-in-time GICS history. Per-symbol methods, source links and fingerprints remain in the audit.
+
+The derived snapshot reuses all **85,736 price blocks and 604 filing blocks**, with identical membership and identity/action issues. All five full **January 3, 2017–November 4, 2026** backtests were submitted and completed through the actual browser with the original 25% sector cap, 5% stock cap, 2% cash floor and costs:
+
+| Strategy | Return | Mean stock exposure | Largest decline |
+| --- | ---: | ---: | ---: |
+| 12–1 Momentum | +242.68% | 92.97% | -36.25% |
+| Defensive Low Volatility | +146.69% | 84.18% | -25.85% |
+| Profitability / Quality | +182.82% | 92.52% | -32.80% |
+| Quality Value | +262.52% | 92.02% | -34.08% |
+| Value + Momentum | +286.76% | 97.33% | -40.34% |
+
+SPY remains +293.89%. Independent saved-output checks verify all 514 decisions per run: unchanged original rankings/components/exclusions, sector/name/cash target caps, no Unknown target sectors, nonnegative daily cash/receivables, final holdings/cash/receivables versus NAV and return arithmetic. Every SPY valuation equals its original counterpart across 2,474 dates per run. All five original compressed result bodies retain their exact SHA-256 hashes. These remain coverage-limited runs with the original 142 exclusions and selection bias; higher returns do not establish effectiveness or trading readiness.
+
+Actual browser fresh download of AAPL/MSFT/PG/XOM/JPM plus SPY automatically acquired sectors and SEC data: 16,356 bars through November 4. Update automatically refreshed sectors/prices/filings through November 5 (16,362 bars), sharing 780 of 786 price blocks and preserving the old vintage. The completed chain no longer offers a misleading SEC-completion prompt for its intermediate sector-price parent. Data source search, original/new-result comparison, all seven chart periods and actual 320 px Data/result layouts passed. Every period's exposure agrees with independent saved-curve arithmetic. The isolated acquisition browser had no warning/error logs. Evidence remains under ignored `var/uat/sector-*` and local project context.
+
+No paper/live orders or strategy approvals were created. Historical sector certification and separate identity/action/payment-date gaps remain open. The user's normal app was restarted with the fix; the isolated acquisition service was stopped.
+
+## Historical foundation checkpoint — November 2, 2026
+
 Verified on a local Mac, 2026-11-02. The original record below covers the foundation checkpoint; subsequent real-data and SEC checks are recorded in [the incremental build record](MILESTONES.md). Neither record certifies paper/live readiness or vendor history.
 
 ## Automated checks

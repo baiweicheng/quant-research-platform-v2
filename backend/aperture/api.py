@@ -186,6 +186,20 @@ def create_app(
             },
         )
 
+    @app.get("/api/datasets/{identifier}/sectors")
+    def sector_audit(identifier: str):
+        body = next((d for d in store.datasets() if d["id"] == identifier), None)
+        if body is None:
+            raise ResearchError("That dataset was not found.")
+        return body.get("metadata", {}).get("sector_classification", {})
+
+    @app.post("/api/datasets/{identifier}/sectors", status_code=202)
+    def refresh_sectors(identifier: str):
+        body = next((d for d in store.datasets() if d["id"] == identifier), None)
+        if body is None or body["kind"] == "synthetic":
+            raise ResearchError("Choose actual saved market data for sector refresh.")
+        return store.enqueue("sector_update", {"dataset_id": identifier})
+
     @app.get("/api/research/protocols")
     def research_protocols():
         from .experiments import protocols, history

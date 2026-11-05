@@ -154,6 +154,13 @@ export function TaskDialog({
             filing-dated statements as well as prices.
           </Notice>
         )}
+        {dataset?.kind === "imported" && (
+          <Notice>
+            {dataset.metadata?.sector_classification
+              ? "The 25% sector cap uses captured current or last-known classifications. These may reflect later information than a historical decision. Concentrated selections can leave more cash than the 2% minimum reserve."
+              : "This snapshot has no sector coverage audit. Refresh sectors in Data for a new classified snapshot; unresolved labels can leave substantial cash under the 25% sector cap."}
+          </Notice>
+        )}
         {kind === "backtest" && (
           <>
             <div className="form-row">

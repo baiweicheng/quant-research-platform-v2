@@ -293,6 +293,9 @@ def test_future_filings_do_not_change_historical_backtest(dataset):
 
 
 def test_api_fundamental_queue_gates_and_end_to_end(monkeypatch, tmp_path, dataset):
+    from sector_fixtures import stub_sectors
+
+    stub_sectors(monkeypatch)
     monkeypatch.setenv("SEC_USER_AGENT", "Aperture test contact@example.com")
     app = create_app(tmp_path / "db.sqlite", None)
     base = replace(dataset, fundamentals={})
@@ -310,7 +313,9 @@ def test_api_fundamental_queue_gates_and_end_to_end(monkeypatch, tmp_path, datas
         assert response.status_code == 202
         assert process_one(app.state.store)
         assert app.state.store.jobs()[0]["state"] == "complete"
-        assert len(client.get("/api/state").json()["datasets"]) == 2
+        datasets = client.get("/api/state").json()["datasets"]
+        assert len(datasets) == 3
+        assert datasets[0]["metadata"]["sector_classification"]["classified_count"] == 1
 
 
 def test_old_price_gap_blocks_valuation_even_when_signal_warmup_is_complete(dataset):

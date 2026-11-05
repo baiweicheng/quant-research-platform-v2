@@ -7,6 +7,7 @@ from .providers import Provider
 def download(store, payload, progress, provider=None, *, base=None, refresh=False):
     from .research_data import download as prices
     from .fundamentals import attach
+    from .sectors import attach as attach_sectors
 
     api = provider or Provider(store)
     try:
@@ -18,10 +19,21 @@ def download(store, payload, progress, provider=None, *, base=None, refresh=Fals
             store, payload, lambda n, t: progress(round(n * 0.70), t), api, base=base
         )
         try:
+            saved = attach_sectors(
+                store,
+                saved["id"],
+                lambda n, t: progress(70 + round(n * 0.05), t),
+                refresh=refresh,
+            )
+        except ResearchError as error:
+            raise ResearchError(
+                f"Prices were saved, but sector acquisition did not finish. In Data, refresh sectors or retry the download ({saved['id']}). {error}"
+            ) from None
+        try:
             return attach(
                 store,
                 saved["id"],
-                lambda n, t: progress(70 + round(n * 0.28), t),
+                lambda n, t: progress(75 + round(n * 0.23), t),
                 api,
                 refresh=refresh,
                 allow_empty=True,

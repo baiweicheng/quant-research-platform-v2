@@ -27,6 +27,7 @@ def decode(value):
 class Store:
     def __init__(self, path: str | Path):
         self.path = Path(path)
+        self._exposure_cache = {}
         self.path.parent.mkdir(parents=True, exist_ok=True, mode=0o700)
         with self.connect() as db:
             db.executescript("""
@@ -263,6 +264,48 @@ class Store:
                 (
                     dataset.id,
                     dataset.digest,
+                    json.dumps(summary),
+                    encode(body),
+                    gzip.compress(raw, mtime=0),
+                ),
+            )
+        return summary
+
+    def save_metadata_snapshot(self, identifier, digest, sectors, metadata, raw, note):
+        """Derive a vintage while reusing exact shared prices and filings.
+
+        Only classification/metadata change; the parent and saved results stay
+        immutable. This avoids materializing millions of identical price rows.
+        """
+        with self.connect() as db:
+            existing = db.execute(
+                "SELECT summary FROM datasets WHERE digest=?", (digest,)
+            ).fetchone()
+            if existing:
+                return {**json.loads(existing[0]), "already_imported": True}
+            row = db.execute(
+                "SELECT body FROM datasets WHERE id=?", (identifier,)
+            ).fetchone()
+            if row is None:
+                raise ResearchError("The parent snapshot was not found.")
+            body = decode(row[0])
+            summary = {
+                **body["summary"],
+                "id": digest[:24],
+                "digest": digest,
+                "revision": body["summary"]["revision"] + 1,
+                "created_at": now(),
+                "metadata": metadata,
+                "warnings": list(dict.fromkeys([*body["summary"]["warnings"], note])),
+            }
+            body.update(summary=summary, metadata=metadata, sectors=sectors)
+            self._share_bars(db, body)
+            self._share_fundamentals(db, body)
+            db.execute(
+                "INSERT INTO datasets VALUES (?,?,?,?,?)",
+                (
+                    summary["id"],
+                    digest,
                     json.dumps(summary),
                     encode(body),
                     gzip.compress(raw, mtime=0),
@@ -516,6 +559,8 @@ class Store:
             "trade_count",
             "decision_session",
             "execute_session",
+            "exposure",
+            "sector_classification",
         ):
             if key in body:
                 summary[key] = body[key]
@@ -542,13 +587,26 @@ class Store:
 
     def results(self, kind: str) -> list[dict]:
         with self.connect() as db:
-            return [
+            summaries = [
                 json.loads(row[0])
                 for row in db.execute(
                     "SELECT summary FROM results WHERE kind=? ORDER BY created_at DESC",
                     (kind,),
                 )
             ]
+            if kind == "backtest":
+                from .exposure import summarize
+
+                for result in summaries:
+                    if "exposure" not in result:
+                        identifier = result["id"]
+                        if identifier not in self._exposure_cache:
+                            row = db.execute(
+                                "SELECT body FROM results WHERE id=?", (identifier,)
+                            ).fetchone()
+                            self._exposure_cache[identifier] = summarize(decode(row[0]))
+                        result["exposure"] = self._exposure_cache[identifier]
+            return summaries
 
     def result(self, identifier: str) -> dict:
         with self.connect() as db:

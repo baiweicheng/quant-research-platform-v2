@@ -85,6 +85,38 @@ it("keeps every coverage exclusion and the selected dividend convention visible"
   ).toBeInTheDocument();
 });
 
+it("makes the low equity exposure of a legacy result prominent without changing returns", () => {
+  const saved = {
+    ...run,
+    curve: [
+      {
+        session: "2025-01-02",
+        equity: "100",
+        cash: "75",
+        receivable: "0",
+        benchmark: "100",
+      },
+      {
+        session: "2026-11-04",
+        equity: "110",
+        cash: "82.5",
+        receivable: "0",
+        benchmark: "120",
+      },
+    ],
+  };
+  render(<RunDetail run={saved} period="All" setPeriod={() => {}} />);
+  expect(
+    screen.getByText("Average allocation: 25.00% stocks / 75.00% cash."),
+  ).toBeVisible();
+  expect(
+    screen.getByText(/SPY is a fully invested buy-and-hold comparison/),
+  ).toBeVisible();
+  expect(
+    screen.getByText(/original classifications and returns are preserved/),
+  ).toBeVisible();
+});
+
 it("loads the selected saved decision without replacing it with another date's audit", async () => {
   const { SignalAudit } = await import("./Fundamentals");
   const user = (await import("@testing-library/user-event")).default;

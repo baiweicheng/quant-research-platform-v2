@@ -24,14 +24,21 @@ def dataset_view(dataset: dict) -> dict:
             for symbol, evidence in meta["identity_resolution"].items()
             if isinstance(evidence, dict) and "reviewed_alias" in evidence
         }
+    if isinstance(meta.get("sector_classification"), dict):
+        meta["sector_classification"] = {
+            k: v for k, v in meta["sector_classification"].items() if k != "records"
+        }
     return {**dataset, "metadata": meta}
 
 
 def result_view(result: dict, path: str) -> dict:
     if "curve" not in result:
         return result
+    from .exposure import summarize
+
     return {
         **{k: v for k, v in result.items() if k != "input_audit"},
+        "exposure": result.get("exposure") or summarize(result),
         "audit_path": path,
         "trades": result["trades"][-50:],
         "decisions": [

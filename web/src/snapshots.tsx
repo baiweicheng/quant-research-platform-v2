@@ -30,7 +30,19 @@ export function snapshotFamily(dataset: Dataset) {
 
 export function snapshotGroups(datasets: Dataset[]) {
   const families = new Map<string, Dataset[]>();
-  const parents = new Set(datasets.map((d) => d.metadata?.price_dataset_id));
+  const internalPrices = new Set(
+    datasets
+      .filter((d) => d.metadata?.bundle_role === "prices")
+      .map((d) => d.id),
+  );
+  const parents = new Set(
+    datasets.flatMap((d) => [
+      d.metadata?.price_dataset_id,
+      internalPrices.has(String(d.metadata?.sector_parent_dataset_id))
+        ? d.metadata?.sector_parent_dataset_id
+        : undefined,
+    ]),
+  );
   for (const dataset of datasets.filter((d) => !parents.has(d.id))) {
     const key = snapshotFamily(dataset);
     families.set(key, [...(families.get(key) ?? []), dataset]);

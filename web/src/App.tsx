@@ -29,6 +29,7 @@ import { ImportDialog, StrategyDialog, TaskDialog } from "./dialogs";
 import Research from "./Research";
 import MarketData from "./MarketData";
 import DatasetUpdates from "./DatasetUpdates";
+import SectorCoverage from "./Sectors";
 import {
   snapshotGroups,
   snapshotName,
@@ -626,6 +627,7 @@ function DataPage({
                     {reason}
                   </Notice>
                 ))}
+                <SectorCoverage dataset={dataset} />
                 {dataset.metadata?.fundamentals && (
                   <FundamentalDetails data={dataset.metadata.fundamentals} />
                 )}
@@ -1015,6 +1017,7 @@ function ActivityPage({
                         connection: "Check paper/data access",
                         membership: "Refresh S&P 500 membership",
                         fundamentals: "Complete SEC download",
+                        sector_update: "Refresh sector classifications",
                         backtest: "Run backtest",
                         review: "Prepare allocation review",
                         validation: "Evaluate frozen research protocol",

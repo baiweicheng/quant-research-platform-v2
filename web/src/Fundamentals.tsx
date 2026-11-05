@@ -15,7 +15,12 @@ export function FundamentalsPanel({ datasets }: { datasets: Dataset[] }) {
     queryFn: () => api<{ sec_configured: boolean }>("/providers"),
     staleTime: 30000,
   });
-  const completed = new Set(datasets.map((d) => d.metadata?.price_dataset_id));
+  const completed = new Set(
+    datasets.flatMap((d) => [
+      d.metadata?.price_dataset_id,
+      d.metadata?.sector_parent_dataset_id,
+    ]),
+  );
   const available = snapshotGroups(
     datasets.filter(
       (d) =>

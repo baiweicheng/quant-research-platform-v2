@@ -20,6 +20,10 @@ Legacy datasets remain readable. Updating them can convert their physical repres
 
 Back up the **whole database** after shutting the app down, or use SQLite's backup API for a consistent online copy. Include the WAL in an ordinary file copy if it exists; a lone live database-file copy is unsafe. Shared blocks are not independently disposable. This format requires the updated application; keep a pre-migration backup if downgrade compatibility is required.
 
+## Sector classifications
+
+Sector acquisition is included in combined downloads and updates. A sector-only refresh creates an immutable metadata vintage sharing the parent's exact price and filing blocks. Every classification, source fingerprint, reviewed exception version, and the static-sector approximation are retained. Old research retains its old sector inputs; rerun using the newest snapshot to use refreshed labels. Export metadata or expand Sector coverage in Data for the full per-symbol audit.
+
 ## Paper trading
 
 Paper preparation saves a decision snapshot each time a review is prepared, normally weekly. It now captures both market and SEC inputs even for a price strategy, and freezes the dataset ID alongside the strategy/policy/targets. The existing paper acquisition path refreshes its configured working window; the same shared storage deduplicates unchanged blocks in those snapshots. This update does not change paper scheduling or approval scope, and does not make paper acquisition use the research incremental-update command.

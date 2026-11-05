@@ -96,3 +96,19 @@ it("does not offer downloaded updates for practice or CSV snapshots", () => {
     screen.queryByRole("button", { name: "Update dataset" }),
   ).not.toBeInTheDocument();
 });
+
+it("offers sector-only repair and explains automatic acquisition", async () => {
+  const fetcher = setup();
+  expect(
+    screen.getByText(/included in every download and update/),
+  ).toBeVisible();
+  await userEvent.click(
+    screen.getByRole("button", { name: "Refresh sectors" }),
+  );
+  await waitFor(() =>
+    expect(fetcher).toHaveBeenCalledWith(
+      "/api/datasets/sec/sectors",
+      expect.anything(),
+    ),
+  );
+});

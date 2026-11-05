@@ -47,6 +47,9 @@ def sizes(store):
 
 @pytest.fixture
 def vendor(tmp_path, monkeypatch):
+    from sector_fixtures import stub_sectors
+
+    stub_sectors(monkeypatch)
     store = Store(tmp_path / "snapshots.sqlite3")
     state = {
         "latest": date(2024, 5, 6),
@@ -180,7 +183,8 @@ def test_incremental_prices_actions_restart_and_unchanged_parent(vendor):
     saved = update(store, before.id, lambda *a: None, api)
     after = Store(store.path).dataset(saved["id"])
     assert Store(store.path).dataset(before.id) == before
-    assert after.id != before.id and after.revision == before.revision + 1
+    assert after.id != before.id and after.revision == before.revision + 2
+    assert after.metadata["sector_classification"]["classified_count"] == 1
     assert after.metadata["update"]["parent_digest"] == before.digest
     assert after.metadata["unavailable_symbols"] == {}
     a = {b.session: b for b in after.bars["ABC"]}

@@ -94,10 +94,32 @@ def execute(store: Store, job: dict):
 
         store.finish(job, evaluate(store, job, update))
         return
+    if job["kind"] == "sector_update":
+        from .sectors import attach as attach_sectors
+
+        saved = attach_sectors(store, payload["dataset_id"], update, refresh=True)
+        audit = saved["metadata"]["sector_classification"]
+        store.finish(
+            job,
+            {
+                "dataset_id": saved["id"],
+                "dataset_name": saved["name"],
+                "completion_message": f"Sector snapshot ready: {audit['classified_count']} classified, {audit['unresolved_count']} unresolved, {audit['not_applicable_count']} funds/benchmarks. Select the newest snapshot for new research; saved results remain unchanged.",
+            },
+        )
+        return
     if job["kind"] == "fundamentals":
         from .fundamentals import attach
+        from .sectors import attach as attach_sectors
 
-        saved = attach(store, payload["dataset_id"], update, allow_empty=True)
+        requested = next(
+            d for d in store.datasets() if d["id"] == payload["dataset_id"]
+        )
+        price_id = requested.get("metadata", {}).get(
+            "price_dataset_id", payload["dataset_id"]
+        )
+        sector_snapshot = attach_sectors(store, price_id, update)
+        saved = attach(store, sector_snapshot["id"], update, allow_empty=True)
         store.finish(
             job,
             {

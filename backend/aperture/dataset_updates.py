@@ -242,6 +242,14 @@ def update(store, identifier, progress, provider=None):
         progress(78, "Saving shared price blocks and immutable lineage")
         store.share_dataset_storage(base.id)
         saved = store.save_dataset(candidate, raw, warnings)
+        from .sectors import attach as attach_sectors
+
+        saved = attach_sectors(
+            store,
+            saved["id"],
+            lambda n, t: progress(78 + round(n * 0.02), t),
+            refresh=True,
+        )
         if requested.get("metadata", {}).get("fundamentals"):
             from .fundamentals import attach
 

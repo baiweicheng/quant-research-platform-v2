@@ -272,8 +272,8 @@ export default function MarketData() {
           </p>
           <Notice>
             {universe !== "custom"
-              ? "One download collects available current and historical prices with SEC filings. Gaps stay visible with per-stock reasons. Coverage-limited research saves its exclusions; strict full-index calculations require complete inputs. Backtests automatically use dated membership within supported coverage. Newer prices do not fill missing membership changes. Public history remains retrospective and exploratory."
-              : "A custom fixed list can introduce survivorship and selection bias in historical tests."}
+              ? "One download collects available current and historical prices, sector classifications and SEC filings. Sector caps use current or last-known labels when historical classifications are unavailable; this approximation is saved with the result. Gaps stay visible with per-stock reasons. Coverage-limited research saves its exclusions; strict full-index calculations require complete inputs. Backtests automatically use dated membership within supported coverage. Newer prices do not fill missing membership changes. Public history remains retrospective and exploratory."
+              : "Sector classifications and SEC filings are included. A custom fixed list can introduce survivorship and selection bias in historical tests; unresolved sectors remain visible and capped together."}
           </Notice>
           <div className="form-row">
             <label>

@@ -16,6 +16,23 @@ import Validation from "./Validation";
 import { SignalAudit } from "./Fundamentals";
 const Chart = lazy(() => import("./Chart"));
 
+function displayedExposure(run: Run, period: Period) {
+  const rows = run.curve.slice(run.windows[period].start_index);
+  if (!rows.length) return { cash: null, stocks: null };
+  const cash =
+    rows.reduce((sum, row) => sum + Number(row.cash) / Number(row.equity), 0) /
+    rows.length;
+  const stocks =
+    rows.reduce(
+      (sum, row) =>
+        sum +
+        (Number(row.equity) - Number(row.cash) - Number(row.receivable)) /
+          Number(row.equity),
+      0,
+    ) / rows.length;
+  return { cash, stocks };
+}
+
 export default function Research({
   state,
   onRun,
@@ -241,8 +258,19 @@ export default function Research({
                         <small>
                           {shortDate(run.start)} – {shortDate(run.end)}
                         </small>
+                        {run.sector_classification && (
+                          <small>Current / last-known sector labels</small>
+                        )}
                       </td>
-                      <td>{percent(run.metrics.return, true)}</td>
+                      <td>
+                        {percent(run.metrics.return, true)}
+                        {run.exposure && (
+                          <small>
+                            Avg {percent(run.exposure.mean_stock_weight)} stocks
+                            / {percent(run.exposure.mean_cash_weight)} cash
+                          </small>
+                        )}
+                      </td>
                       <td>{percent(run.metrics.drawdown)}</td>
                       <td>
                         <button
@@ -304,6 +332,7 @@ export default function Research({
                           <th>Return</th>
                           <th>vs SPY</th>
                           <th>Largest decline</th>
+                          <th>Avg stocks / cash</th>
                         </tr>
                       </thead>
                       <tbody>
@@ -333,6 +362,10 @@ export default function Research({
                             </td>
                             <td>
                               {percent(r.windows[period].metrics.drawdown)}
+                            </td>
+                            <td>
+                              {percent(displayedExposure(r, period).stocks)} /{" "}
+                              {percent(displayedExposure(r, period).cash)}
                             </td>
                           </tr>
                         ))}
@@ -385,6 +418,7 @@ export function RunDetail({
   setPeriod: (p: Period) => void;
 }) {
   const window = run.windows[period];
+  const exposure = displayedExposure(run, period);
   return (
     <>
       {run.coverage?.mode === "coverage_limited" && (
@@ -453,6 +487,27 @@ export function RunDetail({
           </div>
         )}
         <MetricStrip metrics={window.metrics} />
+        <div className="card-body exposure-disclosure">
+          <Notice>
+            <strong>
+              Average allocation: {percent(exposure.stocks)} stocks /{" "}
+              {percent(exposure.cash)} cash.
+            </strong>{" "}
+            Cash earns 0% in this simulation. SPY is a fully invested
+            buy-and-hold comparison; the exposure can differ substantially. This
+            average uses the displayed period, including its starting valuation.
+          </Notice>
+          {run.sector_classification?.warning && (
+            <p className="field-hint">{run.sector_classification.warning}</p>
+          )}
+          {!run.sector_classification && (
+            <p className="field-hint">
+              This saved result predates sector coverage auditing. Its original
+              classifications and returns are preserved; refresh sectors in Data
+              and select the new snapshot for another backtest.
+            </p>
+          )}
+        </div>
         <div className="chart-toolbar">
           <div className="legend">
             <span>

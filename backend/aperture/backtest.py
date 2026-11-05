@@ -130,6 +130,13 @@ def run(
         notes.add(
             f"Excluded {coverage_audit['excluded_count']} of {coverage_audit['universe_count']} in-period stocks. Every exclusion and reason is retained in the coverage audit."
         )
+    sector_audit = dataset.metadata.get("sector_classification")
+    if sector_audit:
+        notes.add(sector_audit["warning"])
+        if sector_audit["unresolved_count"]:
+            notes.add(
+                f"{sector_audit['unresolved_count']} symbols have unresolved sectors. Unknown stocks share one capped bucket; inspect sector coverage in Data."
+            )
     if dataset.kind == "synthetic":
         notes.add(
             "Synthetic practice data. These returns are not evidence of strategy effectiveness."
@@ -217,10 +224,16 @@ def run(
                     "targets": {
                         symbol: str(weight) for symbol, weight in targets.items()
                     },
+                    "target_sectors": {
+                        stock.symbol: stock.sector
+                        for stock in ranked
+                        if stock.symbol in targets
+                    },
                     "signals": [
                         {
                             "symbol": stock.symbol,
                             "score": stock.score,
+                            "sector": stock.sector,
                             "components": stock.components,
                         }
                         for stock in ranked
@@ -258,7 +271,7 @@ def run(
         }
         for symbol, quantity in sorted(portfolio.positions.items())
     ]
-    return {
+    result = {
         "engine_version": __version__,
         "input_contract": "dated-research-v1"
         if dataset.metadata.get("normalizer_version")
@@ -280,6 +293,19 @@ def run(
             key: str(value) if isinstance(value, Decimal) else value
             for key, value in vars(policy).items()
         },
+        "sector_classification": {
+            k: sector_audit[k]
+            for k in (
+                "version",
+                "policy",
+                "warning",
+                "classified_count",
+                "unresolved_count",
+                "classification_digest",
+            )
+        }
+        if sector_audit
+        else None,
         "curve": curve,
         "windows": windows(curve),
         "trades": trades,
@@ -292,3 +318,7 @@ def run(
         else "SPY buy-and-hold from the same next-session open, with the same costs and dividend reinvestment when cash is paid.",
         "execution_model": "Targets decided after close; simulated fills at the next actual session open with explicit slippage, fees, fractional shares and cash checks. No opening-auction execution guarantee.",
     }
+    from .exposure import summarize as summarize_exposure
+
+    result["exposure"] = summarize_exposure(result)
+    return result

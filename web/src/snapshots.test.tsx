@@ -68,6 +68,23 @@ it("keeps distinct saved data series selectable", () => {
     snapshotGroups([snapshot(1), snapshot(2, { series_id: "custom" })]).latest,
   ).toHaveLength(2);
 });
+
+it("hides intermediate classification price parents while retaining older complete research", () => {
+  const old = snapshot(1);
+  const raw = snapshot(2, { fundamentals: undefined, bundle_role: "prices" });
+  const sectors = {
+    ...raw,
+    id: "sectors",
+    metadata: { ...raw.metadata, sector_parent_dataset_id: raw.id },
+  };
+  const complete = {
+    ...snapshot(3),
+    metadata: { ...snapshot(3).metadata, price_dataset_id: sectors.id },
+  };
+  const groups = snapshotGroups([old, raw, sectors, complete]);
+  expect(groups.latest.map((d) => d.id)).toEqual([complete.id]);
+  expect(groups.older.map((d) => d.id)).toEqual([old.id]);
+});
 it("defaults January data to January of the following year", () => {
   expect(afterWarmup("2016-01-04", "2026-11-04")).toBe("2017-01-01");
   expect(afterWarmup("2026-10-01", "2026-11-04")).toBe("2026-10-01");

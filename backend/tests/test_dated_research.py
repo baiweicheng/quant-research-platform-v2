@@ -82,6 +82,9 @@ def test_merger_cash_keeps_verified_payment_date_in_research():
 
 @pytest.fixture
 def vendor(tmp_path, monkeypatch):
+    from sector_fixtures import stub_sectors
+
+    stub_sectors(monkeypatch)
     store = Store(tmp_path / "research.sqlite3")
     state = {
         "latest": date(2017, 2, 3),
@@ -472,8 +475,9 @@ def test_initial_combined_download_worker_finishes_with_price_coverage_list(
     s.enqueue("download", {**payload(), "include_fundamentals": True})
     assert process_one(s)
     assert s.jobs()[0]["state"] == "complete", s.jobs()[0]["message"]
-    assert len(s.datasets()) == 2
+    assert len(s.datasets()) == 3
     complete = s.datasets()[0]
+    assert complete["metadata"]["sector_classification"]["classified_count"] == 1
     assert complete["metadata"]["bundle_role"] == "complete"
     assert complete["metadata"]["fundamentals"]["record_count"] > 0
     result = s.result(s.jobs()[0]["result_id"])

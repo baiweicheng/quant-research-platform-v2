@@ -25,6 +25,13 @@ export default function DatasetUpdates({ datasets }: { datasets: Dataset[] }) {
       navigate("/activity");
     },
   });
+  const sectors = useMutation({
+    mutationFn: () => api(`/datasets/${id}/sectors`, {}),
+    onSuccess: async () => {
+      await client.invalidateQueries({ queryKey: ["state"] });
+      navigate("/activity");
+    },
+  });
   if (!available.length) return null;
   return (
     <section className="card market-data">
@@ -32,15 +39,16 @@ export default function DatasetUpdates({ datasets }: { datasets: Dataset[] }) {
         <div>
           <span className="eyebrow">KEEP YOUR RESEARCH CURRENT</span>
           <h2>Update a saved dataset</h2>
-          <p>Bring prices, membership and SEC filings forward.</p>
+          <p>Bring prices, sectors, membership and SEC filings forward.</p>
         </div>
       </div>
       <div className="card-body">
         <p>
           Update the latest snapshot with recent prices, corporate actions,
-          membership and SEC filings. New members receive historical backfill. A
-          new snapshot shares unchanged data with earlier snapshots. After
-          completion, select the newest snapshot in Research.
+          membership, sector classifications and SEC filings. New members
+          receive historical backfill. A new snapshot shares unchanged data with
+          earlier snapshots. After completion, select the newest snapshot in
+          Research.
         </p>
         <form
           className="form"
@@ -57,6 +65,7 @@ export default function DatasetUpdates({ datasets }: { datasets: Dataset[] }) {
                 onChange={(event) => {
                   setSelected(event.target.value);
                   task.reset();
+                  sectors.reset();
                 }}
               >
                 {available.map((dataset) => (
@@ -74,6 +83,14 @@ export default function DatasetUpdates({ datasets }: { datasets: Dataset[] }) {
                 <RefreshCw size={16} />
                 {task.isPending ? "Queueing update…" : "Update dataset"}
               </button>
+              <button
+                type="button"
+                className="button secondary"
+                disabled={!id || sectors.isPending || task.isPending}
+                onClick={() => sectors.mutate()}
+              >
+                {sectors.isPending ? "Queueing sectors…" : "Refresh sectors"}
+              </button>
             </div>
           </div>
         </form>
@@ -90,6 +107,13 @@ export default function DatasetUpdates({ datasets }: { datasets: Dataset[] }) {
           </p>
         )}
         {task.error && <Notice error>{task.error.message}</Notice>}
+        <p className="field-hint">
+          Sector information is included in every download and update. Refresh
+          sectors alone reuses saved prices and filings in a new snapshot.
+          Current or last-known labels are used where complete historical
+          classifications are unavailable.
+        </p>
+        {sectors.error && <Notice error>{sectors.error.message}</Notice>}
       </div>
     </section>
   );

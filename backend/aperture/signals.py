@@ -68,7 +68,11 @@ def rank(
         )
     sectors = dataset.sectors
     audit = dataset.metadata.get("membership")
-    if audit and audit["kind"] == "combined":
+    if (
+        audit
+        and audit["kind"] == "combined"
+        and not dataset.metadata.get("sector_classification")
+    ):
         history = audit["historical"]
         if (
             not history

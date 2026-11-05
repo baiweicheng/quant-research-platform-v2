@@ -66,6 +66,7 @@ export type Dataset = {
   warnings: string[];
   created_at: string;
   metadata?: {
+    sector_classification?: SectorAudit;
     provider?: string;
     feed?: string;
     retrieved_at?: string;
@@ -116,6 +117,38 @@ export type RunSummary = {
   trade_count: number;
   metrics: Metrics;
   coverage?: { mode: string; excluded_count: number };
+  exposure?: Exposure | null;
+  sector_classification?: Partial<SectorAudit> | null;
+};
+export type Exposure = {
+  mean_stock_weight: number;
+  mean_cash_weight: number;
+  min_target_stock_weight: number | null;
+  max_target_stock_weight: number | null;
+  basis?: string;
+};
+export type SectorAudit = {
+  version: string;
+  policy: string;
+  warning: string;
+  classified_count: number;
+  unresolved_count: number;
+  not_applicable_count: number;
+  unresolved_symbols: string[];
+  classification_digest: string;
+  captured_at: string;
+  records?: Record<
+    string,
+    {
+      symbol: string;
+      sector: string | null;
+      name?: string;
+      method: string;
+      source?: string;
+      reason?: string;
+      evidence_date?: string | null;
+    }
+  >;
 };
 export type ReviewSummary = {
   id: string;

@@ -32,6 +32,16 @@ Momentum and volatility signals require 253 complete sessions available by the d
 
 Select up to 25 names, equal-weight under a 5% stock cap, 25% sector cap and 2% cash floor. One shared construction function is used for simulations and read-only weekly reviews. Infeasible constraints leave more cash; they are never relaxed to force a fully invested portfolio. These are provisional research defaults, not user approval of a live risk policy.
 
+## Sector classifications
+
+Downloads and dataset updates acquire sector information alongside prices and SEC filings. Data → Refresh sectors can derive a classified snapshot from existing prices and filings without downloading those series again. Prior datasets and results stay frozen; use the newest snapshot for a new backtest.
+
+The approved research compromise uses captured current or last-known sectors when a complete historical sector timeline is unavailable. Current S&P roster labels are combined with the [public current/former-constituent archive](https://github.com/lawcal/sp500-components-history), reviewed dated S&P announcements, and explicitly labeled issuer-business proxies for remaining gaps. The archive is maintained by Calvin Law from Wikipedia revisions; it is retrospective public data, not an official GICS point-in-time history. Its code is MIT-licensed; Wikipedia attribution and underlying data limitations remain applicable. Reviewed source links and evidence dates travel with every relevant symbol.
+
+The eleven sector names are normalized consistently (for example, Technology and Information Technology cannot become separate cap buckets). Historical ticker aliases are reviewed individually; original DuPont and Dow remain distinct from newer issuers. Price-period/constituent intervals help distinguish recycled archive labels. A sector mapping does not resolve price identity, actions, filings or trading eligibility. Warrants carry an explicit issuer-exposure proxy, while SPY and identified pooled funds have no operating-company sector. Every unresolved stock remains in one shared Unknown bucket under the same cap; neither unique fake sectors nor silent cap relaxation is used.
+
+These static classifications can use information after a historical decision and introduce classification look-ahead bias. A dated announcement is evidence of a classification on that date, not proof of a complete timeline before or after it. This compromise applies in both data-coverage modes; strict price/action coverage does not certify historical sector accuracy. Data exposes counts, every classification/method/source, and unresolved names. Full metadata/result exports retain the audit and source fingerprints. Acquisition failures stop completion of the new stage and preserve earlier snapshots; retries do not replace old inputs.
+
 ## SEC fundamental snapshots
 
 Data → Add SEC fundamentals reads the official issuer directory, submissions metadata and companyfacts API, then saves a separate immutable price + SEC snapshot. Issuer CIKs are cross-checked; raw responses and content fingerprints are retained locally. Refreshing an enriched dataset starts from its original price parent. Identical inputs and policy deduplicate.
@@ -61,6 +71,8 @@ SPY must have every requested session to enable comparisons. It is purchased fro
 ## Results
 
 Results retain the engine version, input contract, dataset fingerprint, recipe version, dates, capital, costs, allocation settings, decisions, fills, daily cash, receivables, equity and benchmark. They are immutable. Backtest returns are not account returns.
+
+Saved experiments and comparisons disclose average daily stock/cash exposure. The detail view recomputes exposure for the displayed period, including its initial valuation. Stock value excludes cash and receivables. SPY remains the fully invested buy-and-hold reference, so exposure differences must be considered when interpreting its return gap. The cash floor is a minimum, not a target: sector concentration or other constraints can leave substantially more cash. Legacy exposure is derived for display without rewriting old result bodies.
 
 Chart periods share their dates with the metrics. Boundaries include the last valuation on or before the calendar cutoff, when available, so the first return is not dropped. Short history is labeled with actual dates. Relative performance is a percentage-point difference. Drawdown is the largest fall from a prior peak within the displayed period. Annual volatility uses sample daily-return deviation × sqrt(252), with at least 20 returns. CAGR requires at least 365 calendar days and uses actual elapsed days / 365.25. Sharpe is deferred until a defensible risk-free series and convention are supported.
 
