@@ -60,6 +60,16 @@ class EvaluationRequest(BaseModel):
     acknowledge: bool = False
 
 
+class CleanupTarget(BaseModel):
+    kind: Literal["dataset", "result", "protocol", "job"]
+    id: str = Field(min_length=1, max_length=64)
+
+
+class CleanupRequest(BaseModel):
+    targets: list[CleanupTarget] = Field(min_length=1, max_length=1000)
+    fingerprint: str | None = Field(default=None, max_length=64)
+
+
 class PaperConfigRequest(BaseModel):
     strategy_id: str = Field(max_length=40)
     mode: Literal["manual", "automatic"] = "manual"
@@ -158,9 +168,35 @@ def create_app(
             },
         }
 
+    @app.get("/api/research/library")
+    def research_library():
+        from .research_cleanup import inventory
+
+        return inventory(store)
+
+    @app.post("/api/research/deletion-preview")
+    def deletion_preview(payload: CleanupRequest):
+        from .research_cleanup import preview
+
+        return preview(store, [t.model_dump() for t in payload.targets])
+
+    @app.post("/api/research/delete")
+    def delete_research(payload: CleanupRequest):
+        from .research_cleanup import delete
+
+        if not payload.fingerprint:
+            raise ResearchError("Review the deletion preview before confirming.")
+        return delete(
+            store, [t.model_dump() for t in payload.targets], payload.fingerprint
+        )
+
     @app.get("/api/results/{identifier}")
     def result(identifier: str, view: bool = False, download: bool = False):
         body = store.result(identifier)
+        if not view and isinstance(body.get("input_audit"), dict):
+            from .filing_classes import expand_metadata
+
+            body = {**body, "input_audit": expand_metadata(store, body["input_audit"])}
         if download:
             return JSONResponse(
                 body,
@@ -179,6 +215,9 @@ def create_app(
         body = next((d for d in store.datasets() if d["id"] == identifier), None)
         if body is None:
             raise ResearchError("That dataset was not found. Choose one from Data.")
+        from .filing_classes import expand_metadata
+
+        body = {**body, "metadata": expand_metadata(store, body.get("metadata", {}))}
         return JSONResponse(
             body,
             headers={
@@ -206,7 +245,7 @@ def create_app(
 
         with store.connect() as db:
             attempts = db.execute(
-                "SELECT count(*) FROM jobs WHERE kind IN ('backtest','validation')"
+                "SELECT count(*) FROM (SELECT id FROM jobs WHERE kind IN ('backtest','validation') UNION SELECT id FROM research_exposures WHERE kind IN ('backtest','validation'))"
             ).fetchone()[0]
         return {
             "protocols": protocols(store),
@@ -231,6 +270,10 @@ def create_app(
         from .experiments import trial
 
         body = trial(store, identifier)
+        if not view and isinstance(body.get("input_audit"), dict):
+            from .filing_classes import expand_metadata
+
+            body = {**body, "input_audit": expand_metadata(store, body["input_audit"])}
         if download:
             return JSONResponse(
                 body,

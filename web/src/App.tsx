@@ -43,6 +43,7 @@ import {
   SignalAudit,
 } from "./Fundamentals";
 import type { Review, State, Strategy } from "./types";
+import ResearchManager, { DeleteResearchButton } from "./ResearchManager";
 
 const tabs = [
   ["/", "Overview"],
@@ -493,10 +494,13 @@ function DataPage({
           <h1>Good research starts here.</h1>
           <p>Know where your data comes from, and what it can support.</p>
         </div>
-        <button className="button" onClick={onImport}>
-          <Upload size={16} />
-          Import CSV
-        </button>
+        <div className="heading-actions">
+          <ResearchManager category="Datasets" />
+          <button className="button" onClick={onImport}>
+            <Upload size={16} />
+            Import CSV
+          </button>
+        </div>
       </div>
       <MarketData />
       <DatasetUpdates datasets={state.datasets} />
@@ -577,17 +581,24 @@ function DataPage({
                     {shortDate(dataset.start)} – {shortDate(dataset.end)}
                   </p>
                 </div>
-                <button
-                  className="icon-button"
-                  aria-label={`Export ${dataset.name} metadata`}
-                  onClick={() =>
-                    window.location.assign(
-                      `/api/datasets/${dataset.id}/metadata`,
-                    )
-                  }
-                >
-                  <Download size={18} />
-                </button>
+                <div className="heading-actions">
+                  <DeleteResearchButton
+                    kind="dataset"
+                    id={dataset.id}
+                    name={`${snapshotName(dataset)} snapshot ${dataset.id.slice(0, 8)}`}
+                  />
+                  <button
+                    className="icon-button"
+                    aria-label={`Export ${dataset.name} metadata`}
+                    onClick={() =>
+                      window.location.assign(
+                        `/api/datasets/${dataset.id}/metadata`,
+                      )
+                    }
+                  >
+                    <Download size={18} />
+                  </button>
+                </div>
               </div>
               <div className="card-body">
                 <p className="data-source">
@@ -763,7 +774,9 @@ function ResearchAllocations({
   const [selected, setSelected] = useState(
     new URLSearchParams(location.search).get("review") ?? "",
   );
-  const id = selected || state.reviews[0]?.id;
+  const id = state.reviews.some((r) => r.id === selected)
+    ? selected
+    : state.reviews[0]?.id;
   const review = useQuery({
     queryKey: ["review", id],
     queryFn: () => api<Review>(`/results/${id}`),
@@ -779,9 +792,12 @@ function ResearchAllocations({
             Explore target allocations before a strategy is approved to trade.
           </p>
         </div>
-        <button className="button" onClick={onPrepare}>
-          Prepare weekly review <ArrowRight size={16} />
-        </button>
+        <div className="heading-actions">
+          <ResearchManager category="Allocation reviews" />
+          <button className="button" onClick={onPrepare}>
+            Prepare weekly review <ArrowRight size={16} />
+          </button>
+        </div>
       </div>
       <div className="card portfolio-summary">
         <div>
@@ -823,6 +839,11 @@ function ResearchAllocations({
               ))}
             </select>
           </label>
+          <DeleteResearchButton
+            kind="result"
+            id={id}
+            name="selected allocation review"
+          />
           {review.isPending ? (
             <div className="card loading">Loading review…</div>
           ) : review.error ? (
@@ -976,7 +997,10 @@ function ActivityPage({
             Background tasks save their progress and completed results locally.
           </p>
         </div>
-        <Badge>{state.jobs.length} recent tasks</Badge>
+        <div className="heading-actions">
+          <ResearchManager category="Task history" />
+          <Badge>{state.jobs.length} recent tasks</Badge>
+        </div>
       </div>
       <div className="card">
         {!state.jobs.length ? (

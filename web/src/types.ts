@@ -10,6 +10,7 @@ export type Strategy = {
   definition?: string;
 };
 export type FundamentalCoverage = {
+  normalizer?: string;
   record_count: number;
   availability: string;
   retrieved_at: string;
@@ -22,6 +23,8 @@ export type FundamentalCoverage = {
     latest_period?: string | null;
     latest_filed?: string | null;
     available_at?: string | null;
+    share_class_filings?: number;
+    share_class_verified?: number;
   }[];
 };
 export type Signal = {
@@ -176,6 +179,7 @@ export type State = {
 export const PERIODS = ["1W", "1M", "3M", "6M", "YTD", "1Y", "All"] as const;
 export type Period = (typeof PERIODS)[number];
 export type Run = Omit<RunSummary, "metrics"> & {
+  engine_version?: string;
   audit_path?: string;
   capital: string;
   dividend_model?: string;

@@ -9,6 +9,33 @@ from aperture.providers import Provider, download_market, validate_symbols
 from aperture.store import Store
 
 
+def test_filed_documents_are_exact_cached_bytes_without_broker_credentials(
+    tmp_path, monkeypatch
+):
+    monkeypatch.setattr("aperture.providers.time.sleep", lambda _: None)
+    calls = []
+
+    def handle(request):
+        calls.append(request)
+        assert "apca-api-key-id" not in request.headers
+        assert "apca-api-secret-key" not in request.headers
+        return httpx.Response(200, content=b"<html>\xff archived filing</html>")
+
+    cfg = Settings("unused-key", "unused-secret", "Fixture contact@example.com")
+    store = Store(tmp_path / "documents.sqlite3")
+    api = Provider(store, httpx.Client(transport=httpx.MockTransport(handle)), cfg)
+    url = "https://www.sec.gov/Archives/edgar/data/1/000000000123000001/annual.htm"
+    assert api.document(url) == b"<html>\xff archived filing</html>"
+    assert api.document(url) == b"<html>\xff archived filing</html>" and len(calls) == 1
+    for invalid in [
+        "https://evil.example/annual.htm",
+        "https://www.sec.gov/Archives/edgar/data/1/000000000123000001/../annual.htm",
+    ]:
+        with pytest.raises(ResearchError, match="official SEC"):
+            api.document(invalid)
+    assert len(calls) == 1
+
+
 @pytest.fixture
 def market(tmp_path, monkeypatch):
     monkeypatch.setattr("aperture.providers.time.sleep", lambda _: None)

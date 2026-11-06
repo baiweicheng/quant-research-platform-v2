@@ -75,9 +75,13 @@ def test_review_staleness_fails_in_worker_without_publishing_plan(tmp_path):
 
 def test_jobs_duplicate_safe_failure_recovery_and_result_persistence(tmp_path):
     store = Store(tmp_path / "test.sqlite")
-    one = store.enqueue("review", {"dataset_id": "missing", "strategy_id": "momentum"})
+    with pytest.raises(ResearchError, match="no longer available"):
+        store.enqueue("review", {"dataset_id": "missing", "strategy_id": "momentum"})
+    dataset, raw, warnings = parse_csv(CSV, "Old prices", "fixture")
+    store.save_dataset(dataset, raw, warnings)
+    one = store.enqueue("review", {"dataset_id": dataset.id, "strategy_id": "momentum"})
     assert (
-        store.enqueue("review", {"strategy_id": "momentum", "dataset_id": "missing"})[
+        store.enqueue("review", {"strategy_id": "momentum", "dataset_id": dataset.id})[
             "id"
         ]
         == one["id"]

@@ -32,6 +32,13 @@ export default function DatasetUpdates({ datasets }: { datasets: Dataset[] }) {
       navigate("/activity");
     },
   });
+  const filings = useMutation({
+    mutationFn: () => api(`/fundamentals/${id}`, {}),
+    onSuccess: async () => {
+      await client.invalidateQueries({ queryKey: ["state"] });
+      navigate("/activity");
+    },
+  });
   if (!available.length) return null;
   return (
     <section className="card market-data">
@@ -114,6 +121,22 @@ export default function DatasetUpdates({ datasets }: { datasets: Dataset[] }) {
           classifications are unavailable.
         </p>
         {sectors.error && <Notice error>{sectors.error.message}</Notice>}
+        <div className="form-action">
+          <button
+            className="button secondary"
+            disabled={filings.isPending || !id}
+            onClick={() => filings.mutate()}
+          >
+            Refresh SEC filings & share classes
+          </button>
+        </div>
+        <p className="field-hint">
+          Recheck filing-specific share units in a new snapshot using saved
+          prices. First-time verification reads historical SEC filings and can
+          take longer; completed captures are reused on retry. Earlier snapshots
+          and results stay available.
+        </p>
+        {filings.error && <Notice error>{filings.error.message}</Notice>}
       </div>
     </section>
   );

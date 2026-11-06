@@ -176,14 +176,22 @@ def rebalance(
             )
             if record:
                 trades.append(record)
-    for symbol, weight in sorted(targets.items()):
-        difference = (
+    # Entitlements count in NAV, but cannot fund purchases. Reserve the whole
+    # buy basket together so a cash shortfall never favors earlier tickers.
+    needs = {
+        symbol: max(
+            ZERO,
             weight * sizing_value
-            - portfolio.positions.get(symbol, ZERO) * openings[symbol]
+            - portfolio.positions.get(symbol, ZERO) * openings[symbol],
         )
-        usable = max(ZERO, portfolio.cash - equity * policy.cash_reserve)
+        for symbol, weight in targets.items()
+    }
+    usable = max(ZERO, portfolio.cash - equity * policy.cash_reserve)
+    total = sum(needs.values(), ZERO)
+    scale = min(ONE, usable / total) if total else ZERO
+    for symbol, difference in sorted(needs.items()):
         record = buy(
-            portfolio, symbol, openings[symbol], min(difference, usable), policy, day
+            portfolio, symbol, openings[symbol], difference * scale, policy, day
         )
         if record:
             trades.append(record)

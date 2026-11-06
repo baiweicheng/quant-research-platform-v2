@@ -112,3 +112,17 @@ it("offers sector-only repair and explains automatic acquisition", async () => {
     ),
   );
 });
+
+it("refreshes filed share units against saved prices without a market download", async () => {
+  const fetcher = setup();
+  await userEvent.click(
+    screen.getByRole("button", { name: "Refresh SEC filings & share classes" }),
+  );
+  await waitFor(() =>
+    expect(fetcher).toHaveBeenCalledWith(
+      "/api/fundamentals/sec",
+      expect.anything(),
+    ),
+  );
+  expect(fetcher).toHaveBeenCalledTimes(1);
+});

@@ -3,6 +3,7 @@
 import hashlib
 import json
 import time
+import base64
 from datetime import date, datetime, timedelta
 from decimal import Decimal
 from urllib.parse import quote
@@ -55,6 +56,67 @@ class Provider:
     def close(self):
         if self.owned:
             self.client.close()
+
+    def document(self, url: str) -> bytes:
+        """Capture a specific immutable SEC filing; never forward broker keys."""
+        import re
+
+        if not re.fullmatch(
+            r"https://www\.sec\.gov/Archives/edgar/data/\d+/\d{18}/[A-Za-z0-9_.-]+\.(?:html?|xml)",
+            url,
+        ):
+            raise ResearchError("Choose an official SEC filing document.")
+        if "@" not in self.cfg.sec_agent:
+            raise ResearchError(
+                "Configure SEC_USER_AGENT before reading filed share classes."
+            )
+        resource = url + "#filed-document-v1"
+        cached = self.store.cached("sec", resource, 315360000)
+        if cached:
+            self.observations.append(cached[1])
+            return (
+                base64.b64decode(cached[0]["base64"])
+                if isinstance(cached[0], dict)
+                else cached[0].encode()
+            )
+        for attempt in range(3):
+            try:
+                response = self.client.get(
+                    url,
+                    headers={
+                        "User-Agent": self.cfg.sec_agent,
+                        "Accept-Encoding": "gzip, deflate",
+                    },
+                )
+            except httpx.RequestError:
+                if attempt < 2:
+                    time.sleep(0.3 * (attempt + 1))
+                    continue
+                raise ResearchError(
+                    "SEC filed share-class evidence could not be reached. Retry; earlier snapshots remain unchanged."
+                ) from None
+            if response.status_code in (429, 500, 502, 503, 504) and attempt < 2:
+                time.sleep(0.5 * (attempt + 1))
+                continue
+            if response.status_code == 404:
+                raise ResourceMissing("SEC filing document was not found.")
+            if not response.is_success:
+                raise ResearchError(
+                    f"SEC filing evidence returned HTTP {response.status_code}. Retry acquisition; no unverified EPS was substituted."
+                )
+            if len(response.content) > 32 * 1024 * 1024:
+                raise ResearchError("SEC filing exceeds the 32 MB evidence limit.")
+            raw = response.content
+            self.observations.append(
+                self.store.observe(
+                    "sec",
+                    resource,
+                    json.dumps({"base64": base64.b64encode(raw).decode()}).encode(),
+                )
+            )
+            time.sleep(0.15)
+            return raw
+        raise ResearchError("SEC filing retries exhausted.")
 
     def get(
         self, provider: str, url: str, params: dict | None = None, ttl: int = 300

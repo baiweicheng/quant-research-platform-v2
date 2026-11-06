@@ -51,6 +51,9 @@ export function TaskDialog({
   ].includes(strategyId);
   const missingFundamentals =
     needsFundamentals && !dataset?.metadata?.fundamentals?.record_count;
+  const legacyClasses =
+    ["quality_value", "value_momentum"].includes(strategyId) &&
+    dataset?.metadata?.fundamentals?.normalizer === "annual-us-gaap-v1";
   const [start, setStart] = useState(
     dataset ? afterWarmup(dataset.start, dataset.end) : "",
   );
@@ -146,6 +149,14 @@ export function TaskDialog({
           <Notice>
             Synthetic practice data — useful for learning the workflow, never
             evidence of strategy performance.
+          </Notice>
+        )}
+        {legacyClasses && (
+          <Notice>
+            This snapshot retains the legacy EPS share-class screen. In Data,
+            use Refresh SEC filings & share classes, then choose the new
+            snapshot to apply the corrected method. Earlier saved inputs stay
+            unchanged.
           </Notice>
         )}
         {missingFundamentals && (

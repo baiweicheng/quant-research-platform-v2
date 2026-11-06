@@ -125,6 +125,14 @@ def run(
         if dataset.metadata.get("membership")
         else "Exploratory fixed-list research: historical membership, delisted-stock coverage, and sector classifications have not been independently verified. Results must not be described as survivorship-safe."
     }
+    if (
+        identifier in {"quality_value", "value_momentum"}
+        and dataset.metadata.get("fundamentals", {}).get("normalizer")
+        == "annual-us-gaap-v1"
+    ):
+        notes.add(
+            "Legacy snapshot: EPS eligibility still uses the former current-ticker screen. In Data, refresh SEC filings & share classes and select the new snapshot to apply filing-specific evidence. Saved historical inputs are not rewritten."
+        )
     if coverage_mode == "coverage_limited":
         notes.add(coverage_audit["warning"])
         notes.add(

@@ -10,6 +10,7 @@ import {
 import { afterWarmup, ResearchCoverageChoice } from "./dialogs";
 import { RunDetail } from "./Research";
 import type { Metrics, Period, Run, State } from "./types";
+import { DeleteResearchButton } from "./ResearchManager";
 
 type Protocol = {
   id: string;
@@ -63,9 +64,12 @@ export default function Validation({ state }: { state: State }) {
     queryFn: () => api<Registry>("/research/protocols"),
     refetchInterval: 2500,
   });
-  const [datasetId, setDataset] = useState(
+  const [requestedDataset, setDataset] = useState(
     snapshotGroups(researchSnapshots(state.datasets)).latest[0]?.id ?? "",
   );
+  const datasetId = state.datasets.some((d) => d.id === requestedDataset)
+    ? requestedDataset
+    : (snapshotGroups(researchSnapshots(state.datasets)).latest[0]?.id ?? "");
   const ds = state.datasets.find((d) => d.id === datasetId);
   const [selected, setSelected] = useState("");
   const [trialId, setTrial] = useState("");
@@ -79,7 +83,7 @@ export default function Validation({ state }: { state: State }) {
   const result = useQuery({
     queryKey: ["trial", trialId],
     queryFn: () => api<Run>(`/research/trials/${trialId}?view=true`),
-    enabled: !!trialId,
+    enabled: !!trialId && trials.some((t) => t.id === trialId),
   });
   const create = useMutation({
     mutationFn: (body: unknown) => api<Protocol>("/research/protocols", body),
@@ -272,6 +276,15 @@ export default function Validation({ state }: { state: State }) {
                 ))}
               </select>
             </label>
+            <DeleteResearchButton
+              kind="protocol"
+              id={protocol.id}
+              name={`${protocol.name} validation protocol`}
+              onDeleted={() => {
+                setSelected("");
+                setTrial("");
+              }}
+            />
             <p>
               <strong>
                 {protocol.strategy.name} v{protocol.strategy.version}

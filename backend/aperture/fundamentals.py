@@ -16,7 +16,7 @@ from .domain import AnnualStatement, Dataset, ONE, ResearchError, ZERO, decimal
 from .providers import Provider, ResourceMissing
 from .store import Store, now
 
-VERSION = "annual-us-gaap-v1"
+VERSION = "annual-us-gaap-v2-filed-classes"
 AVAILABILITY = "After close + 15 minutes on the first exchange session strictly after the SEC filing date. No same-day publication assumption."
 TAGS = {
     "assets": ("Assets",),
@@ -42,7 +42,11 @@ def filing_available(filed: date):
 
 
 def normalize(
-    symbol: str, cik: str, company: dict, submissions: dict
+    symbol: str,
+    cik: str,
+    company: dict,
+    submissions: dict,
+    class_evidence: dict | None = None,
 ) -> tuple[tuple[AnnualStatement, ...], list[str]]:
     """Normalize annual periods without quarter proration or unit substitution."""
     issues = []
@@ -55,12 +59,7 @@ def normalize(
         return (), [
             "Issuer is not classified as an operating company in the SEC submission metadata."
         ]
-    tickers = list(dict.fromkeys(submissions.get("tickers") or [symbol]))
-    eps_compatible = len(tickers) == 1
-    if not eps_compatible:
-        issues.append(
-            "Multiple listed tickers/share classes: per-share valuation is excluded until class units are mapped. Entity-level profitability can still be evaluated."
-        )
+    class_evidence = class_evidence or {}
     groups: dict[tuple, dict[str, set[Decimal]]] = {}
     filed_dates, forms = {}, {}
     wanted = {tag for tags in TAGS.values() for tag in tags}
@@ -125,7 +124,25 @@ def normalize(
             if revenue is not None and cost is not None:
                 gross = revenue - cost
                 sources["gross_profit"] = sources["revenue"] + " - " + sources["cost"]
+        # Eligibility belongs to this accession, never today's ticker count.
+        evidence = class_evidence.get(accession, {})
+        eps_compatible = bool(
+            evidence.get("compatible")
+            and evidence.get("accession") == accession
+            and evidence.get("filed") == str(filed_dates[accession])
+            and evidence.get("cik") == cik
+            and evidence.get("symbol") == symbol
+        )
         eps = value_for("eps") if eps_compatible else None
+        if evidence.get("url"):
+            sources["share_class_evidence"] = evidence["url"]
+        if evidence.get("sha256"):
+            sources["share_class_evidence_sha256"] = evidence["sha256"]
+        if not eps_compatible:
+            row_issues.append(
+                evidence.get("reason")
+                or "No dated filing-specific common-share mapping. EPS valuation is excluded; today's ticker list is not evidence of past share classes."
+            )
         if assets is not None and assets <= ZERO:
             row_issues.append(
                 "Nonpositive assets cannot be a profitability denominator."
@@ -248,6 +265,15 @@ def inputs(dataset: Dataset, symbol: str, decision: date) -> tuple[dict, str | N
         values["valuation_issue"] = (
             "Price/action history after this filing is incomplete; intervening split units cannot be verified."
         )
+    elif not statement.eps_compatible:
+        values["valuation_issue"] = next(
+            (
+                issue
+                for issue in statement.issues
+                if "class" in issue.lower() or "ticker" in issue.lower()
+            ),
+            "Dated filing-specific EPS share units are unavailable.",
+        )
     return values, None
 
 
@@ -337,7 +363,25 @@ def attach(
                 or str(submissions.get("cik", "")).zfill(10) != cik
             ):
                 raise ResearchError(f"SEC issuer identity mismatch for {symbol}.")
-            normalized, issues = normalize(symbol, cik, company, submissions)
+            from .filing_classes import acquire
+
+            first_session = min(b.session for rows in base.bars.values() for b in rows)
+            class_evidence = acquire(
+                api,
+                symbol,
+                cik,
+                company,
+                submissions,
+                str(first_session - timedelta(days=550)),
+                str(last_session),
+                lambda n, total: progress(
+                    5 + round(index / max(len(symbols), 1) * 85),
+                    f"Verifying filed share classes: {symbol} ({n}/{total} filings)",
+                ),
+            )
+            normalized, issues = normalize(
+                symbol, cik, company, submissions, class_evidence
+            )
             statements[symbol] = normalized
             latest = as_of(normalized, last_session)
             latest_inputs, latest_issue = inputs(
@@ -350,9 +394,20 @@ def attach(
             )
             if latest_inputs.get("valuation_issue"):
                 coverage_issues.append(latest_inputs["valuation_issue"])
+            verified_classes = sum(
+                bool(row.get("compatible")) for row in class_evidence.values()
+            )
+            if verified_classes < len(class_evidence):
+                coverage_issues.append(
+                    f"{len(class_evidence) - verified_classes} of {len(class_evidence)} filing accessions have unavailable or unmapped share-class evidence; historical valuation eligibility varies."
+                )
             source_hashes[symbol] = hashlib.sha256(
                 json.dumps(
-                    {"companyfacts": company, "submissions": submissions},
+                    {
+                        "companyfacts": company,
+                        "submissions": submissions,
+                        "filed_share_classes": class_evidence,
+                    },
                     sort_keys=True,
                     separators=(",", ":"),
                 ).encode()
@@ -362,12 +417,21 @@ def attach(
                     "symbol": symbol,
                     "cik": cik,
                     "records": len(normalized),
-                    "reason": "; ".join(coverage_issues),
+                    "reason": "; ".join(dict.fromkeys(coverage_issues)),
                     "quality_ready": latest_inputs.get("profitability", ZERO) > ZERO,
                     "value_ready": latest_inputs.get("earnings_yield", ZERO) > ZERO,
                     "latest_period": str(latest.end) if latest else None,
                     "latest_filed": str(latest.filed) if latest else None,
                     "available_at": latest.available_at.isoformat() if latest else None,
+                    "filed_share_classes_digest": store.capture_source(
+                        json.dumps(
+                            list(class_evidence.values()),
+                            sort_keys=True,
+                            separators=(",", ":"),
+                        ).encode()
+                    ),
+                    "share_class_filings": len(class_evidence),
+                    "share_class_verified": verified_classes,
                 }
             )
         count = sum(len(items) for items in statements.values())
@@ -381,7 +445,8 @@ def attach(
             "staleness_days": 550,
             "units": "USD; reported diluted EPS USD/shares",
             "periods": "Annual 330–400 days; 10-K and 10-K/A only",
-            "share_basis": "As reported in filing, adjusted only for subsequent known splits; multiple listed tickers excluded from valuation",
+            "share_class_evidence_storage": "shared-per-security-v1",
+            "share_basis": "Reported diluted EPS with dated filing-specific common-share evidence; adjusted only for subsequent known splits. Missing/ambiguous class mappings exclude EPS, never inferred from current tickers.",
         }
         raw = json.dumps(
             {"price_digest": base.digest, "policy": policy, "sources": source_hashes},

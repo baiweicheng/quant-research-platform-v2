@@ -14,6 +14,7 @@ from aperture.fundamentals import as_of, attach, filing_available, inputs, norma
 from aperture.signals import rank
 from aperture.store import Store
 from aperture.worker import process_one
+from filing_fixtures import cover, evidence
 
 CIK = "0000000001"
 ACC = "0000000001-23-000001"
@@ -57,11 +58,13 @@ def source():
 
 
 def statements(company=None, tickers=None):
+    company = company or source()
     return normalize(
         "ABC",
         CIK,
-        company or source(),
+        company,
         {"tickers": tickers or ["ABC"], "entityType": "operating"},
+        evidence(company, multi=bool(tickers and len(tickers) > 1)),
     )[0]
 
 
@@ -237,8 +240,22 @@ class FixtureProvider:
         if "tickers_exchange" in url:
             return {"fields": ["cik", "ticker"], "data": [[1, "ABC"]]}
         if "submissions" in url:
-            return {"cik": 1, "tickers": ["ABC"], "entityType": "operating"}
+            return {
+                "cik": 1,
+                "tickers": ["ABC"],
+                "entityType": "operating",
+                "filings": {
+                    "recent": {
+                        "accessionNumber": [ACC],
+                        "filingDate": ["2023-02-10"],
+                        "primaryDocument": ["annual.htm"],
+                    }
+                },
+            }
         return deepcopy(source())
+
+    def document(self, url):
+        return cover()
 
 
 def test_enrichment_is_immutable_idempotent_and_worker_results_serialize(
@@ -255,6 +272,22 @@ def test_enrichment_is_immutable_idempotent_and_worker_results_serialize(
         "already_imported"
     ]
     assert len(store.datasets()) == 2
+    row = saved["metadata"]["fundamentals"]["coverage"][0]
+    assert (
+        "filed_share_classes" not in row
+        and len(row["filed_share_classes_digest"]) == 64
+    )
+    with TestClient(create_app(store.path, None)) as client:
+        screen = client.get("/api/state").json()
+        screen_row = next(d for d in screen["datasets"] if d["id"] == saved["id"])[
+            "metadata"
+        ]["fundamentals"]["coverage"][0]
+        assert "filed_share_classes" not in screen_row
+        exported = client.get(f"/api/datasets/{saved['id']}/metadata").json()
+        proof = exported["metadata"]["fundamentals"]["coverage"][0][
+            "filed_share_classes"
+        ][0]
+        assert proof["accession"] == ACC and proof["compatible"]
     store.enqueue(
         "backtest",
         {
@@ -272,6 +305,11 @@ def test_enrichment_is_immutable_idempotent_and_worker_results_serialize(
         result["decisions"][0]["signals"][0]["components"]["filing"]["accession"] == ACC
     )
     assert result["input_audit"]["price_dataset_id"] == base.id
+    with TestClient(create_app(store.path, None)) as client:
+        native = client.get(f"/api/results/{result['id']}?download=true").json()
+        assert native["input_audit"]["fundamentals"]["coverage"][0][
+            "filed_share_classes"
+        ][0]["compatible"]
 
 
 def test_future_filings_do_not_change_historical_backtest(dataset):

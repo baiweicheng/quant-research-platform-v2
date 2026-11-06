@@ -28,6 +28,14 @@ def dataset_view(dataset: dict) -> dict:
         meta["sector_classification"] = {
             k: v for k, v in meta["sector_classification"].items() if k != "records"
         }
+    if isinstance(meta.get("fundamentals"), dict):
+        meta["fundamentals"] = {
+            **meta["fundamentals"],
+            "coverage": [
+                {k: v for k, v in row.items() if k != "filed_share_classes"}
+                for row in meta["fundamentals"].get("coverage", [])
+            ],
+        }
     return {**dataset, "metadata": meta}
 
 

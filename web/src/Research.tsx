@@ -1,4 +1,4 @@
-import { lazy, Suspense, useState } from "react";
+import { lazy, Suspense, useState, useEffect } from "react";
 import { useQueries, useQuery } from "@tanstack/react-query";
 import { useLocation } from "react-router-dom";
 import {
@@ -14,6 +14,7 @@ import { Badge, Empty, MetricStrip, Notice, PeriodPicker } from "./components";
 import type { Period, Run, State, Strategy } from "./types";
 import Validation from "./Validation";
 import { SignalAudit } from "./Fundamentals";
+import ResearchManager, { DeleteResearchButton } from "./ResearchManager";
 const Chart = lazy(() => import("./Chart"));
 
 function displayedExposure(run: Run, period: Period) {
@@ -56,7 +57,14 @@ export default function Research({
   const [selected, setSelected] = useState(requestedRun);
   const [compare, setCompare] = useState<string[]>([]);
   const [period, setPeriod] = useState<Period>("All");
-  const identifier = selected || state.runs[0]?.id;
+  const identifier = state.runs.some((r) => r.id === selected)
+    ? selected
+    : state.runs[0]?.id;
+  useEffect(() => {
+    setCompare((ids) =>
+      ids.filter((id) => state.runs.some((r) => r.id === id)),
+    );
+  }, [state.runs]);
   const result = useQuery({
     queryKey: ["result", identifier],
     queryFn: () => api<Run>(`/results/${identifier}?view=true`),
@@ -87,13 +95,18 @@ export default function Research({
           <h1>Research with a clear view.</h1>
           <p>Understand the evidence before putting an idea to work.</p>
         </div>
-        <button
-          className="button"
-          onClick={() => (state.datasets.length ? onRun("momentum") : onData())}
-        >
-          <Play size={16} />
-          New backtest
-        </button>
+        <div className="heading-actions">
+          <ResearchManager category="Backtests" />
+          <button
+            className="button"
+            onClick={() =>
+              state.datasets.length ? onRun("momentum") : onData()
+            }
+          >
+            <Play size={16} />
+            New backtest
+          </button>
+        </div>
       </div>
       <div className="subnav" role="tablist" aria-label="Research sections">
         <button
@@ -283,6 +296,11 @@ export default function Research({
                         >
                           View <ArrowRight size={14} />
                         </button>
+                        <DeleteResearchButton
+                          kind="result"
+                          id={run.id}
+                          name={`${run.strategy.name} experiment ${state.runs.length - i}`}
+                        />
                       </td>
                     </tr>
                   ))}
@@ -314,13 +332,13 @@ export default function Research({
                   {new Set(
                     comparison.map(
                       (r) =>
-                        `${r.dataset_id}/${r.windows[period].start}/${r.windows[period].end}/${r.capital}/${JSON.stringify(r.policy)}/${r.dividend_model}/${JSON.stringify(r.coverage)}`,
+                        `${r.dataset_id}/${r.windows[period].start}/${r.windows[period].end}/${r.capital}/${JSON.stringify(r.policy)}/${r.dividend_model}/${JSON.stringify(r.coverage)}/${r.engine_version}`,
                     ),
                   ).size > 1 && (
                     <Notice>
-                      These experiments have different data, dates, capital or
-                      assumptions. Differences in returns cannot be attributed
-                      only to the strategy.
+                      These experiments have different data, dates, capital,
+                      engine versions or assumptions. Differences in returns
+                      cannot be attributed only to the strategy.
                     </Notice>
                   )}
                   <div className="table-scroll">
@@ -601,6 +619,12 @@ export function RunDetail({
                   : "Splits adjust held shares. Dividends accrue to overnight holders on ex-date and become spendable on verified pay dates. Receivables are included in portfolio value."}
               </p>
               <p>{run.benchmark_model}</p>
+              {run.engine_version && (
+                <p>
+                  Research engine {run.engine_version}. Saved results retain the
+                  engine and inputs used when they were created.
+                </p>
+              )}
               <p className="digest">Input fingerprint: {run.source_digest}</p>
             </details>
           </div>

@@ -42,6 +42,7 @@ The app opens empty. Practice data is never silently loaded. Account metrics rem
 - Filing-versioned SEC annual fundamentals, stock-level coverage/exclusions, profitability, quality value and technical/fundamental Value + Momentum strategies. Historical decision audits link back to original filings.
 - Calendar-aware after-close decisions and following-session opening-price simulation, fractional quantities, explicit costs, split/dividend accounting and no borrowing.
 - Saved backtests, comparison, SPY benchmark, common chart periods, and read-only current allocation reviews.
+- Searchable research management with previewed individual/bulk deletion of backtests, allocation reviews, validation outputs, task history and datasets; linked inputs and paper audit records are protected. See [research cleanup](docs/RESEARCH_LIBRARY.md).
 - Frozen research protocols, forward windows, cost/allocation/frequency sensitivity, trial audits, exposure labels and once-only final-test release.
 - Paper account reconciliation, immutable reviews and explicit strategy/policy approvals; manual and automatic weekly modes.
 - Broker-staged Market DAY orders with explicit paper-margin funding, durable client references, partial/rejected/uncertain-order handling, stop/cancel controls and restart reconciliation.

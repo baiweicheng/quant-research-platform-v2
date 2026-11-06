@@ -136,6 +136,12 @@ def create(store: Store, data: dict) -> dict:
     }
     with store.connect() as db:
         db.execute("BEGIN IMMEDIATE")
+        if not db.execute(
+            "SELECT 1 FROM datasets WHERE id=? AND digest=?", (ds.id, ds.digest)
+        ).fetchone():
+            raise ResearchError(
+                "The selected dataset was deleted. Choose an available snapshot."
+            )
         guard(db, body["start"], body["end"])
         exposed = []
         for j in db.execute(
@@ -156,6 +162,12 @@ def create(store: Store, data: dict) -> dict:
                 and s.get("end", "") >= body["holdout_start"]
             ):
                 exposed.append(t["id"])
+        for previous in db.execute(
+            "SELECT id FROM research_exposures WHERE start<=? AND end>=?",
+            (body["end"], body["holdout_start"]),
+        ):
+            exposed.append(previous["id"])
+        exposed = sorted(set(exposed))
         body["prior_exposures"] = exposed
         body["holdout_label"] = (
             "Previously explored period"
@@ -182,6 +194,14 @@ def enqueue(
         )
     with store.connect() as db:
         db.execute("BEGIN IMMEDIATE")
+        current = db.execute(
+            "SELECT body,holdout_state FROM protocols WHERE id=?", (identifier,)
+        ).fetchone()
+        if current is None:
+            raise ResearchError(
+                "That protocol was deleted. Choose an available protocol."
+            )
+        p = {**json.loads(current["body"]), "holdout_state": current["holdout_state"]}
         busy = db.execute(
             "SELECT id FROM jobs WHERE kind='validation' AND state IN ('running','queued') AND json_extract(payload,'$.protocol_id')=?",
             (identifier,),

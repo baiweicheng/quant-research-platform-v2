@@ -66,7 +66,11 @@ class Store:
                 INSERT OR IGNORE INTO schema_version VALUES (4);
                 CREATE TABLE IF NOT EXISTS content_blobs (
                     digest TEXT PRIMARY KEY, body BLOB NOT NULL);
+                CREATE TABLE IF NOT EXISTS research_exposures (
+                    id TEXT PRIMARY KEY, kind TEXT NOT NULL, start TEXT NOT NULL,
+                    end TEXT NOT NULL, created_at TEXT NOT NULL);
                 INSERT OR IGNORE INTO schema_version VALUES (6);
+                INSERT OR IGNORE INTO schema_version VALUES (7);
             """)
         self.path.chmod(0o600)
         from .paper import initialize
@@ -469,6 +473,15 @@ class Store:
                 from .experiments import guard
 
                 guard(db, payload["start"], payload["end"])
+            if (
+                payload.get("dataset_id")
+                and not db.execute(
+                    "SELECT 1 FROM datasets WHERE id=?", (payload["dataset_id"],)
+                ).fetchone()
+            ):
+                raise ResearchError(
+                    "That dataset is no longer available. Refresh Data and choose a saved snapshot."
+                )
             duplicate = db.execute(
                 "SELECT * FROM jobs WHERE kind=? AND payload=? AND state IN ('queued','running')",
                 (kind, packed),
@@ -554,6 +567,7 @@ class Store:
             if key in body
         }
         for key in (
+            "engine_version",
             "start",
             "end",
             "trade_count",

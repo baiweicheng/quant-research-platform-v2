@@ -115,6 +115,46 @@ def test_infeasible_caps_leave_cash_and_unknown_is_shared_bucket():
     assert any("75.0%" in note for note in notes)
 
 
+@pytest.mark.parametrize("research_income", [False, True])
+@pytest.mark.parametrize("fees,slippage", [("0", "0"), ("1", "5")])
+def test_cash_shortfall_is_shared_by_equal_targets(research_income, fees, slippage):
+    p = Portfolio(D(1000))
+    if research_income:
+        p.research_income_value = D(1000)
+    else:
+        p.receivables = [(date(2025, 1, 8), D(1000))]
+    bars = {s: bar() for s in ("AAA", "ZZZ")}
+    policy = Policy(
+        max_weight=D(".5"), sector_cap=D(1), fee_bps=D(fees), slippage_bps=D(slippage)
+    )
+    trades = rebalance(p, {"AAA": D(".49"), "ZZZ": D(".49")}, bars, policy, DAY)
+    assert [t["symbol"] for t in trades] == ["AAA", "ZZZ"]
+    assert p.positions["AAA"] == p.positions["ZZZ"]
+    assert p.cash >= D(2000) * policy.cash_reserve
+
+
+def test_cash_shortfall_follows_buy_need_not_ticker_order():
+    policy = Policy(max_weight=D(1), sector_cap=D(1), fee_bps=D(0), slippage_bps=D(0))
+
+    # Half the basket is an unavailable entitlement; budgets must split 1:3.
+    # Renaming the economically larger target cannot change either fill.
+    def fill(small, large):
+        p = Portfolio(D(1000), receivables=[(date(2025, 1, 8), D(1000))])
+        rebalance(
+            p,
+            {small: D(".245"), large: D(".735")},
+            {small: bar(), large: bar()},
+            policy,
+            DAY,
+        )
+        return p.positions[small], p.positions[large], p.cash
+
+    a, b, cash = fill("AAA", "ZZZ")
+    assert (a, b, cash) == fill("ZZZ", "AAA")
+    assert abs((b * 100 + D(".01")) / (a * 100 + D(".01")) - 3) < D(".00001")
+    assert cash >= D(40)
+
+
 @given(st.integers(100, 1000000), st.integers(1, 500))
 def test_simulated_rebalance_uses_cash_and_respects_target_caps(capital, price):
     policy = Policy()

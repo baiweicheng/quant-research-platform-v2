@@ -30,7 +30,9 @@ export function FundamentalsPanel({ datasets }: { datasets: Dataset[] }) {
     ),
   ).latest;
   const [selected, setSelected] = useState("");
-  const id = selected || available[0]?.id || "";
+  const id = available.some((d) => d.id === selected)
+    ? selected
+    : available[0]?.id || "";
   const task = useMutation({
     mutationFn: () => api(`/fundamentals/${id}`, {}),
     onSuccess: async () => {
@@ -117,9 +119,11 @@ export function FundamentalsPanel({ datasets }: { datasets: Dataset[] }) {
           </p>
           <p>
             Some sectors use different accounting. Missing, stale, ambiguous and
-            unsupported inputs exclude a stock. Multiple listed share classes
-            are excluded from per-share valuation. These are annual metrics, not
-            estimates of trailing twelve months.
+            unsupported inputs exclude a stock. Per-share valuation requires
+            dated evidence from that filing; missing or ambiguous common-share
+            units remain excluded. Today's preferred listings do not invalidate
+            earlier filings. These are annual metrics, not estimates of trailing
+            twelve months.
           </p>
         </details>
       </div>
@@ -149,6 +153,7 @@ export function FundamentalDetails({ data }: { data: FundamentalCoverage }) {
               <th>Annual periods / filings</th>
               <th>Profitability</th>
               <th>Valuation</th>
+              <th>Filed share units</th>
               <th>Latest fiscal end / filed</th>
               <th>Coverage notes</th>
             </tr>
@@ -162,6 +167,11 @@ export function FundamentalDetails({ data }: { data: FundamentalCoverage }) {
                 <td>{row.records}</td>
                 <td>{row.quality_ready ? "Eligible input" : "Excluded"}</td>
                 <td>{row.value_ready ? "Eligible input" : "Excluded"}</td>
+                <td>
+                  {row.share_class_filings !== undefined
+                    ? `${row.share_class_verified ?? 0} / ${row.share_class_filings} supported filings`
+                    : "Legacy snapshot · refresh SEC filings"}
+                </td>
                 <td>
                   {row.latest_period || "—"}
                   <br />
