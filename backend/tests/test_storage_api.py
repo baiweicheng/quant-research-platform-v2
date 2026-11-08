@@ -175,6 +175,11 @@ def test_screen_projections_preserve_full_export_and_dated_audit(tmp_path):
             },
             "identity_resolution": {"ABC": {"reviewed_alias": "PRE", "raw": "large"}},
             "coverage": [{"symbol": "ABC", "reason": "captured coverage"}],
+            "fundamentals": {
+                "coverage": [],
+                "observation_ids": ["captured-source"],
+                "source_hashes": {"ABC": "exact-fingerprint"},
+            },
         },
     }
     assert (
@@ -187,6 +192,12 @@ def test_screen_projections_preserve_full_export_and_dated_audit(tmp_path):
     assert "historical" not in brief["metadata"]["membership"]
     assert brief["metadata"]["coverage"] == source["metadata"]["coverage"]
     assert source["metadata"]["input_issues"]  # Never mutate the capture.
+    assert "observation_ids" not in brief["metadata"]["fundamentals"]
+    assert "source_hashes" not in brief["metadata"]["fundamentals"]
+    assert (
+        source["metadata"]["fundamentals"]["source_hashes"]["ABC"]
+        == "exact-fingerprint"
+    )
     body = {
         "curve": [],
         "trades": [{"sequence": i} for i in range(100)],
@@ -219,3 +230,27 @@ def test_screen_projections_preserve_full_export_and_dated_audit(tmp_path):
     export = client.get(f"/api/results/{identifier}?download=true")
     assert "attachment" in export.headers["content-disposition"]
     assert export.json() == full
+
+
+def test_queuing_sec_refresh_uses_summary_without_loading_full_price_history(
+    tmp_path, monkeypatch
+):
+    from aperture.config import Settings
+
+    path = tmp_path / "queue.sqlite3"
+    store = Store(path)
+    dataset, raw, warnings = parse_csv(CSV, "Prices", "fixture")
+    store.save_dataset(dataset, raw, warnings)
+    monkeypatch.setattr(
+        "aperture.api.settings", lambda: Settings(sec_agent="test test@example.com")
+    )
+    monkeypatch.setattr(
+        Store,
+        "dataset",
+        lambda *a: pytest.fail("A UI queue action loaded the full price history"),
+    )
+    response = TestClient(create_app(path)).post(
+        f"/api/fundamentals/{dataset.id}", headers=HEADER
+    )
+    assert response.status_code == 202
+    assert store.jobs()[0]["kind"] == "fundamentals"

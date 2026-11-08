@@ -279,6 +279,40 @@ def test_failure_publishes_no_partial_price_snapshot(vendor):
     assert s.datasets() == []
 
 
+def test_recent_update_retains_unresolved_actions_for_frozen_original_ticker(vendor):
+    from dataclasses import replace
+
+    s, p, state = vendor
+    saved = download(s, payload(), lambda *a: None, p)
+    original = s.dataset(saved["id"])
+    identities = copy.deepcopy(original.metadata["identity_resolution"])
+    identities["ABC"]["reviewed_alias"] = {
+        "symbol": "ABC",
+        "quote": "ORIGINAL",
+        "until": "2016-06-01",
+        "source": "Dated source fixture; original actions remain unverified.",
+    }
+    identities["ABC"]["original_actions_reconciled"] = False
+    base = replace(
+        original, metadata={**original.metadata, "identity_resolution": identities}
+    )
+    p.calls.clear()
+    state["latest"] = date(2017, 2, 10)
+    updated = download(s, payload("2017-02-10"), lambda *a: None, p, base=base)
+    current = s.dataset(updated["id"])
+    for dataset in (base, current):
+        assert blocked_inputs(
+            dataset, {"ABC"}, date(2016, 5, 1), date(2016, 6, 2), "signals"
+        ) == {"ABC"}
+        assert not blocked_inputs(
+            dataset, {"ABC"}, date(2017, 2, 1), date(2017, 2, 10), "signals"
+        )
+    assert current.bars["ABC"][0] == base.bars["ABC"][0]
+    assert all(
+        q["start"] > "2016-06-01" for path, q in p.calls if path.endswith("/bars")
+    )
+
+
 def test_ambiguous_historical_listing_is_quarantined_not_discarded(vendor):
     s, p, state = vendor
     get = p.get
@@ -775,3 +809,59 @@ def test_refresh_preserves_spanning_identity_issues_and_new_symbol_old_events(ve
         "ABC"
     }
     assert not blocked_inputs(updated, {"ABC"}, date(2017, 2, 10), date(2017, 2, 10))
+
+
+@pytest.mark.parametrize(
+    "normalizer",
+    ["dated-research-inputs-v1", "dated-research-inputs-v2-reviewed-actions"],
+)
+def test_normal_update_keeps_the_combined_dated_research_workflow(
+    vendor, monkeypatch, normalizer
+):
+    from dataclasses import replace
+    from aperture.dataset_updates import update
+
+    s, p, state = vendor
+    saved = download(s, payload(), lambda *a: None, p)
+    d = s.dataset(saved["id"])
+    versioned = replace(
+        d,
+        id=normalizer,
+        digest=normalizer,
+        metadata={**d.metadata, "normalizer_version": normalizer},
+    )
+    s.save_dataset(versioned, b"Versioned input fixture", [])
+    calls = []
+
+    def combined(store, request, progress, provider, **kwargs):
+        calls.append((request, kwargs))
+        return saved
+
+    monkeypatch.setattr("aperture.bundles.download", combined)
+    monkeypatch.setattr(
+        "aperture.dataset_updates.download_market",
+        lambda *a, **k: pytest.fail(
+            "Dated input updates used the legacy price-only path"
+        ),
+    )
+    assert update(s, versioned.id, lambda *a: None, p) == saved
+    assert len(calls) == 1 and calls[0][1]["refresh"] is True
+    assert calls[0][1]["base"].id == versioned.id
+
+
+def test_unknown_dated_input_version_does_not_fall_back_to_legacy_download(vendor):
+    from dataclasses import replace
+    from aperture.dataset_updates import update
+
+    s, p, state = vendor
+    saved = download(s, payload(), lambda *a: None, p)
+    d = s.dataset(saved["id"])
+    newer = replace(
+        d,
+        id="future-version",
+        digest="future-version",
+        metadata={**d.metadata, "normalizer_version": "dated-research-inputs-v999"},
+    )
+    s.save_dataset(newer, b"Newer version fixture", [])
+    with pytest.raises(ResearchError, match="unsupported research input version"):
+        update(s, newer.id, lambda *a: None, p)

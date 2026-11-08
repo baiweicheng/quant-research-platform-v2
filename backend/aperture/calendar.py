@@ -5,6 +5,7 @@ The calendar is loaded lazily: displaying saved results never constructs it.
 
 from datetime import date, datetime, timedelta, timezone
 from functools import lru_cache
+from bisect import bisect_left, bisect_right
 
 
 @lru_cache(maxsize=1)
@@ -14,15 +15,16 @@ def calendar():
     return exchange_calendars.get_calendar("XNYS", start="1990-01-01", end="2040-12-31")
 
 
+@lru_cache(maxsize=1)
+def _session_dates(source):
+    return tuple(timestamp.date() for timestamp in source.sessions)
+
+
 def sessions(start: date, end: date) -> list[date]:
-    start = max(start, calendar().first_session.date())
-    end = min(end, calendar().last_session.date())
-    if start > end:
-        return []
-    return [
-        timestamp.date()
-        for timestamp in calendar().sessions_in_range(str(start), str(end))
-    ]
+    days = _session_dates(calendar())
+    # A fresh list preserves caller isolation; the immutable exchange calendar
+    # is converted to dates once instead of invoking pandas for every signal.
+    return list(days[bisect_left(days, start) : bisect_right(days, end)])
 
 
 def next_session(session: date) -> date:

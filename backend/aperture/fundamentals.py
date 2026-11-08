@@ -209,7 +209,9 @@ def as_of(
     return sorted(candidates, key=lambda s: s.accession)[-1]
 
 
-def inputs(dataset: Dataset, symbol: str, decision: date) -> tuple[dict, str | None]:
+def inputs(
+    dataset: Dataset, symbol: str, decision: date, *, issue_index=None
+) -> tuple[dict, str | None]:
     statement = as_of(dataset.fundamentals.get(symbol, ()), decision)
     if statement is None:
         return (
@@ -220,7 +222,7 @@ def inputs(dataset: Dataset, symbol: str, decision: date) -> tuple[dict, str | N
     bars = [
         b
         for b in dataset.bars[symbol]
-        if b.session <= decision
+        if statement.filed < b.session <= decision
         and (b.available_at is None or b.available_at <= cutoff)
     ]
     if not bars or bars[-1].session != decision:
@@ -247,7 +249,9 @@ def inputs(dataset: Dataset, symbol: str, decision: date) -> tuple[dict, str | N
 
     split_history_complete = all(
         day in known_days for day in action_days
-    ) and not blocked_inputs(dataset, {symbol}, statement.filed, decision, "signals")
+    ) and not blocked_inputs(
+        dataset, {symbol}, statement.filed, decision, "signals", issue_index=issue_index
+    )
     if (
         statement.eps is not None
         and statement.eps_compatible
@@ -286,15 +290,15 @@ def attach(
     refresh=False,
     allow_empty=False,
 ) -> dict:
-    requested = store.dataset(dataset_id)
-    if requested.kind == "synthetic":
+    requested = next((row for row in store.datasets() if row["id"] == dataset_id), None)
+    if requested is None:
+        raise ResearchError("That dataset was not found. Choose one from Data.")
+    if requested["kind"] == "synthetic":
         raise ResearchError(
             "SEC fundamentals cannot be attached to fictional practice symbols. Choose an actual market dataset."
         )
-    base = (
-        store.dataset(requested.metadata["price_dataset_id"])
-        if requested.metadata.get("price_dataset_id")
-        else requested
+    base = store.dataset(
+        requested.get("metadata", {}).get("price_dataset_id", dataset_id)
     )
     api = provider or Provider(store)
     try:
@@ -317,6 +321,10 @@ def attach(
             if s != "SPY" and s not in base.metadata.get("dependency_symbols", [])
         ]
         last_session = max(bar.session for bars in base.bars.values() for bar in bars)
+        first_session = min(bar.session for bars in base.bars.values() for bar in bars)
+        from .research_data import indexed_issues
+
+        issue_index = indexed_issues(base)
         for index, symbol in enumerate(symbols):
             progress(
                 5 + round(index / max(len(symbols), 1) * 85),
@@ -365,7 +373,6 @@ def attach(
                 raise ResearchError(f"SEC issuer identity mismatch for {symbol}.")
             from .filing_classes import acquire
 
-            first_session = min(b.session for rows in base.bars.values() for b in rows)
             class_evidence = acquire(
                 api,
                 symbol,
@@ -376,7 +383,9 @@ def attach(
                 str(last_session),
                 lambda n, total: progress(
                     5 + round(index / max(len(symbols), 1) * 85),
-                    f"Verifying filed share classes: {symbol} ({n}/{total} filings)",
+                    f"Verifying filed share classes: {symbol} (company {index + 1}/{len(symbols)}, filing {n}/{total}; "
+                    f"{getattr(api, 'filing_cache_stats', {}).get('reused', 0):,} reused, "
+                    f"{getattr(api, 'filing_cache_stats', {}).get('parsed', 0):,} checked)",
                 ),
             )
             normalized, issues = normalize(
@@ -385,7 +394,10 @@ def attach(
             statements[symbol] = normalized
             latest = as_of(normalized, last_session)
             latest_inputs, latest_issue = inputs(
-                replace(base, fundamentals={symbol: normalized}), symbol, last_session
+                replace(base, fundamentals={symbol: normalized}),
+                symbol,
+                last_session,
+                issue_index=issue_index,
             )
             coverage_issues = issues + (
                 list(latest.issues)

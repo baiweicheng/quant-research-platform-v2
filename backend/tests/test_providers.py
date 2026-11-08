@@ -36,6 +36,34 @@ def test_filed_documents_are_exact_cached_bytes_without_broker_credentials(
     assert len(calls) == 1
 
 
+def test_oversized_filing_stream_stops_and_retries_after_limit_change(
+    tmp_path, monkeypatch
+):
+    from aperture.providers import EvidenceLimit
+
+    monkeypatch.setattr("aperture.providers.time.sleep", lambda _: None)
+    monkeypatch.setattr("aperture.providers.MAX_FILING_BYTES", 10)
+    calls = []
+
+    def handle(request):
+        calls.append(request)
+        return httpx.Response(200, content=b"123456789012345")
+
+    api = Provider(
+        Store(tmp_path / "limit.sqlite3"),
+        httpx.Client(transport=httpx.MockTransport(handle)),
+        Settings(sec_agent="test test@example.com"),
+    )
+    url = "https://www.sec.gov/Archives/edgar/data/1/000000000123000001/annual.htm"
+    for _ in range(2):
+        with pytest.raises(EvidenceLimit):
+            api.document(url)
+    assert len(calls) == 1
+    monkeypatch.setattr("aperture.providers.MAX_FILING_BYTES", 20)
+    assert api.document(url) == b"123456789012345"
+    assert len(calls) == 2
+
+
 @pytest.fixture
 def market(tmp_path, monkeypatch):
     monkeypatch.setattr("aperture.providers.time.sleep", lambda _: None)
@@ -282,3 +310,30 @@ def test_api_configuration_is_redacted_and_download_payloads_have_no_keys(
         assert job.status_code == 202
         assert "example-secret" not in job.text and "example-key" not in job.text
         assert "SPY" in client.get("/api/providers").json()["watchlist"]["symbols"]
+
+
+def test_accession_readers_share_one_sec_rate_budget(tmp_path, monkeypatch):
+    clock, starts = [0.0], []
+    monkeypatch.setattr("aperture.providers.time.monotonic", lambda: clock[0])
+    monkeypatch.setattr(
+        "aperture.providers.time.sleep",
+        lambda delay: clock.__setitem__(0, clock[0] + delay),
+    )
+
+    def handle(request):
+        starts.append(clock[0])
+        return httpx.Response(200, json={})
+
+    api = Provider(
+        Store(tmp_path / "rate.sqlite3"),
+        httpx.Client(transport=httpx.MockTransport(handle)),
+        Settings(sec_agent="test test@example.com"),
+    )
+    api.document(
+        "https://www.sec.gov/Archives/edgar/data/1/000000000123000001/annual.htm"
+    )
+    api.fork().document(
+        "https://www.sec.gov/Archives/edgar/data/1/000000000123000002/annual.htm"
+    )
+    api.get("sec", "https://data.sec.gov/submissions/CIK0000000001.json")
+    assert starts == [0.0, 0.18, 0.36]

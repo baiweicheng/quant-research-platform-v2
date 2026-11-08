@@ -21,7 +21,10 @@ def update(store, identifier, progress, provider=None):
     base = store.dataset(
         requested.get("metadata", {}).get("price_dataset_id", identifier)
     )
-    if base.metadata.get("normalizer_version") == "dated-research-inputs-v1":
+    from .research_data import VERSION as RESEARCH_VERSION
+
+    normalizer = base.metadata.get("normalizer_version")
+    if normalizer in {"dated-research-inputs-v1", RESEARCH_VERSION}:
         from .bundles import download
 
         audit = base.metadata.get("membership")
@@ -43,6 +46,10 @@ def update(store, identifier, progress, provider=None):
             provider,
             base=base,
             refresh=True,
+        )
+    if normalizer and normalizer.startswith("dated-research-inputs-"):
+        raise ResearchError(
+            "This dataset uses an unsupported research input version. Update Aperture before refreshing it."
         )
     if base.kind == "synthetic" or base.metadata.get("provider") != "alpaca":
         raise ResearchError(

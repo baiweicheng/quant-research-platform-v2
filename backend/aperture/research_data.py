@@ -13,8 +13,13 @@ from . import calendar, membership
 from .domain import Bar, Dataset, ResearchError, ZERO, decimal
 from .store import now
 from .research_overrides import ALIASES, CONFLICTS
+from .action_evidence import (
+    verified_continuation,
+    supplement_splits,
+    VERSION as ACTION_EVIDENCE_VERSION,
+)
 
-VERSION = "dated-research-inputs-v1"
+VERSION = "dated-research-inputs-v2-reviewed-actions"
 
 
 def input_issues(dataset):
@@ -65,12 +70,26 @@ def input_issues(dataset):
     return issues
 
 
-def blocked_inputs(dataset, names, start, end, mode="ex_date"):
+def indexed_issues(dataset):
+    if "input_issues" not in dataset.metadata:
+        return None
+    index = defaultdict(list)
+    for issue in input_issues(dataset):
+        index[issue["symbol"]].append(issue)
+    return index
+
+
+def blocked_inputs(dataset, names, start, end, mode="ex_date", *, issue_index=None):
     if "input_issues" not in dataset.metadata:
         return set(names) & dataset.metadata.get("unavailable_symbols", {}).keys()
+    issues = (
+        (issue for symbol in names for issue in issue_index.get(symbol, ()))
+        if issue_index is not None
+        else input_issues(dataset)
+    )
     return {
         issue["symbol"]
-        for issue in input_issues(dataset)
+        for issue in issues
         if issue["symbol"] in names
         and issue.get("start", "0001-01-01") <= str(end)
         and issue.get("end", "9999-12-31") >= str(start)
@@ -450,6 +469,19 @@ def download(store, payload, progress, provider=None, base=None):
                 "pay_date": event.get("payable_date"),
                 "source_record": event,
             }
+            reviewed = verified_continuation(event, api)
+            if reviewed and symbol == reviewed["symbol"]:
+                normalized_events.append(
+                    {
+                        **record,
+                        "kind": "identity_continuations",
+                        "target": symbol,
+                        "ratio": "1",
+                        "cash": "0",
+                        "reviewed_evidence": reviewed,
+                    }
+                )
+                continue
             if kind in ("cash_mergers", "stock_mergers", "stock_and_cash_mergers"):
                 target = (
                     event.get("acquirer_symbol") if kind != "cash_mergers" else None
@@ -572,6 +604,14 @@ def download(store, payload, progress, provider=None, base=None):
             begin = query_start if base and symbol in base.bars else first
             groups[(str(asof), str(begin))].append(symbol)
             identity[symbol] = {
+                # Historical quotes outside the overlap stay frozen, together
+                # with their original-ticker evidence and unresolved action
+                # gates. A recent refresh cannot certify that older history.
+                **(
+                    base.metadata.get("identity_resolution", {}).get(symbol, {})
+                    if base and symbol in base.bars
+                    else {}
+                ),
                 "asof": str(asof),
                 "candidate_ids": sorted(listing_candidates[symbol]),
                 "listing_id": next(
@@ -781,6 +821,7 @@ def download(store, payload, progress, provider=None, base=None):
                     issue(symbol, day, "Invalid split ratio.")
                 else:
                     bars[symbol][day] = replace(bar, split=bar.split * ratio)
+        normalized_events.extend(supplement_splits(bars, adjusted, identity, api))
         opening_income = {}
         for event in spin_events:
             day, parent, child = (
@@ -929,6 +970,12 @@ def download(store, payload, progress, provider=None, base=None):
         ]
         provenance = {
             "contract": VERSION,
+            "action_evidence_version": ACTION_EVIDENCE_VERSION,
+            "reviewed_action_evidence": [
+                event["reviewed_evidence"]
+                for event in normalized_events
+                if event.get("reviewed_evidence")
+            ],
             "parent_digest": base.digest if base else None,
             "query": payload,
             "membership": audit,
@@ -947,6 +994,7 @@ def download(store, payload, progress, provider=None, base=None):
             "feed": "sip",
             "price_basis": "as_traded",
             "normalizer_version": VERSION,
+            "action_evidence_version": ACTION_EVIDENCE_VERSION,
             "default_dividend_model": "ex_date",
             "custom_symbols": custom_symbols,
             "input_issues": issues,
@@ -990,7 +1038,9 @@ def download(store, payload, progress, provider=None, base=None):
             base.revision + 1 if base else 1,
             {s: tuple(rows[d] for d in sorted(rows)) for s, rows in bars.items()},
             {s: sectors.get(s, "Unknown") for s in names},
-            "Alpaca SIP · dated raw prices and corporate actions",
+            "Alpaca SIP · dated raw prices + primary-source action evidence"
+            if any(event.get("reviewed_evidence") for event in normalized_events)
+            else "Alpaca SIP · dated raw prices and corporate actions",
             digest,
             meta,
         )

@@ -71,6 +71,9 @@ class Store:
                     end TEXT NOT NULL, created_at TEXT NOT NULL);
                 INSERT OR IGNORE INTO schema_version VALUES (6);
                 INSERT OR IGNORE INTO schema_version VALUES (7);
+                CREATE TABLE IF NOT EXISTS parsed_filings (
+                    key TEXT PRIMARY KEY, digest TEXT NOT NULL, body BLOB NOT NULL);
+                INSERT OR IGNORE INTO schema_version VALUES (8);
             """)
         self.path.chmod(0o600)
         from .paper import initialize
@@ -189,6 +192,12 @@ class Store:
             return self._blob(db, raw)
 
     def save_dataset(self, dataset: Dataset, raw: bytes, warnings: list[str]) -> dict:
+        with self.connect() as db:
+            existing = db.execute(
+                "SELECT summary FROM datasets WHERE digest=?", (dataset.digest,)
+            ).fetchone()
+            if existing:
+                return {**json.loads(existing[0]), "already_imported": True}
         days = sorted({bar.session for rows in dataset.bars.values() for bar in rows})
         summary = dict(
             id=dataset.id,
@@ -229,31 +238,6 @@ class Store:
                 ]
                 for symbol, statements in dataset.fundamentals.items()
             },
-            "bars": [
-                {
-                    **vars(bar),
-                    "session": str(bar.session),
-                    "pay_date": str(bar.pay_date) if bar.pay_date else None,
-                    "available_at": bar.available_at.isoformat()
-                    if bar.available_at
-                    else None,
-                    **{
-                        key: str(getattr(bar, key))
-                        for key in (
-                            "open",
-                            "high",
-                            "low",
-                            "close",
-                            "split",
-                            "dividend",
-                            "research_dividend",
-                            "research_distribution",
-                        )
-                    },
-                }
-                for rows in dataset.bars.values()
-                for bar in rows
-            ],
         }
         with self.connect() as db:
             existing = db.execute(
@@ -261,7 +245,40 @@ class Store:
             ).fetchone()
             if existing:
                 return {**json.loads(existing[0]), "already_imported": True}
-            self._share_bars(db, body)
+            body["bar_chunks"] = []
+            for symbol, rows in sorted(dataset.bars.items()):
+                if any(bar.symbol != symbol for bar in rows):
+                    raise ResearchError(
+                        "Stored bar identity does not match its security series."
+                    )
+                block = {
+                    "bars": [
+                        {
+                            **vars(bar),
+                            "session": str(bar.session),
+                            "pay_date": str(bar.pay_date) if bar.pay_date else None,
+                            "available_at": bar.available_at.isoformat()
+                            if bar.available_at
+                            else None,
+                            **{
+                                key: str(getattr(bar, key))
+                                for key in (
+                                    "open",
+                                    "high",
+                                    "low",
+                                    "close",
+                                    "split",
+                                    "dividend",
+                                    "research_dividend",
+                                    "research_distribution",
+                                )
+                            },
+                        }
+                        for bar in rows
+                    ]
+                }
+                self._share_bars(db, block)
+                body["bar_chunks"].extend(block["bar_chunks"])
             self._share_fundamentals(db, body)
             db.execute(
                 "INSERT INTO datasets VALUES (?,?,?,?,?)",
@@ -326,6 +343,13 @@ class Store:
                 )
             ]
 
+    def _bar_items(self, chunks):
+        # Decompress and convert one month at a time; do not retain a second
+        # universe-sized list of price dictionaries beside the Bar objects.
+        with self.connect() as db:
+            for digest in chunks:
+                yield from json.loads(self._read_blob(db, digest))
+
     def dataset(self, identifier: str) -> Dataset:
         with self.connect() as db:
             row = db.execute(
@@ -334,12 +358,6 @@ class Store:
             if not row:
                 raise ResearchError("That dataset was not found. Choose one from Data.")
             body = decode(row[0])
-            if "bar_chunks" in body:
-                body["bars"] = [
-                    bar
-                    for digest in body["bar_chunks"]
-                    for bar in json.loads(self._read_blob(db, digest))
-                ]
             if "fundamental_chunks" in body:
                 body["fundamentals"] = {
                     s: json.loads(self._read_blob(db, digest))
@@ -349,7 +367,12 @@ class Store:
         # Preserve requested securities with zero returned bars, such as a
         # current member whose listing began after a historical download period.
         bars: dict[str, list[Bar]] = {s: [] for s in summary["symbols"]}
-        for item in body["bars"]:
+        items = (
+            self._bar_items(body["bar_chunks"])
+            if "bar_chunks" in body
+            else iter(body["bars"])
+        )
+        for item in items:
             item["session"] = date.fromisoformat(item["session"])
             item["pay_date"] = (
                 date.fromisoformat(item["pay_date"]) if item["pay_date"] else None
@@ -465,6 +488,61 @@ class Store:
             return json.loads(raw), row["id"]
         return None
 
+    def filing_evidence(self, key: str):
+        """Reuse derived evidence only while its captured source fingerprints match.
+
+        Parsed rows are disposable caches. A parser/identity change uses a new
+        key; missing, changed or damaged dependencies force normal verification.
+        """
+        with self.connect() as db:
+            row = db.execute(
+                "SELECT digest,body FROM parsed_filings WHERE key=?", (key,)
+            ).fetchone()
+            if row is None or hashlib.sha256(row["body"]).hexdigest() != row["digest"]:
+                return None
+            try:
+                value = decode(row["body"])
+                sources = value["sources"]
+                if not sources or not isinstance(value["proof"], dict):
+                    return None
+                for source in sources:
+                    current = db.execute(
+                        "SELECT id,digest FROM observations WHERE provider=? AND resource=? ORDER BY fetched_at DESC,rowid DESC LIMIT 1",
+                        (source["provider"], source["resource"]),
+                    ).fetchone()
+                    original = db.execute(
+                        "SELECT digest FROM observations WHERE id=?", (source["id"],)
+                    ).fetchone()
+                    if (
+                        current is None
+                        or original is None
+                        or current["digest"] != source["digest"]
+                        or original["digest"] != source["digest"]
+                    ):
+                        return None
+                return value
+            except (KeyError, TypeError, ValueError, OSError, EOFError):
+                return None
+
+    def save_filing_evidence(self, key: str, proof: dict, observation_ids: list[str]):
+        with self.connect() as db:
+            sources = []
+            for identifier in dict.fromkeys(observation_ids):
+                row = db.execute(
+                    "SELECT id,provider,resource,digest FROM observations WHERE id=?",
+                    (identifier,),
+                ).fetchone()
+                if row is None:
+                    return
+                sources.append(dict(row))
+            if not sources:
+                return
+            body = encode({"proof": proof, "sources": sources})
+            db.execute(
+                "INSERT INTO parsed_filings VALUES (?,?,?) ON CONFLICT(key) DO UPDATE SET digest=excluded.digest,body=excluded.body",
+                (key, hashlib.sha256(body).hexdigest(), body),
+            )
+
     def enqueue(self, kind: str, payload: dict) -> dict:
         packed = json.dumps(payload, sort_keys=True)
         with self.connect() as db:
@@ -547,7 +625,11 @@ class Store:
         with self.connect() as db:
             db.execute("UPDATE trials SET state='interrupted' WHERE state='running'")
             db.execute(
-                "UPDATE jobs SET state='failed',message='The local worker stopped during this task. Nothing partial was saved; run it again.',updated_at=? WHERE state='running'",
+                """UPDATE jobs SET state='failed',message=CASE
+                    WHEN kind IN ('download','fundamentals','dataset_update') THEN
+                    'The local worker stopped during this task. Completed snapshots and verified filing checks are retained. Retry in Data; an unfinished price snapshot can use Complete SEC download.'
+                    ELSE 'The local worker stopped during this task. No partial calculation result was saved; run it again.'
+                    END,updated_at=? WHERE state='running'""",
                 (now(),),
             )
 

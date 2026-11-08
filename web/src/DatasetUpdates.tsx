@@ -7,7 +7,13 @@ import { snapshotGroups, snapshotLabel } from "./snapshots";
 import { Notice } from "./components";
 import type { Dataset } from "./types";
 
-export default function DatasetUpdates({ datasets }: { datasets: Dataset[] }) {
+export default function DatasetUpdates({
+  datasets,
+  preparing = false,
+}: {
+  datasets: Dataset[];
+  preparing?: boolean;
+}) {
   const available = snapshotGroups(datasets).latest.filter(
     (d) => d.metadata?.provider === "alpaca",
   );
@@ -85,18 +91,14 @@ export default function DatasetUpdates({ datasets }: { datasets: Dataset[] }) {
             <div className="form-action">
               <button
                 className="button secondary"
-                disabled={!id || task.isPending}
+                disabled={preparing || !id || task.isPending}
               >
                 <RefreshCw size={16} />
-                {task.isPending ? "Queueing update…" : "Update dataset"}
-              </button>
-              <button
-                type="button"
-                className="button secondary"
-                disabled={!id || sectors.isPending || task.isPending}
-                onClick={() => sectors.mutate()}
-              >
-                {sectors.isPending ? "Queueing sectors…" : "Refresh sectors"}
+                {preparing
+                  ? "Preparing data…"
+                  : task.isPending
+                    ? "Queueing update…"
+                    : "Update dataset"}
               </button>
             </div>
           </div>
@@ -104,39 +106,62 @@ export default function DatasetUpdates({ datasets }: { datasets: Dataset[] }) {
         {chosen && (
           <p className="field-hint">
             Currently through {chosen.end} ·{" "}
-            {chosen.metadata?.fundamentals
-              ? "Market data + SEC filings"
-              : chosen.metadata?.bundle_role === "prices"
-                ? "SEC download incomplete · complete it below"
-                : "Legacy snapshot · SEC filings will be added"}
+            {preparing
+              ? "Checks are in progress and complete automatically"
+              : chosen.metadata?.fundamentals
+                ? "Market data + SEC filings"
+                : chosen.metadata?.bundle_role === "prices"
+                  ? "SEC download incomplete · complete it below"
+                  : "Legacy snapshot · SEC filings will be added"}
             . Older prices and actions outside the recent 10-day refresh window
             stay frozen; a full download revalidates older history.
           </p>
         )}
         {task.error && <Notice error>{task.error.message}</Notice>}
         <p className="field-hint">
-          Sector information is included in every download and update. Refresh
-          sectors alone reuses saved prices and filings in a new snapshot.
-          Current or last-known labels are used where complete historical
-          classifications are unavailable.
+          Update dataset already includes prices, sectors and SEC filings. No
+          separate share-class refresh is needed for normal updates.
         </p>
-        {sectors.error && <Notice error>{sectors.error.message}</Notice>}
-        <div className="form-action">
-          <button
-            className="button secondary"
-            disabled={filings.isPending || !id}
-            onClick={() => filings.mutate()}
-          >
-            Refresh SEC filings & share classes
-          </button>
-        </div>
-        <p className="field-hint">
-          Recheck filing-specific share units in a new snapshot using saved
-          prices. First-time verification reads historical SEC filings and can
-          take longer; completed captures are reused on retry. Earlier snapshots
-          and results stay available.
-        </p>
-        {filings.error && <Notice error>{filings.error.message}</Notice>}
+        <details className="details">
+          <summary>More refresh options</summary>
+          <p>
+            Use these only to retry a stage or refresh one input separately.
+          </p>
+          <div className="form-action">
+            <button
+              type="button"
+              className="button secondary"
+              disabled={preparing || !id || sectors.isPending || task.isPending}
+              onClick={() => sectors.mutate()}
+            >
+              {sectors.isPending ? "Queueing sectors…" : "Refresh sectors"}
+            </button>
+          </div>
+          <p className="field-hint">
+            Sector information is included in every download and update. Refresh
+            sectors alone reuses saved prices and filings in a new snapshot.
+            Current or last-known labels are used where complete historical
+            classifications are unavailable.
+          </p>
+          {sectors.error && <Notice error>{sectors.error.message}</Notice>}
+          <div className="form-action">
+            <button
+              className="button secondary"
+              disabled={preparing || filings.isPending || !id}
+              onClick={() => filings.mutate()}
+            >
+              Refresh SEC filings & share classes
+            </button>
+          </div>
+          <p className="field-hint">
+            Recheck filing-specific share units in a new snapshot using saved
+            prices. First-time verification reads historical SEC filings and can
+            take longer; completed filing checks are reused on retries and
+            updates. New or changed filings are checked again. Earlier snapshots
+            and results stay available.
+          </p>
+          {filings.error && <Notice error>{filings.error.message}</Notice>}
+        </details>
       </div>
     </section>
   );

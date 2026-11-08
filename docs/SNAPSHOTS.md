@@ -36,4 +36,23 @@ Total-return research keeps the captured ex-date amount separate from verified p
 
 Strict payment-date simulation retains verified settlement/share-delivery requirements. Dated issues apply to the relevant period and signal lookback instead of marking every date of a symbol permanently unusable. Coverage-limited mode freezes whole-window availability exclusions before simulation, saves every omitted security/reason and warns of survivorship/selection bias. Required membership bounds still apply. Strict full-index mode does not omit unresolved members. See [the open free-data backlog](FREE_DATA_GAPS.md).
 
-Reproduction requires the original immutable snapshot, the saved assumptions and the same engine version. The current engine is 0.3.0; an engine upgrade is distinct from a data refresh. Original saved outputs are retained even after either changes.
+Reproduction requires the original immutable snapshot, the saved assumptions and the same engine version. The current engine is 0.5.0; an engine upgrade is distinct from a data refresh. Original saved outputs are retained even after either changes.
+
+## Reusing filed share-class checks
+
+SEC filing checks have a persistent, per-accession derived cache. Its identity
+includes the security, issuer, filing date, primary document, evidence/parser
+version and parsing engine. Every reused check retains its original captured
+sources and requires matching source fingerprints. New or amended accessions,
+changed identities/sources, parser changes and missing/damaged cache records
+trigger verification. Transport/access errors interrupt the job for retry;
+missing, ambiguous or oversized evidence leaves the affected EPS unavailable.
+
+Two bounded accession readers share a request-start gate below six SEC requests
+per second, including retries. Filing bodies are read incrementally with a
+96 MiB decompressed limit, rather than fully downloading an unbounded body.
+The parser never resolves external entities. Completed checks survive an
+interruption; unfinished downloads can complete their SEC stage from saved
+prices. Cache reuse changes acquisition work, not historical filing dates or
+financial values. The first full acquisition still requires historical source
+retrieval; warm performance is measured separately from a fresh empty cache.

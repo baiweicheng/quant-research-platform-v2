@@ -4,6 +4,7 @@ import hashlib
 import json
 import time
 import base64
+import threading
 from datetime import date, datetime, timedelta
 from decimal import Decimal
 from urllib.parse import quote
@@ -41,6 +42,13 @@ class ResourceMissing(ResearchError):
     """An official resource returned HTTP 404; other failures stay fatal."""
 
 
+class EvidenceLimit(ResearchError):
+    """A bounded filing read cannot verify this accession's share units."""
+
+
+MAX_FILING_BYTES = 96 * 1024 * 1024
+
+
 class Provider:
     def __init__(
         self,
@@ -52,6 +60,22 @@ class Provider:
         self.client = client or httpx.Client(timeout=30, follow_redirects=False)
         self.owned = client is None
         self.observations: list[str] = []
+        self._sec_gate = {"lock": threading.Lock(), "next": 0.0}
+
+    def fork(self):
+        """An independent evidence/source list, sharing one bounded HTTP client."""
+        child = Provider(self.store, self.client, self.cfg)
+        child._sec_gate = self._sec_gate
+        return child
+
+    def _wait_sec(self):
+        # All accession readers share this gate: fewer than six request starts
+        # per second, including retries, rather than a per-thread sleep.
+        with self._sec_gate["lock"]:
+            delay = self._sec_gate["next"] - time.monotonic()
+            if delay > 0:
+                time.sleep(delay)
+            self._sec_gate["next"] = time.monotonic() + 0.18
 
     def close(self):
         if self.owned:
@@ -79,15 +103,52 @@ class Provider:
                 if isinstance(cached[0], dict)
                 else cached[0].encode()
             )
+        limited = self.store.cached("sec", resource + "#size-limit", 86400)
+        if limited and limited[0].get("limit_bytes") == MAX_FILING_BYTES:
+            self.observations.append(limited[1])
+            raise EvidenceLimit(
+                "Filed evidence exceeds the supported bounded document size; EPS remains unverified."
+            )
         for attempt in range(3):
             try:
-                response = self.client.get(
+                self._wait_sec()
+                with self.client.stream(
+                    "GET",
                     url,
                     headers={
                         "User-Agent": self.cfg.sec_agent,
                         "Accept-Encoding": "gzip, deflate",
                     },
-                )
+                ) as response:
+                    if (
+                        response.status_code in (429, 500, 502, 503, 504)
+                        and attempt < 2
+                    ):
+                        time.sleep(0.5 * (attempt + 1))
+                        continue
+                    if response.status_code == 404:
+                        raise ResourceMissing("SEC filing document was not found.")
+                    if not response.is_success:
+                        raise ResearchError(
+                            f"SEC filing evidence returned HTTP {response.status_code}. Retry acquisition; no unverified EPS was substituted."
+                        )
+                    body = bytearray()
+                    for chunk in response.iter_bytes(chunk_size=65536):
+                        if len(body) + len(chunk) > MAX_FILING_BYTES:
+                            self.observations.append(
+                                self.store.observe(
+                                    "sec",
+                                    resource + "#size-limit",
+                                    json.dumps(
+                                        {"limit_bytes": MAX_FILING_BYTES, "url": url}
+                                    ).encode(),
+                                )
+                            )
+                            raise EvidenceLimit(
+                                "Filed evidence exceeds the supported bounded document size; EPS remains unverified."
+                            )
+                        body.extend(chunk)
+                    raw = bytes(body)
             except httpx.RequestError:
                 if attempt < 2:
                     time.sleep(0.3 * (attempt + 1))
@@ -95,18 +156,6 @@ class Provider:
                 raise ResearchError(
                     "SEC filed share-class evidence could not be reached. Retry; earlier snapshots remain unchanged."
                 ) from None
-            if response.status_code in (429, 500, 502, 503, 504) and attempt < 2:
-                time.sleep(0.5 * (attempt + 1))
-                continue
-            if response.status_code == 404:
-                raise ResourceMissing("SEC filing document was not found.")
-            if not response.is_success:
-                raise ResearchError(
-                    f"SEC filing evidence returned HTTP {response.status_code}. Retry acquisition; no unverified EPS was substituted."
-                )
-            if len(response.content) > 32 * 1024 * 1024:
-                raise ResearchError("SEC filing exceeds the 32 MB evidence limit.")
-            raw = response.content
             self.observations.append(
                 self.store.observe(
                     "sec",
@@ -114,7 +163,6 @@ class Provider:
                     json.dumps({"base64": base64.b64encode(raw).decode()}).encode(),
                 )
             )
-            time.sleep(0.15)
             return raw
         raise ResearchError("SEC filing retries exhausted.")
 
@@ -149,6 +197,8 @@ class Provider:
             return cached[0]
         for attempt in range(3):
             try:
+                if provider == "sec":
+                    self._wait_sec()
                 response = self.client.get(url, params=params, headers=headers)
             except httpx.RequestError:
                 if attempt < 2:
@@ -192,10 +242,6 @@ class Provider:
             self.observations.append(
                 self.store.observe(provider, resource, response.content)
             )
-            if provider == "sec":
-                time.sleep(
-                    0.15
-                )  # Single worker, below SEC's ten requests/second ceiling.
             return body
         raise ResearchError("Provider retries exhausted.")
 

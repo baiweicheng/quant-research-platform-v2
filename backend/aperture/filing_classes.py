@@ -8,12 +8,17 @@ import hashlib
 import json
 import re
 from html.parser import HTMLParser
+from concurrent.futures import ThreadPoolExecutor
 from urllib.parse import urljoin
 from xml.etree import ElementTree as ET
 
-from .providers import ResourceMissing
+from lxml import etree
+
+from .providers import ResourceMissing, EvidenceLimit
+from .domain import ResearchError
 
 VERSION = "filed-common-class-v1"
+CACHE_VERSION = "parsed-filed-evidence-v3-fast-xhtml"
 CLASS_AXES = {"statementclassofstockaxis", "classesofsharecapitalaxis"}
 
 
@@ -38,48 +43,137 @@ def ticker(value):
     return value.strip().upper().replace(".", "-")
 
 
-class Cover(HTMLParser):
+def html_tree(raw):
+    # libxml performs tokenization in C. SEC reports can contain tens of MB of
+    # tables, while evidence needs only contexts and a handful of tagged facts.
+    parser = etree.HTMLParser(
+        encoding="utf-8", no_network=True, remove_comments=True, huge_tree=False
+    )
+    tree = etree.fromstring(raw, parser)
+    if tree is None or any(
+        "excessive depth" in entry.message.lower()
+        or "resource limit" in entry.message.lower()
+        for entry in parser.error_log
+    ):
+        raise ValueError("Filing HTML exceeds safe parser limits.")
+    return tree
+
+
+class Cover:
     def __init__(self):
-        super().__init__(convert_charrefs=True)
-        self.contexts, self.facts, self.captures = {}, [], []
-        self.context = None
+        self.contexts, self.facts = {}, []
         self.namespaces = {}
 
-    def handle_starttag(self, tag, attrs):
-        attrs = dict(attrs)
-        self.namespaces.update(
-            {key[6:]: value for key, value in attrs.items() if key.startswith("xmlns:")}
-        )
-        local = tag.split(":")[-1]
-        if local == "context":
-            self.context = {"id": attrs.get("id"), "members": [], "cik": None}
-        if local in {"identifier", "explicitmember", "typedmember"} or tag in {
-            "ix:nonnumeric",
-            "ix:nonfraction",
-        }:
-            self.captures.append([tag, attrs, []])
-
-    def handle_data(self, data):
-        for _, _, parts in self.captures:
-            parts.append(data)
-
-    def handle_endtag(self, tag):
-        local = tag.split(":")[-1]
-        matches = [i for i, c in enumerate(self.captures) if c[0] == tag]
-        if matches:
-            _, attrs, parts = self.captures.pop(matches[-1])
-            text = " ".join("".join(parts).split())
-            if self.context is not None:
-                if local == "identifier" and attrs.get("scheme", "").rstrip("/") in {
+    def feed(self, raw):
+        try:
+            tree = etree.fromstring(
+                raw, etree.XMLParser(no_network=True, resolve_entities=False)
+            )
+        except etree.XMLSyntaxError:
+            return self.feed_html(raw)
+        dtd = tree.getroottree().docinfo.internalDTD
+        if dtd is not None and dtd.entities():
+            raise ValueError("Custom XML entities are not supported in filed evidence.")
+        instance = "{http://www.xbrl.org/2003/instance}"
+        for node in tree.iter(instance + "context"):
+            context = {"id": node.get("id"), "members": [], "cik": None}
+            for child in node.iter():
+                if not isinstance(child.tag, str):
+                    raise ValueError("Unresolved XML entity in filing context.")
+                local = etree.QName(child).localname.lower()
+                if local == "identifier" and child.get("scheme", "").rstrip("/") in {
                     "http://www.sec.gov/CIK",
                     "https://www.sec.gov/CIK",
                 }:
-                    self.context["cik"] = text.lstrip("0") or "0"
-                elif local in {"explicitmember", "typedmember"}:
-                    axis = attrs.get("dimension", "").split(":")[-1].lower()
-                    if axis in CLASS_AXES:
-                        self.context["members"].append(text)
-            if tag in {"ix:nonnumeric", "ix:nonfraction"}:
+                    context["cik"] = (
+                        "".join(child.itertext()).strip().lstrip("0") or "0"
+                    )
+                elif (
+                    local in {"explicitmember", "typedmember"}
+                    and child.get("dimension", "").split(":")[-1].lower() in CLASS_AXES
+                ):
+                    context["members"].append(
+                        " ".join("".join(child.itertext()).split())
+                    )
+            self.contexts[context["id"]] = context
+        tags = [
+            "{" + namespace + "}" + local
+            for namespace in (
+                "http://www.xbrl.org/2013/inlineXBRL",
+                "http://www.xbrl.org/2008/inlineXBRL",
+            )
+            for local in ("nonNumeric", "nonFraction")
+        ]
+        for node in tree.iter(*tags):
+            name = node.get("name", "")
+            prefix, _, concept = name.partition(":")
+            concept = concept.lower()
+            if concept not in {
+                "security12btitle",
+                "security12gtitle",
+                "tradingsymbol",
+                "entitycommonstocksharesoutstanding",
+                "earningspersharediluted",
+                "earningspersharebasic",
+            }:
+                continue
+            uri = node.nsmap.get(prefix, "")
+            group = (
+                "dei"
+                if uri.startswith(
+                    ("http://xbrl.sec.gov/dei/", "https://xbrl.sec.gov/dei/")
+                )
+                else "us-gaap"
+                if uri.startswith(
+                    ("http://fasb.org/us-gaap/", "https://fasb.org/us-gaap/")
+                )
+                else None
+            )
+            if group:
+                attrs = {k.lower(): v for k, v in node.attrib.items()}
+                self.facts.append(
+                    (
+                        group + ":" + concept,
+                        attrs,
+                        " ".join("".join(node.itertext()).split()),
+                    )
+                )
+
+    def feed_html(self, raw):
+        tree = html_tree(raw)
+        nodes = tree.xpath(
+            "//*[name()='context' or substring-after(name(),':')='context' "
+            "or ((name()='ix:nonnumeric' or name()='ix:nonfraction') and "
+            "contains($concepts, concat('|',substring-after(translate(@name, "
+            "'ABCDEFGHIJKLMNOPQRSTUVWXYZ','abcdefghijklmnopqrstuvwxyz'),':'),'|'))) "
+            "or @*[starts-with(name(),'xmlns:')]]",
+            concepts="|security12btitle|security12gtitle|tradingsymbol|entitycommonstocksharesoutstanding|earningspersharediluted|earningspersharebasic|",
+        )
+        for node in nodes:
+            self.namespaces.update(
+                {k[6:]: v for k, v in node.attrib.items() if k.startswith("xmlns:")}
+            )
+            if node.tag.split(":")[-1] == "context":
+                context = {"id": node.get("id"), "members": [], "cik": None}
+                for child in node.iter():
+                    local = child.tag.split(":")[-1]
+                    text = " ".join("".join(child.itertext()).split())
+                    attrs = child.attrib
+                    if local == "identifier" and attrs.get("scheme", "").rstrip(
+                        "/"
+                    ) in {
+                        "http://www.sec.gov/CIK",
+                        "https://www.sec.gov/CIK",
+                    }:
+                        context["cik"] = text.lstrip("0") or "0"
+                    elif local in {"explicitmember", "typedmember"}:
+                        axis = attrs.get("dimension", "").split(":")[-1].lower()
+                        if axis in CLASS_AXES:
+                            context["members"].append(text)
+                self.contexts[context["id"]] = context
+            if node.tag in {"ix:nonnumeric", "ix:nonfraction"}:
+                attrs = dict(node.attrib)
+                text = " ".join("".join(node.itertext()).split())
                 name = attrs.get("name", "").lower()
                 prefix, _, concept = name.partition(":")
                 uri = self.namespaces.get(prefix, "")
@@ -91,9 +185,6 @@ class Cover(HTMLParser):
                     ("http://fasb.org/us-gaap/", "https://fasb.org/us-gaap/")
                 ):
                     self.facts.append(("us-gaap:" + concept, attrs, text))
-        if local == "context" and self.context is not None:
-            self.contexts[self.context["id"]] = self.context
-            self.context = None
 
 
 def inspect_cover(raw, *, symbol, cik, accession, filed, url):
@@ -109,8 +200,8 @@ def inspect_cover(raw, *, symbol, cik, accession, filed, url):
     }
     parser = Cover()
     try:
-        parser.feed(raw.decode("utf-8", errors="replace"))
-    except (ValueError, RecursionError):
+        parser.feed(raw)
+    except (ValueError, RecursionError, etree.LxmlError):
         return {**result, "reason": "Filed share-class evidence could not be parsed."}
     titles, symbols, outstanding, eps_members = {}, {}, set(), set()
     for name, attrs, text in parser.facts:
@@ -311,17 +402,10 @@ def inspect_instance(raw, primary, *, symbol, cik, accession, filed, url):
         if name == "earningspersharediluted":
             eps.add(context)
 
-    class Text(HTMLParser):
-        def __init__(self):
-            super().__init__()
-            self.parts = []
-
-        def handle_data(self, data):
-            self.parts.append(data)
-
-    text = Text()
-    text.feed(primary.decode("utf-8", errors="replace"))
-    content = " ".join(" ".join(text.parts).split())
+    try:
+        content = " ".join(" ".join(html_tree(primary).itertext()).split())
+    except (ValueError, etree.LxmlError):
+        return {**result, "reason": "Filed HTML could not be verified."}
     named_classes = {
         m.upper()
         for m in re.findall(
@@ -397,8 +481,14 @@ def acquire(
             api.get("sec", "https://data.sec.gov/submissions/" + name, ttl=315360000)
         )
     evidence = {}
-    for index, (accession, filed) in enumerate(sorted(wanted.items())):
-        progress(index + 1, len(wanted))
+    store = getattr(api, "store", None)
+    stats = getattr(api, "filing_cache_stats", None)
+    if stats is None:
+        stats = api.filing_cache_stats = {"reused": 0, "parsed": 0}
+
+    def verify(item):
+        accession, filed = item
+        reader = api.fork() if hasattr(api, "fork") else api
         record = {
             "version": VERSION,
             "accession": accession,
@@ -409,10 +499,37 @@ def acquire(
             "reason": "Dated filing cover is unavailable; current issuer tickers are not historical share-class evidence.",
         }
         doc = documents.get(accession)
+        cache_key = hashlib.sha256(
+            json.dumps(
+                [
+                    CACHE_VERSION,
+                    VERSION,
+                    etree.LXML_VERSION,
+                    etree.LIBXML_VERSION,
+                    symbol,
+                    cik,
+                    accession,
+                    filed,
+                    doc,
+                ],
+                separators=(",", ":"),
+            ).encode()
+        ).hexdigest()
+        cached = store.filing_evidence(cache_key) if store and doc else None
+        if cached:
+            return (
+                accession,
+                cached["proof"],
+                [source["id"] for source in cached["sources"]],
+                "reused",
+            )
+        source_start = len(getattr(reader, "observations", []))
+        cacheable = False
         if doc:
             url = f"https://www.sec.gov/Archives/edgar/data/{int(cik)}/{accession.replace('-', '')}/{doc}"
+            record["url"] = url
             try:
-                raw = api.document(url)
+                raw = reader.document(url)
                 record = inspect_cover(
                     raw,
                     symbol=symbol,
@@ -424,10 +541,10 @@ def acquire(
                 if not record.get("common_classes"):
                     # Official filing manifest owns the filename, never a guess.
                     folder = url.rsplit("/", 1)[0] + "/"
-                    instance = instance_url(api, folder, accession)
+                    instance = instance_url(reader, folder, accession)
                     if instance:
                         record = inspect_instance(
-                            api.document(instance),
+                            reader.document(instance),
                             raw,
                             symbol=symbol,
                             cik=cik,
@@ -439,14 +556,52 @@ def acquire(
                         record["reason"] = (
                             "The filed manifest does not identify one supported XBRL instance; EPS share units remain unverified."
                         )
+                cacheable = True
             except ResourceMissing:
                 record["reason"] = (
                     "Filed document returned HTTP 404; share-class units remain unverified."
                 )
+            except EvidenceLimit as error:
+                record["compatible"] = False
+                record["reason"] = str(error)
+            except ResearchError:
+                # Provider failures inherit ValueError too. They must interrupt
+                # acquisition, rather than masquerade as an incompatible filing.
+                raise
             except (ET.ParseError, ValueError):
                 record["compatible"] = False
                 record["reason"] = (
                     "Filed XBRL manifest could not be verified; EPS units remain unavailable."
                 )
-        evidence[accession] = record
+        sources = getattr(reader, "observations", [])[source_start:]
+        if store and cacheable:
+            store.save_filing_evidence(cache_key, record, sources)
+        return (
+            accession,
+            record,
+            sources if reader is not api else [],
+            "parsed" if doc else None,
+        )
+
+    pool = (
+        ThreadPoolExecutor(max_workers=2)
+        if hasattr(api, "fork") and len(wanted) > 1
+        else None
+    )
+    try:
+        results = (
+            pool.map(verify, sorted(wanted.items()))
+            if pool
+            else map(verify, sorted(wanted.items()))
+        )
+        for index, (accession, record, sources, status) in enumerate(results):
+            evidence[accession] = record
+            if sources:
+                api.observations.extend(sources)
+            if status:
+                stats[status] += 1
+            progress(index + 1, len(wanted))
+    finally:
+        if pool:
+            pool.shutdown(wait=True, cancel_futures=True)
     return evidence

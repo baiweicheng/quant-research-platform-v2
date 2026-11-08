@@ -142,3 +142,20 @@ export function mergerActionGaps(dataset: Dataset) {
     ),
   ].sort();
 }
+
+export function reviewedActionCorrections(dataset: Dataset) {
+  const events = dataset.metadata?.corporate_actions;
+  if (!Array.isArray(events)) return [];
+  return events
+    .filter(
+      (event) =>
+        ["identity_continuations", "reviewed_splits"].includes(event?.kind) &&
+        typeof event.reviewed_evidence?.url === "string",
+    )
+    .map((event) => ({
+      symbol: String(event.source),
+      effective: String(event.effective),
+      url: String(event.reviewed_evidence.url),
+      basis: String(event.reviewed_evidence.basis),
+    }));
+}

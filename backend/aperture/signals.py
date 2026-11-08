@@ -4,6 +4,7 @@ from datetime import date, timedelta
 from decimal import Decimal
 from math import isfinite
 from statistics import stdev
+from itertools import groupby
 
 from . import calendar
 from .domain import Bar, Dataset, RankedStock, ResearchError, strategy
@@ -51,14 +52,22 @@ def rank(
     cutoff = calendar.available_time(decision)
     required = 20 if identifier in ("quality", "quality_value") else 253
     expected = calendar.sessions(decision - timedelta(days=740), decision)[-required:]
+    expected_days = set(expected)
     ranked: list[RankedStock] = []
     excluded: list[dict] = []
     research_exclusions = set(dataset.metadata.get("research_exclusions", []))
     members = eligible(dataset, decision) - (exit_only or set()) - research_exclusions
-    from .research_data import blocked_inputs
+    from .research_data import blocked_inputs, indexed_issues
+
+    issue_index = indexed_issues(dataset)
 
     blocked = blocked_inputs(
-        dataset, members, expected[0] if expected else decision, decision, "signals"
+        dataset,
+        members,
+        expected[0] if expected else decision,
+        decision,
+        "signals",
+        issue_index=issue_index,
     )
     if blocked:
         raise ResearchError(
@@ -105,7 +114,7 @@ def rank(
         by_day = {
             bar.session: bar
             for bar in all_bars
-            if bar.session <= decision
+            if bar.session in expected_days
             and (bar.available_at is None or bar.available_at <= cutoff)
         }
         if len(expected) < required or any(day not in by_day for day in expected):
@@ -121,7 +130,9 @@ def rank(
             excluded.append({"symbol": symbol, "reason": "No recent trading volume."})
             continue
         if fundamental:
-            components, reason = inputs(dataset, symbol, decision)
+            components, reason = inputs(
+                dataset, symbol, decision, issue_index=issue_index
+            )
             if identifier == "value_momentum":
                 levels = total_return_levels(bars)
                 components["momentum"] = levels[-22] / levels[-253] - 1
@@ -168,18 +179,25 @@ def rank(
             "quality_value": ("profitability", "earnings_yield"),
             "value_momentum": ("earnings_yield", "momentum"),
         }[identifier]
-        scored = []
-        for stock in ranked:
-            percentiles = {}
-            for key in factors:
-                value = stock.components[key]
-                below = sum(other.components[key] < value for other in ranked)
-                tied = sum(other.components[key] == value for other in ranked)
-                percentiles[key] = (
-                    (below + (tied - 1) / 2) / (len(ranked) - 1)
+        percentiles_by_symbol = {stock.symbol: {} for stock in ranked}
+        # Sort each factor once. Preserve the exact average-tie percentile
+        # arithmetic, without scanning every other stock twice per candidate.
+        for key in factors:
+            ordered = sorted(ranked, key=lambda stock: stock.components[key])
+            below = 0
+            for _, peers in groupby(ordered, key=lambda stock: stock.components[key]):
+                peers = list(peers)
+                percentile = (
+                    (below + (len(peers) - 1) / 2) / (len(ranked) - 1)
                     if len(ranked) > 1
                     else 0.5
                 )
+                for stock in peers:
+                    percentiles_by_symbol[stock.symbol][key] = percentile
+                below += len(peers)
+        scored = []
+        for stock in ranked:
+            percentiles = percentiles_by_symbol[stock.symbol]
             score = (
                 float(stock.components["profitability"])
                 if identifier == "quality"

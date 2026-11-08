@@ -454,14 +454,22 @@ def create_app(
             raise ResearchError(
                 "Configure SEC_USER_AGENT with your name and contact email in the private .env file first."
             )
-        dataset = store.dataset(dataset_id)
-        if dataset.kind == "synthetic":
+        dataset = next(
+            (row for row in store.datasets() if row["id"] == dataset_id), None
+        )
+        if dataset is None:
+            raise ResearchError("That dataset was not found. Choose one from Data.")
+        if dataset["kind"] == "synthetic":
             raise ResearchError(
                 "Choose actual market data, not fictional practice symbols."
             )
         return store.enqueue(
             "fundamentals",
-            {"dataset_id": dataset.metadata.get("price_dataset_id", dataset.id)},
+            {
+                "dataset_id": dataset.get("metadata", {}).get(
+                    "price_dataset_id", dataset["id"]
+                )
+            },
         )
 
     @app.post("/api/datasets/{dataset_id}/update", status_code=202)

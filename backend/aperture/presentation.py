@@ -30,7 +30,11 @@ def dataset_view(dataset: dict) -> dict:
         }
     if isinstance(meta.get("fundamentals"), dict):
         meta["fundamentals"] = {
-            **meta["fundamentals"],
+            **{
+                k: v
+                for k, v in meta["fundamentals"].items()
+                if k not in {"observation_ids", "source_hashes"}
+            },
             "coverage": [
                 {k: v for k, v in row.items() if k != "filed_share_classes"}
                 for row in meta["fundamentals"].get("coverage", [])

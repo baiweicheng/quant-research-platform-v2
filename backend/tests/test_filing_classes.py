@@ -1,9 +1,197 @@
 from copy import deepcopy
 
+import base64
+import json
+import httpx
+import pytest
+
 from aperture.filing_classes import inspect_cover, inspect_instance, acquire
 from aperture.fundamentals import normalize
 from filing_fixtures import cover, evidence
 from test_fundamentals import source, ACC, CIK
+from aperture.config import Settings
+from aperture.providers import Provider, ResearchError
+from aperture.store import Store
+
+
+@pytest.fixture
+def captured(tmp_path, monkeypatch):
+    monkeypatch.setattr("aperture.providers.time.sleep", lambda _: None)
+    store = Store(tmp_path / "evidence.sqlite3")
+    calls = []
+    raw = {"body": cover(), "status": 200}
+
+    def respond(request):
+        calls.append(str(request.url))
+        if raw.get("fail_suffix") and str(request.url).endswith(raw["fail_suffix"]):
+            return httpx.Response(503)
+        return httpx.Response(raw["status"], content=raw["body"])
+
+    def api():
+        return Provider(
+            store,
+            httpx.Client(transport=httpx.MockTransport(respond)),
+            Settings(sec_agent="Acceptance test test@example.com"),
+        )
+
+    submissions = {
+        "filings": {
+            "recent": {
+                "accessionNumber": [ACC],
+                "primaryDocument": ["annual.htm"],
+                "filingDate": ["2023-02-10"],
+            }
+        }
+    }
+    return store, api, submissions, calls, raw
+
+
+def get_proof(api, submissions, **kwargs):
+    return acquire(
+        api,
+        kwargs.get("symbol", "ABC"),
+        kwargs.get("cik", CIK),
+        source(),
+        submissions,
+        "2022-01-01",
+        "2024-12-31",
+    )
+
+
+def test_persistent_parsed_evidence_reuses_proof_and_original_sources(
+    captured, monkeypatch
+):
+    store, api, submissions, calls, _ = captured
+    first = api()
+    expected = get_proof(first, submissions)
+    assert len(calls) == 1 and first.filing_cache_stats == {"parsed": 1, "reused": 0}
+    monkeypatch.setattr(
+        "aperture.filing_classes.inspect_cover",
+        lambda *a, **k: pytest.fail("Historical evidence was reparsed"),
+    )
+    second = api()
+    assert get_proof(second, submissions) == expected
+    assert second.observations == first.observations
+    assert second.filing_cache_stats == {"parsed": 0, "reused": 1}
+    assert len(calls) == 1
+    assert Store(store.path).filing_evidence("unknown") is None
+
+
+@pytest.mark.parametrize(
+    "change", ["parser", "symbol", "cik", "source", "missing", "damage"]
+)
+def test_parser_identity_source_or_cache_change_reverifies(
+    captured, monkeypatch, change
+):
+    store, api, submissions, calls, _ = captured
+    first = api()
+    get_proof(first, submissions)
+    options = {}
+    if change == "parser":
+        monkeypatch.setattr("aperture.filing_classes.CACHE_VERSION", "next-parser")
+    elif change in {"symbol", "cik"}:
+        options[change] = "OTHER" if change == "symbol" else "0000000002"
+    elif change == "source":
+        with store.connect() as db:
+            resource = db.execute("SELECT resource FROM observations").fetchone()[0]
+        store.observe(
+            "sec",
+            resource,
+            json.dumps(
+                {"base64": base64.b64encode(cover(symbol="OTHER")).decode()}
+            ).encode(),
+        )
+    else:
+        with store.connect() as db:
+            db.execute(
+                "DELETE FROM observations"
+                if change == "missing"
+                else "UPDATE parsed_filings SET body=x'00'"
+            )
+    second = api()
+    result = get_proof(second, submissions, **options)
+    assert second.filing_cache_stats == {"parsed": 1, "reused": 0}
+    if change in {"symbol", "cik", "source"}:
+        assert not result[ACC]["compatible"]
+
+
+def test_new_amended_accession_is_verified_without_reparsing_old(captured, monkeypatch):
+    _, api, submissions, calls, _ = captured
+    get_proof(api(), submissions)
+    amended = "0000000001-23-000002"
+    company = source()
+    row = company["facts"]["us-gaap"]["EarningsPerShareDiluted"]["units"]["USD/shares"][
+        0
+    ]
+    company["facts"]["us-gaap"]["EarningsPerShareDiluted"]["units"][
+        "USD/shares"
+    ].append({**row, "form": "10-K/A", "accn": amended, "filed": "2023-03-10"})
+    recent = submissions["filings"]["recent"]
+    for key, value in [
+        ("accessionNumber", amended),
+        ("filingDate", "2023-03-10"),
+        ("primaryDocument", "amended.htm"),
+    ]:
+        recent[key].append(value)
+    second = api()
+    result = acquire(
+        second, "ABC", CIK, company, submissions, "2022-01-01", "2024-12-31"
+    )
+    assert set(result) == {ACC, amended}
+    assert second.filing_cache_stats == {"parsed": 1, "reused": 1}
+    assert len(calls) == 2
+
+
+def test_failed_source_is_retryable_and_completed_accession_survives_interruption(
+    captured,
+):
+    _, api, submissions, calls, raw = captured
+    raw["status"] = 503
+    with pytest.raises(ResearchError):
+        get_proof(api(), submissions)
+    raw["status"] = 200
+    expected = get_proof(api(), submissions)
+    retry = api()
+    assert get_proof(retry, submissions) == expected
+    assert retry.filing_cache_stats["reused"] == 1
+
+
+def test_html_parser_limit_does_not_accept_truncated_class_evidence():
+    raw = cover() + b"<div>" * 400 + b"Class B common stock"
+    assert not inspect(raw)["compatible"]
+
+
+def test_valid_xhtml_fast_path_preserves_classes_and_namespace_checks():
+    def xhtml(raw):
+        return raw.replace(
+            b"<html ",
+            b'<html xmlns:xbrli="http://www.xbrl.org/2003/instance" xmlns:xbrldi="http://xbrl.org/2006/xbrldi" xmlns:ix="http://www.xbrl.org/2013/inlineXBRL" ',
+        )
+
+    for raw in [
+        cover(),
+        cover(preferred=True),
+        cover(symbol="OTHER"),
+        cover(
+            classes=[
+                ("A", "ABC", "Common stock"),
+                ("B", "ABC.B", "Class B common stock"),
+            ]
+        ),
+    ]:
+        a, b = inspect(raw), inspect(xhtml(raw))
+        a.pop("sha256")
+        b.pop("sha256")
+        assert a == b
+    assert not inspect(
+        xhtml(cover()).replace(
+            b"http://xbrl.sec.gov/dei/2023", b"https://untrusted.invalid/dei/2023"
+        )
+    )["compatible"]
+    malicious = b'<!DOCTYPE html [<!ENTITY title "Preferred common stock">]>' + xhtml(
+        cover()
+    ).replace(b">Common stock<", b">&title;<")
+    assert not inspect(malicious)["compatible"]
 
 
 def inspect(raw, **extra):

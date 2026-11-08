@@ -99,6 +99,7 @@ it("does not offer downloaded updates for practice or CSV snapshots", () => {
 
 it("offers sector-only repair and explains automatic acquisition", async () => {
   const fetcher = setup();
+  await userEvent.click(screen.getByText("More refresh options"));
   expect(
     screen.getByText(/included in every download and update/),
   ).toBeVisible();
@@ -115,6 +116,7 @@ it("offers sector-only repair and explains automatic acquisition", async () => {
 
 it("refreshes filed share units against saved prices without a market download", async () => {
   const fetcher = setup();
+  await userEvent.click(screen.getByText("More refresh options"));
   await userEvent.click(
     screen.getByRole("button", { name: "Refresh SEC filings & share classes" }),
   );

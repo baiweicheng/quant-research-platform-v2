@@ -35,6 +35,7 @@ import {
   snapshotName,
   aliasActionGaps,
   mergerActionGaps,
+  reviewedActionCorrections,
 } from "./snapshots";
 import PaperWorkspace, { PaperPerformance, PaperWeekly } from "./Paper";
 import {
@@ -483,6 +484,13 @@ function DataPage({
 }) {
   const [showOlder, setShowOlder] = useState(false);
   const snapshots = snapshotGroups(state.datasets);
+  const preparingData = state.jobs.some(
+    (job) =>
+      ["download", "fundamentals", "dataset_update", "sector_update"].includes(
+        job.kind,
+      ) &&
+      (job.state === "queued" || job.state === "running"),
+  );
   const visible = showOlder
     ? [...snapshots.latest, ...snapshots.older]
     : snapshots.latest;
@@ -503,8 +511,8 @@ function DataPage({
         </div>
       </div>
       <MarketData />
-      <DatasetUpdates datasets={state.datasets} />
-      <FundamentalsPanel datasets={state.datasets} />
+      <DatasetUpdates datasets={state.datasets} preparing={preparingData} />
+      {!preparingData && <FundamentalsPanel datasets={state.datasets} />}
       <div className="data-start card">
         <span className="soft-icon">
           <Database size={23} />
@@ -632,6 +640,39 @@ function DataPage({
                     These affected dates cannot be simulated at an assumed zero
                     recovery.
                   </Notice>
+                )}
+                {!!reviewedActionCorrections(dataset).length && (
+                  <details className="details">
+                    <summary>
+                      Reviewed corporate actions ·{" "}
+                      {reviewedActionCorrections(dataset).length} verified
+                      corrections
+                    </summary>
+                    <p>
+                      Dated primary sources reconcile these corporate actions.
+                      Captured provider inputs and filings are retained in the
+                      metadata export.
+                    </p>
+                    <ul>
+                      {reviewedActionCorrections(dataset).map((action) => (
+                        <li key={`${action.symbol}-${action.effective}`}>
+                          <strong>
+                            {action.symbol} · {action.effective}
+                          </strong>
+                          <p>
+                            {action.basis}{" "}
+                            <a
+                              href={action.url}
+                              target="_blank"
+                              rel="noreferrer"
+                            >
+                              Primary filing
+                            </a>
+                          </p>
+                        </li>
+                      ))}
+                    </ul>
+                  </details>
                 )}
                 {dataset.metadata?.validation_issues?.map((reason) => (
                   <Notice error key={reason}>
