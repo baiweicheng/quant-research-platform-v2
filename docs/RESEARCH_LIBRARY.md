@@ -27,3 +27,9 @@ Deleted unshared data becomes reusable database space. The database file may not
 Research engine 0.4.0 allocates cash-constrained buy budgets across the full basket, rather than by ticker order. Existing saved results remain frozen.
 
 New downloads and ordinary updates verify EPS share units against the source filing automatically. To refresh an existing snapshot without downloading prices again, use **Data → More refresh options → Refresh SEC filings & share classes**, then select the newly completed snapshot in Research. This is an optional repair, not a recurring second step. First verification reads historical SEC documents and can take longer; completed checks and captures are reused on retry. Coverage shows supported filing counts and exclusions. Earlier snapshots retain their original eligibility assumptions, with a warning when a new value-based run uses the legacy screen.
+
+## Run several strategies together
+
+In **Research → New backtest**, select one or more strategies, choose the shared dataset, dates, starting capital and accounting options, then choose **Run N backtests**. **Select all** includes every available strategy; larger catalogs also have search. Selection is preserved when search hides an item.
+
+Activity names each strategy and shows its progress separately. Each run produces its own ordinary saved result for the existing comparison view. The local worker processes the queue in order to bound memory use. Repeated submissions reuse identical queued/running tasks. All selected inputs are checked together before anything is queued; final-test date reservations and other existing research safeguards still apply. Allocation reviews continue to use one strategy.

@@ -86,6 +86,18 @@ def test_holdout_guards_other_snapshots_and_all_api_backtests(experiment):
             headers=HEADER,
         )
         assert r.status_code == 422 and "locked holdout" in r.json()["detail"]
+        batch = c.post(
+            "/api/tasks/backtests",
+            json={
+                "dataset_id": data["dataset_id"],
+                "strategy_ids": ["momentum", "low_volatility"],
+                "start": data["start"],
+                "end": data["end"],
+            },
+            headers=HEADER,
+        )
+        assert batch.status_code == 422 and "locked holdout" in batch.json()["detail"]
+        assert store.jobs() == []
     assert protocol(store, p["id"])["holdout_state"] == "locked"
 
 

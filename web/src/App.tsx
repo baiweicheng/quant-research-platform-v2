@@ -1090,6 +1090,8 @@ function ActivityPage({
                         paper_prepare: "Prepare weekly paper review",
                         paper_cancel: "Cancel Aperture paper orders",
                       }[job.kind] ?? job.kind}
+                      {job.strategy_id &&
+                        ` · ${state.strategies.find((s) => s.id === job.strategy_id)?.name ?? job.strategy_id}`}
                     </h3>
                     <Badge
                       tone={

@@ -28,14 +28,21 @@ class ImportRequest(BaseModel):
     csv: str = Field(max_length=MAX_BYTES)
 
 
-class TaskRequest(BaseModel):
+class TaskInputs(BaseModel):
     dataset_id: str = Field(max_length=40)
-    strategy_id: str = Field(max_length=40)
     start: date | None = None
     end: date | None = None
     capital: str = Field(default="100000", max_length=20)
     dividend_model: Literal["ex_date", "pay_date"] = "ex_date"
     coverage_mode: Literal["strict", "coverage_limited"] = "coverage_limited"
+
+
+class TaskRequest(TaskInputs):
+    strategy_id: str = Field(max_length=40)
+
+
+class BacktestBatchRequest(TaskInputs):
+    strategy_ids: list[str] = Field(min_length=1, max_length=100)
 
 
 class DownloadRequest(BaseModel):
@@ -494,8 +501,7 @@ def create_app(
         source = latest(store, dataset_id)
         return store.enqueue("dataset_update", {"dataset_id": source["id"]})
 
-    @app.post("/api/tasks/{kind}", status_code=202)
-    def task(kind: Literal["backtest", "review"], payload: TaskRequest):
+    def validated_task(kind: str, payload: TaskRequest):
         strategy(payload.strategy_id)
         summary = next(
             (row for row in store.datasets() if row["id"] == payload.dataset_id), None
@@ -533,7 +539,21 @@ def create_app(
                 raise ResearchError(
                     "Starting capital must be between $100 and $1 billion."
                 )
-        return store.enqueue(kind, payload.model_dump(mode="json"))
+        return payload.model_dump(mode="json")
+
+    @app.post("/api/tasks/backtests", status_code=202)
+    def backtests(payload: BacktestBatchRequest):
+        common = payload.model_dump(exclude={"strategy_ids"})
+        requests = [
+            validated_task("backtest", TaskRequest(**common, strategy_id=identifier))
+            for identifier in dict.fromkeys(payload.strategy_ids)
+        ]
+        jobs = store.enqueue_many("backtest", requests)
+        return {"jobs": jobs, "count": len(jobs)}
+
+    @app.post("/api/tasks/{kind}", status_code=202)
+    def task(kind: Literal["backtest", "review"], payload: TaskRequest):
+        return store.enqueue(kind, validated_task(kind, payload))
 
     @app.post("/api/paper/plans/{identifier}/retry-quote")
     def retry_paper_quote(identifier: str, payload: RebalanceApprovalRequest):

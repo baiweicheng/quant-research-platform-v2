@@ -1328,6 +1328,54 @@ input[type="file"]::file-selector-button {
   flex-shrink: 0;
   margin-top: 3px;
 }
+.strategy-picker {
+  min-width: 0;
+  border: 0;
+  padding: 0;
+  margin: 0;
+}
+.strategy-picker legend {
+  font-weight: 600;
+  margin-bottom: 8px;
+}
+.strategy-picker-actions {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  flex-wrap: wrap;
+  gap: 8px;
+  margin-bottom: 8px;
+  font-size: var(--font-small);
+}
+.strategy-picker-list {
+  border: 1px solid #dce5d7;
+  border-radius: 7px;
+  margin-top: 8px;
+}
+.strategy-picker-list.scrollable {
+  max-height: 260px;
+  overflow: auto;
+}
+.strategy-picker-list .checkbox-label {
+  display: flex;
+  min-height: 44px;
+  padding: 9px 12px;
+  margin: 0;
+}
+.strategy-picker-list .checkbox-label + .checkbox-label {
+  border-top: 1px solid #edf1e8;
+}
+.strategy-picker-list .checkbox-label:has(input:checked) {
+  background: #f2f6ed;
+}
+.strategy-picker-list small {
+  display: block;
+  color: #71816c;
+  margin-top: 2px;
+}
+.strategy-picker > .field-hint {
+  margin: 8px 0 0;
+}
 .form .notice,
 .form .details {
   margin: 0;

@@ -375,6 +375,37 @@ it("opens Data for a completed download rather than treating it as a portfolio r
   ).toBeVisible();
 });
 
+it("identifies each queued backtest by strategy in Activity", async () => {
+  vi.stubGlobal(
+    "fetch",
+    vi.fn().mockResolvedValue({
+      ok: true,
+      json: async () => ({
+        ...state,
+        jobs: ["momentum", "value_momentum"].map((id) => ({
+          id,
+          kind: "backtest",
+          strategy_id: id,
+          state: "queued",
+          progress: 0,
+          message: "Waiting for the local worker",
+          created_at: "2025-12-31T12:00:00Z",
+          updated_at: "2025-12-31T12:00:00Z",
+          result_id: null,
+        })),
+      }),
+    }),
+  );
+  render(wrapper(<App />));
+  await userEvent.click(await screen.findByRole("link", { name: "Activity" }));
+  expect(
+    screen.getByRole("heading", { name: "Run backtest · Momentum" }),
+  ).toBeVisible();
+  expect(
+    screen.getByRole("heading", { name: "Run backtest · Value + Momentum" }),
+  ).toBeVisible();
+});
+
 it("blocks fundamental runs until the selected dataset includes SEC statements", async () => {
   const dataset = {
     id: "prices",
@@ -406,7 +437,10 @@ it("blocks fundamental runs until the selected dataset includes SEC statements",
   expect(
     screen.getByText(/Select a downloaded market and SEC snapshot/),
   ).toBeVisible();
-  await userEvent.selectOptions(screen.getByLabelText("Strategy"), "momentum");
+  await userEvent.click(
+    screen.getByRole("checkbox", { name: "Value + Momentum" }),
+  );
+  await userEvent.click(screen.getByRole("checkbox", { name: "Momentum" }));
   expect(screen.getByRole("button", { name: "Run backtest" })).toBeEnabled();
 });
 

@@ -93,6 +93,7 @@ export type Dataset = {
 export type Job = {
   id: string;
   kind: string;
+  strategy_id?: string;
   state: "queued" | "running" | "complete" | "failed";
   progress: number;
   message: string;

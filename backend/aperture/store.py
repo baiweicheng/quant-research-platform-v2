@@ -544,53 +544,68 @@ class Store:
             )
 
     def enqueue(self, kind: str, payload: dict) -> dict:
-        packed = json.dumps(payload, sort_keys=True)
+        return self.enqueue_many(kind, [payload])[0]
+
+    def enqueue_many(self, kind: str, payloads: list[dict]) -> list[dict]:
+        """Accept a selection atomically, with the same guards as one task."""
         with self.connect() as db:
             db.execute("BEGIN IMMEDIATE")
-            if kind == "backtest":
-                from .experiments import guard
+            return [self._enqueue(db, kind, payload) for payload in payloads]
 
-                guard(db, payload["start"], payload["end"])
-            if (
-                payload.get("dataset_id")
-                and not db.execute(
-                    "SELECT 1 FROM datasets WHERE id=?", (payload["dataset_id"],)
-                ).fetchone()
-            ):
-                raise ResearchError(
-                    "That dataset is no longer available. Refresh Data and choose a saved snapshot."
-                )
-            duplicate = db.execute(
-                "SELECT * FROM jobs WHERE kind=? AND payload=? AND state IN ('queued','running')",
-                (kind, packed),
+    @staticmethod
+    def _enqueue(db, kind: str, payload: dict) -> dict:
+        packed = json.dumps(payload, sort_keys=True)
+        if kind == "backtest":
+            from .experiments import guard
+
+            guard(db, payload["start"], payload["end"])
+        if (
+            payload.get("dataset_id")
+            and not db.execute(
+                "SELECT 1 FROM datasets WHERE id=?", (payload["dataset_id"],)
             ).fetchone()
-            if duplicate:
-                return dict(duplicate)
-            identifier, timestamp = str(uuid4()), now()
-            db.execute(
-                "INSERT INTO jobs VALUES (?,?,?,?,?,?,?,?,?)",
-                (
-                    identifier,
-                    kind,
-                    packed,
-                    "queued",
-                    0,
-                    "Waiting for the local worker",
-                    timestamp,
-                    timestamp,
-                    None,
-                ),
+        ):
+            raise ResearchError(
+                "That dataset is no longer available. Refresh Data and choose a saved snapshot."
             )
-            return dict(
-                db.execute("SELECT * FROM jobs WHERE id=?", (identifier,)).fetchone()
-            )
+        duplicate = db.execute(
+            "SELECT * FROM jobs WHERE kind=? AND payload=? AND state IN ('queued','running')",
+            (kind, packed),
+        ).fetchone()
+        if duplicate:
+            return dict(duplicate)
+        identifier, timestamp = str(uuid4()), now()
+        db.execute(
+            "INSERT INTO jobs VALUES (?,?,?,?,?,?,?,?,?)",
+            (
+                identifier,
+                kind,
+                packed,
+                "queued",
+                0,
+                "Waiting for the local worker",
+                timestamp,
+                timestamp,
+                None,
+            ),
+        )
+        return dict(
+            db.execute("SELECT * FROM jobs WHERE id=?", (identifier,)).fetchone()
+        )
 
     def jobs(self) -> list[dict]:
         with self.connect() as db:
             rows = db.execute(
-                "SELECT id,kind,state,progress,message,created_at,updated_at,result_id FROM jobs ORDER BY created_at DESC LIMIT 50"
+                "SELECT id,kind,state,progress,message,created_at,updated_at,result_id,payload FROM jobs ORDER BY created_at DESC LIMIT 50"
             ).fetchall()
-            return [dict(row) for row in rows]
+            jobs = []
+            for row in rows:
+                job = dict(row)
+                payload = json.loads(job.pop("payload"))
+                if job["kind"] in {"backtest", "review"}:
+                    job["strategy_id"] = payload.get("strategy_id")
+                jobs.append(job)
+            return jobs
 
     def claim(self) -> dict | None:
         with self.connect() as db:

@@ -43,17 +43,25 @@ export function TaskDialog({
     )?.id ?? "",
   );
   const [strategyId, setStrategyId] = useState(initial ?? "momentum");
+  const [strategyIds, setStrategyIds] = useState([initial ?? "momentum"]);
+  const [strategySearch, setStrategySearch] = useState("");
+  const selectedStrategies = kind === "backtest" ? strategyIds : [strategyId];
+  const availableStrategies = state.strategies.filter((s) => s.implemented);
+  const visibleStrategies = availableStrategies.filter((s) =>
+    `${s.name} ${s.category}`
+      .toLowerCase()
+      .includes(strategySearch.toLowerCase()),
+  );
   const dataset = state.datasets.find((row) => row.id === datasetId);
-  const needsFundamentals = [
-    "quality",
-    "quality_value",
-    "value_momentum",
-  ].includes(strategyId);
+  const needsFundamentals = ["quality", "quality_value", "value_momentum"].some(
+    (id) => selectedStrategies.includes(id),
+  );
   const missingFundamentals =
     needsFundamentals && !dataset?.metadata?.fundamentals?.record_count;
   const legacyClasses =
-    ["quality_value", "value_momentum"].includes(strategyId) &&
-    dataset?.metadata?.fundamentals?.normalizer === "annual-us-gaap-v1";
+    ["quality_value", "value_momentum"].some((id) =>
+      selectedStrategies.includes(id),
+    ) && dataset?.metadata?.fundamentals?.normalizer === "annual-us-gaap-v1";
   const [start, setStart] = useState(
     dataset ? afterWarmup(dataset.start, dataset.end) : "",
   );
@@ -61,8 +69,13 @@ export function TaskDialog({
   const [capital, setCapital] = useState("100000");
   const client = useQueryClient();
   const task = useMutation({
-    mutationFn: (payload: Record<string, string | null>) =>
-      api(`/tasks/${kind}`, payload),
+    mutationFn: (payload: Record<string, unknown>) =>
+      api(
+        kind === "backtest" && Array.isArray(payload.strategy_ids)
+          ? "/tasks/backtests"
+          : `/tasks/${kind}`,
+        payload,
+      ),
     onSuccess: async () => {
       await client.invalidateQueries({ queryKey: ["state"] });
       onQueued();
@@ -79,9 +92,14 @@ export function TaskDialog({
   function submit(event: FormEvent<HTMLFormElement>) {
     event.preventDefault();
     const values = new FormData(event.currentTarget);
+    const selection =
+      kind === "backtest" ? strategyIds : [String(values.get("strategy_id"))];
+    if (!selection.length) return;
     task.mutate({
       dataset_id: String(values.get("dataset_id")),
-      strategy_id: String(values.get("strategy_id")),
+      ...(selection.length > 1
+        ? { strategy_ids: selection }
+        : { strategy_id: selection[0] }),
       start: kind === "backtest" ? String(values.get("start")) : null,
       end: kind === "backtest" ? String(values.get("end")) : null,
       capital: kind === "backtest" ? String(values.get("capital")) : "100000",
@@ -119,25 +137,103 @@ export function TaskDialog({
             <SnapshotOptions datasets={state.datasets} />
           </select>
         </label>
-        <label>
-          Strategy
-          <select
-            name="strategy_id"
-            value={strategyId}
-            onChange={(e) => {
-              setStrategyId(e.target.value);
-              task.reset();
-            }}
-          >
-            {state.strategies
-              .filter((s) => s.implemented)
-              .map((s) => (
+        {kind === "backtest" ? (
+          <fieldset className="strategy-picker" disabled={task.isPending}>
+            <legend>Strategies</legend>
+            <div className="strategy-picker-actions">
+              <span>{strategyIds.length} selected</span>
+              <div className="inline">
+                <button
+                  type="button"
+                  className="text-button"
+                  onClick={() => {
+                    setStrategyIds((ids) => [
+                      ...new Set([
+                        ...ids,
+                        ...visibleStrategies.map((s) => s.id),
+                      ]),
+                    ]);
+                    task.reset();
+                  }}
+                >
+                  {strategySearch ? "Select matches" : "Select all"}
+                </button>
+                <button
+                  type="button"
+                  className="text-button"
+                  disabled={!strategyIds.length}
+                  onClick={() => {
+                    setStrategyIds([]);
+                    task.reset();
+                  }}
+                >
+                  Clear
+                </button>
+              </div>
+            </div>
+            {availableStrategies.length > 8 && (
+              <input
+                type="search"
+                aria-label="Find strategies"
+                placeholder="Find strategies"
+                value={strategySearch}
+                onChange={(e) => setStrategySearch(e.target.value)}
+              />
+            )}
+            <div
+              className={`strategy-picker-list${availableStrategies.length > 8 ? " scrollable" : ""}`}
+            >
+              {visibleStrategies.map((s) => (
+                <label className="checkbox-label" key={s.id}>
+                  <input
+                    type="checkbox"
+                    name="strategy_id"
+                    value={s.id}
+                    aria-label={s.name}
+                    checked={strategyIds.includes(s.id)}
+                    onChange={(e) => {
+                      setStrategyIds((ids) =>
+                        e.target.checked
+                          ? [...ids, s.id]
+                          : ids.filter((id) => id !== s.id),
+                      );
+                      task.reset();
+                    }}
+                  />
+                  <span>
+                    {s.name}
+                    <small>{s.category}</small>
+                  </span>
+                </label>
+              ))}
+              {!visibleStrategies.length && (
+                <p className="field-hint">No matching strategies.</p>
+              )}
+            </div>
+            <p className="field-hint">
+              Each selected strategy gets its own result using the same data,
+              dates and assumptions below.
+            </p>
+          </fieldset>
+        ) : (
+          <label>
+            Strategy
+            <select
+              name="strategy_id"
+              value={strategyId}
+              onChange={(e) => {
+                setStrategyId(e.target.value);
+                task.reset();
+              }}
+            >
+              {availableStrategies.map((s) => (
                 <option value={s.id} key={s.id}>
                   {s.name}
                 </option>
               ))}
-          </select>
-        </label>
+            </select>
+          </label>
+        )}
         {!dataset &&
           state.datasets.some((d) => d.metadata?.bundle_role === "prices") && (
             <Notice>
@@ -161,7 +257,7 @@ export function TaskDialog({
         )}
         {missingFundamentals && (
           <Notice>
-            Select a downloaded market and SEC snapshot. This strategy needs
+            Select a downloaded market and SEC snapshot. This selection needs
             filing-dated statements as well as prices.
           </Notice>
         )}
@@ -203,7 +299,10 @@ export function TaskDialog({
               </label>
             </div>
             <p className="field-hint">
-              {strategyId === "quality" || strategyId === "quality_value"
+              {selectedStrategies.length > 0 &&
+              selectedStrategies.every((id) =>
+                ["quality", "quality_value"].includes(id),
+              )
                 ? "Signals need 20 earlier price sessions and an available annual filing."
                 : "Signals need 253 earlier price sessions."}{" "}
               Dates default to leave warm-up history when available. Earlier
@@ -269,7 +368,12 @@ export function TaskDialog({
           </button>
           <button
             className="button"
-            disabled={!dataset || missingFundamentals || task.isPending}
+            disabled={
+              !dataset ||
+              !selectedStrategies.length ||
+              missingFundamentals ||
+              task.isPending
+            }
             type="submit"
           >
             {task.isPending ? (
@@ -277,7 +381,11 @@ export function TaskDialog({
             ) : (
               <ArrowRight size={16} />
             )}
-            {kind === "backtest" ? "Run backtest" : "Prepare review"}
+            {kind === "backtest"
+              ? strategyIds.length > 1
+                ? `Run ${strategyIds.length} backtests`
+                : "Run backtest"
+              : "Prepare review"}
           </button>
         </div>
       </form>
