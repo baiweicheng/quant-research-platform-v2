@@ -5,6 +5,8 @@ import json
 import time
 import base64
 import threading
+import logging
+from contextlib import contextmanager
 from datetime import date, datetime, timedelta
 from decimal import Decimal
 from urllib.parse import quote
@@ -47,6 +49,8 @@ class EvidenceLimit(ResearchError):
 
 
 MAX_FILING_BYTES = 96 * 1024 * 1024
+SEC_REQUEST_INTERVAL = 0.125
+LOG = logging.getLogger(__name__)
 
 
 class Provider:
@@ -59,6 +63,7 @@ class Provider:
         self.store, self.cfg = store, cfg or settings()
         self.client = client or httpx.Client(timeout=30, follow_redirects=False)
         self.owned = client is None
+        self._fresh_retry_clients = self.owned
         self.observations: list[str] = []
         self._sec_gate = {"lock": threading.Lock(), "next": 0.0}
 
@@ -66,16 +71,27 @@ class Provider:
         """An independent evidence/source list, sharing one bounded HTTP client."""
         child = Provider(self.store, self.client, self.cfg)
         child._sec_gate = self._sec_gate
+        child._fresh_retry_clients = self._fresh_retry_clients
         return child
 
+    @contextmanager
+    def _document_client(self, attempt):
+        # An owned transport can retry a stalled filing on fresh connections.
+        # Keep caller-provided transports intact, including test/offline clients.
+        if attempt and self._fresh_retry_clients:
+            with httpx.Client(timeout=30, follow_redirects=False) as client:
+                yield client
+        else:
+            yield self.client
+
     def _wait_sec(self):
-        # All accession readers share this gate: fewer than six request starts
+        # All accession readers share this gate: at most eight request starts
         # per second, including retries, rather than a per-thread sleep.
         with self._sec_gate["lock"]:
             delay = self._sec_gate["next"] - time.monotonic()
             if delay > 0:
                 time.sleep(delay)
-            self._sec_gate["next"] = time.monotonic() + 0.18
+            self._sec_gate["next"] = time.monotonic() + SEC_REQUEST_INTERVAL
 
     def close(self):
         if self.owned:
@@ -112,14 +128,18 @@ class Provider:
         for attempt in range(3):
             try:
                 self._wait_sec()
-                with self.client.stream(
-                    "GET",
-                    url,
-                    headers={
-                        "User-Agent": self.cfg.sec_agent,
-                        "Accept-Encoding": "gzip, deflate",
-                    },
-                ) as response:
+                with (
+                    self._document_client(attempt) as client,
+                    client.stream(
+                        "GET",
+                        url,
+                        timeout=httpx.Timeout(60.0, connect=10.0, pool=10.0),
+                        headers={
+                            "User-Agent": self.cfg.sec_agent,
+                            "Accept-Encoding": "gzip, deflate",
+                        },
+                    ) as response,
+                ):
                     if (
                         response.status_code in (429, 500, 502, 503, 504)
                         and attempt < 2
@@ -149,7 +169,13 @@ class Provider:
                             )
                         body.extend(chunk)
                     raw = bytes(body)
-            except httpx.RequestError:
+            except httpx.RequestError as error:
+                LOG.warning(
+                    "SEC filing transport attempt %s/3: %s for %s",
+                    attempt + 1,
+                    type(error).__name__,
+                    url,
+                )
                 if attempt < 2:
                     time.sleep(0.3 * (attempt + 1))
                     continue

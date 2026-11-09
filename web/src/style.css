@@ -2250,3 +2250,16 @@ textarea:focus-visible {
     grid-template-columns: 1fr;
   }
 }
+.coverage-table {
+  width: 100%;
+  min-width: 0;
+  table-layout: fixed;
+}
+.coverage-table th:first-child,
+.coverage-table td:first-child {
+  width: 5.5rem;
+}
+.coverage-table td:last-child {
+  white-space: normal;
+  overflow-wrap: anywhere;
+}

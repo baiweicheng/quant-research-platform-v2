@@ -34,9 +34,9 @@ Daily account values, positions, cash and fills are separate account records. No
 
 Total-return research keeps the captured ex-date amount separate from verified payment-date cash entitlements. Overnight holders reinvest known distributions at the ex-date close if still held, otherwise receive research cash at that close. These amounts cannot fund opening trades. Known cash rights count in opening equity; a spin-off uses its child's opening quote for opening valuation and its closing quote for closing reinvestment. A future closing quote never sizes an earlier opening trade. This is a research convention, not a claim about broker cash availability or actual DRIP fills.
 
-Strict payment-date simulation retains verified settlement/share-delivery requirements. Dated issues apply to the relevant period and signal lookback instead of marking every date of a symbol permanently unusable. Coverage-limited mode freezes whole-window availability exclusions before simulation, saves every omitted security/reason and warns of survivorship/selection bias. Required membership bounds still apply. Strict full-index mode does not omit unresolved members. See [the open free-data backlog](FREE_DATA_GAPS.md).
+Strict payment-date simulation retains verified settlement/share-delivery requirements. Dated issues apply to the relevant period and signal lookback instead of marking every date of a symbol permanently unusable. Coverage-limited mode freezes possible-holding-window availability exclusions before simulation, saves every omitted security/reason and warns of survivorship/selection bias. Required membership bounds still apply. Strict full-index mode does not omit unresolved members. See [the open free-data backlog](FREE_DATA_GAPS.md).
 
-Reproduction requires the original immutable snapshot, the saved assumptions and the same engine version. The current engine is 0.5.0; an engine upgrade is distinct from a data refresh. Original saved outputs are retained even after either changes.
+Reproduction requires the original immutable snapshot, the saved assumptions and the same engine version. The current engine is 0.6.0; an engine upgrade is distinct from a data refresh. Original saved outputs are retained even after either changes.
 
 ## Reusing filed share-class checks
 
@@ -56,3 +56,6 @@ interruption; unfinished downloads can complete their SEC stage from saved
 prices. Cache reuse changes acquisition work, not historical filing dates or
 financial values. The first full acquisition still requires historical source
 retrieval; warm performance is measured separately from a fresh empty cache.
+
+
+Reviewed absent merger terms can be added to a new snapshot during ordinary Update even when their dates precede the recent price overlap. Their exact listing, primary source fingerprint and final quote session must match. Earlier prices and original saved snapshots are preserved. New source/recipient checks and the holding-window coverage policy apply when running a new result with the new engine; they do not rewrite old results.

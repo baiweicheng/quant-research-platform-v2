@@ -24,7 +24,11 @@ def update(store, identifier, progress, provider=None):
     from .research_data import VERSION as RESEARCH_VERSION
 
     normalizer = base.metadata.get("normalizer_version")
-    if normalizer in {"dated-research-inputs-v1", RESEARCH_VERSION}:
+    if normalizer in {
+        "dated-research-inputs-v1",
+        "dated-research-inputs-v2-reviewed-actions",
+        RESEARCH_VERSION,
+    }:
         from .bundles import download
 
         audit = base.metadata.get("membership")

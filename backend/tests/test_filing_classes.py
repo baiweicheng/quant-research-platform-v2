@@ -368,3 +368,70 @@ def test_legacy_manifest_uses_declared_instance_not_filename_guess():
     assert proofs[ACC]["compatible"] and proofs[ACC]["url"].endswith(
         "actual-instance.xml"
     )
+
+
+def test_bounded_readers_preserve_all_proofs_and_captured_sources(
+    tmp_path, monkeypatch
+):
+    import threading
+    from aperture import filing_classes
+
+    monkeypatch.setattr(Provider, "_wait_sec", lambda _: None)
+    company = source()
+    fact = company["facts"]["us-gaap"]["EarningsPerShareDiluted"]["units"][
+        "USD/shares"
+    ][0]
+    accessions = [f"0000000001-23-{i:06d}" for i in range(1, 9)]
+    company["facts"]["us-gaap"]["EarningsPerShareDiluted"]["units"]["USD/shares"] = [
+        {**fact, "accn": a} for a in accessions
+    ]
+    submissions = {
+        "filings": {
+            "recent": {
+                "accessionNumber": accessions,
+                "primaryDocument": ["annual.htm"] * 8,
+                "filingDate": [fact["filed"]] * 8,
+            }
+        }
+    }
+    barrier = threading.Barrier(4, timeout=5)
+    lock = threading.Lock()
+    active, peak = 0, 0
+    concurrent = True
+
+    def respond(request):
+        nonlocal active, peak
+        with lock:
+            active += 1
+            peak = max(peak, active)
+        try:
+            if concurrent:
+                barrier.wait()
+            return httpx.Response(200, content=cover())
+        finally:
+            with lock:
+                active -= 1
+
+    def read(label):
+        store = Store(tmp_path / f"{label}.sqlite3")
+        api = Provider(
+            store,
+            httpx.Client(transport=httpx.MockTransport(respond)),
+            Settings(sec_agent="test test@example.com"),
+        )
+        proofs = acquire(
+            api, "ABC", CIK, company, submissions, "2022-01-01", "2024-12-31"
+        )
+        with store.connect() as db:
+            sources = sorted(
+                tuple(r) for r in db.execute("SELECT resource,digest FROM observations")
+            )
+        assert len(api.observations) == 8 and len(sources) == 8
+        assert api.filing_cache_stats == {"parsed": 8, "reused": 0}
+        return proofs, sources
+
+    parallel = read("parallel")
+    assert peak == 4
+    concurrent = False
+    monkeypatch.setattr(filing_classes, "FILING_READERS", 1)
+    assert read("sequential") == parallel

@@ -1,6 +1,6 @@
 # Performance and reproducibility
 
-Measured locally on November 8, 2026, with engine 0.5.0. These are paired workload measurements on one Mac, not hardware-independent guarantees. Downloads and ordinary updates still prepare prices, sectors and SEC inputs together; there is no additional required refresh step.
+Measured locally on November 8–9, 2026, with engines 0.5.0 and 0.6.0. These are paired workload measurements on one Mac, not hardware-independent guarantees. Downloads and ordinary updates still prepare prices, sectors and SEC inputs together; there is no additional required refresh step.
 
 ## Measured computation and storage
 
@@ -23,9 +23,26 @@ For the 12-snapshot acceptance workspace, this screen projection reduced the ser
 
 ## Filing acquisition and reuse
 
-Two bounded accession readers share one request gate with at least 0.18 seconds between SEC request starts, including retries. This is below the SEC's [ten requests per second maximum](https://www.sec.gov/about/developer-resources). Requests use the configured identifying contact. Reports are streamed with a 96 MiB decompressed bound; an oversized report leaves the affected EPS units explicitly unverified rather than aborting unrelated issuer evidence or substituting today's class assumptions.
+Engine 0.6.0 overlaps two issuer pipelines, each with two accession readers. All four readers share one request gate with at least 0.125 seconds between SEC request starts, including retries. This permits at most eight starts per second across the acquisition. This is below the SEC's [ten requests per second maximum](https://www.sec.gov/about/developer-resources). Requests use the configured identifying contact. Reports are streamed with a 96 MiB decompressed bound; an oversized report leaves the affected EPS units explicitly unverified rather than aborting unrelated issuer evidence or substituting today's class assumptions.
 
 Completed accession checks persist individually. Reuse requires the same parser/evidence versions, XML engine versions, issuer identity, accession, filing date, primary filename and captured source fingerprints. Changed, missing or corrupt dependencies trigger verification again. Network failures still interrupt acquisition; they do not become false evidence that a class is incompatible. A stopped-worker recovery check retained both saved snapshots, all 558 completed parsed checks and all 1,498 captured observations from the interrupted acceptance download.
+
+A controlled 20-issuer workload starts with empty local provider and parsed-evidence caches in every case. Issuer metadata and the requested accession set are frozen; filing bodies are fetched from the SEC. This measures the filing phase, not a complete universe download.
+
+| Filing configuration | Elapsed | Peak process memory | Checks |
+| --- | ---: | ---: | --- |
+| Previous: one issuer, two readers, 0.18-second gate | 105.969 s | 1.60 GB | 213 proofs, 197 compatible |
+| One issuer, four readers, same gate | 96.671 s | 1.51 GB | Exact same complete proof hash |
+| One issuer, four readers, 0.125-second gate | 80.358 s | 2.14 GB | Exact same complete proof hash |
+| Release: two issuers, two readers each, 0.125-second gate | 81.649 s | 1.65 GB | Exact same complete proof hash |
+
+The release configuration is approximately **23% faster** than the prior configuration in this sample, with similar peak memory. It made 472 SEC starts versus 471 in the control, including one additional bounded retry. Measured minimum start spacing was 0.125018 seconds. Results are merged in symbol order; a slow issuer no longer prevents another issuer's pipeline from advancing. Backtest batches remain sequential in the worker to bound memory.
+
+A real empty-workspace full acquisition also completed, with interrupted attempts retaining 1,540 and then 3,354 parsed checks before the ordinary Update workflow finished the combined snapshot. SEC transport stalls and monitoring interruptions prevent a valid uninterrupted end-to-end timing comparison with the older 72-minute run. No general full-download duration is promised. Its 85,762 price blocks, 22,330 normalized annual statements and 6,467 filing checks match the previous accepted financial inputs. Original source-capture hashes differ where SEC response bytes changed; those hashes remain preserved, and comparison excludes only the corresponding capture-hash fields.
+
+Filing reads allow 60 seconds between response chunks, with ten-second connection/pool limits, three attempts and a fresh owned connection on retry. Supplied external/test transports are preserved. A changed source body still requires review. For reviewed primary action documents, a narrow content fingerprint ignores only the SEC-injected empty script immediately before the closing HTML body, including uppercase HTML/SGML wrappers; original bytes and raw hashes remain available. Economic text or other markup changes fail the review check.
+
+A real normal-workspace Update with engine 0.6.0 completed in **5 minutes 56 seconds**, retaining identical price/annual blocks and filing checks. This is one observed warm run, separate from the controlled cold-filing comparison.
 
 Initial acquisition still needs to obtain thousands of historical reports. Faster parsing and bounded concurrency do not eliminate that network cost. Warm-update and empty-cache acceptance observations are recorded in [validation](VALIDATION.md), separately from the paired computation benchmarks above. Local scripts and detailed timing/hash artifacts are retained under ignored `var/uat/`; source data and credentials are not committed.
 

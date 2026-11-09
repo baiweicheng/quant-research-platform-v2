@@ -19,7 +19,7 @@ from .action_evidence import (
     VERSION as ACTION_EVIDENCE_VERSION,
 )
 
-VERSION = "dated-research-inputs-v2-reviewed-actions"
+VERSION = "dated-research-inputs-v3-holding-lifetimes"
 
 
 def input_issues(dataset):
@@ -99,11 +99,17 @@ def blocked_inputs(dataset, names, start, end, mode="ex_date", *, issue_index=No
 
 def security_events(portfolio, day, events, bars, model):
     """Verified contractual merger consideration; never invent a terminal price."""
+    from .lifecycles import event_session
+
     for event in events:
-        if event["effective"] != str(day) or event["kind"] not in (
-            "cash_mergers",
-            "stock_mergers",
-            "stock_and_cash_mergers",
+        if (
+            event["kind"]
+            not in (
+                "cash_mergers",
+                "stock_mergers",
+                "stock_and_cash_mergers",
+            )
+            or event_session(event) != day
         ):
             continue
         symbol = event["source"]
@@ -398,48 +404,13 @@ def download(store, payload, progress, provider=None, base=None):
                 }
             )
 
-        for symbol in names:
-            rows = list(listing_candidates[symbol].values())
-            if not rows:
-                issue(
-                    symbol,
-                    first,
-                    "Historical listing identity is unavailable in the captured directory; a raw-symbol fallback is not issuer verification.",
-                    "identity",
-                    last,
-                )
-            elif len(rows) > 1 and symbol != "IR":
-                issue(
-                    symbol,
-                    first,
-                    "Multiple historical listing identities require dated issuer/share-basis verification.",
-                    "identity",
-                    last,
-                )
-            elif any(
-                r.get("class") != "us_equity"
-                or r.get("exchange")
-                not in ("NYSE", "NASDAQ", "AMEX", "ARCA", "BATS", "NYSEARCA")
-                for r in rows
-            ):
-                issue(
-                    symbol,
-                    first,
-                    "A supported US exchange listing identity could not be verified for this historical interval.",
-                    "identity",
-                    last,
-                )
-            elif symbol != "SPY" and any(
-                re.search(r"\b(ETF|ETN|Fund|iShares|SPDR)\b", r.get("name", ""), re.I)
-                for r in rows
-            ):
-                issue(
-                    symbol,
-                    first,
-                    "The listing directory identifies a fund; historical ordinary-company identity requires verification.",
-                    "identity",
-                    last,
-                )
+        from .historical_mergers import candidates as merger_candidates, apply_missing
+
+        supplements = merger_candidates(
+            names, listing_candidates, list(events.values()), first, last, api
+        )
+        dependencies.update(e["target"] for e in supplements if e.get("target"))
+
         for event in events.values():
             kind = event["kind"]
             effective = (
@@ -558,6 +529,48 @@ def download(store, payload, progress, provider=None, base=None):
         names = membership.symbols(
             set(names) | dependencies | (set(base.bars) if base else set())
         )
+        for symbol in names:
+            rows = list(listing_candidates[symbol].values())
+            if not rows:
+                issue(
+                    symbol,
+                    first,
+                    "Historical listing identity is unavailable in the captured directory; a raw-symbol fallback is not issuer verification.",
+                    "identity",
+                    last,
+                )
+            elif len(rows) > 1 and symbol != "IR":
+                issue(
+                    symbol,
+                    first,
+                    "Multiple historical listing identities require dated issuer/share-basis verification.",
+                    "identity",
+                    last,
+                )
+            elif any(
+                r.get("class") != "us_equity"
+                or r.get("exchange")
+                not in ("NYSE", "NASDAQ", "AMEX", "ARCA", "BATS", "NYSEARCA")
+                for r in rows
+            ):
+                issue(
+                    symbol,
+                    first,
+                    "A supported US exchange listing identity could not be verified for this historical interval.",
+                    "identity",
+                    last,
+                )
+            elif symbol != "SPY" and any(
+                re.search(r"\b(ETF|ETN|Fund|iShares|SPDR)\b", r.get("name", ""), re.I)
+                for r in rows
+            ):
+                issue(
+                    symbol,
+                    first,
+                    "The listing directory identifies a fund; historical ordinary-company identity requires verification.",
+                    "identity",
+                    last,
+                )
         overlap = (
             max(
                 first,
@@ -949,6 +962,7 @@ def download(store, payload, progress, provider=None, base=None):
                 for e in normalized_events
                 if e["effective"] >= str(overlap) or e["source"] not in base.bars
             ]
+        normalized_events = apply_missing(normalized_events, supplements, bars, issue)
         expected_days = set(calendar.sessions(first, last))
         unavailable = {}
         for record in issues:

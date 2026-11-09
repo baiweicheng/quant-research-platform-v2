@@ -9,6 +9,7 @@ import json
 import re
 from html.parser import HTMLParser
 from concurrent.futures import ThreadPoolExecutor
+
 from urllib.parse import urljoin
 from xml.etree import ElementTree as ET
 
@@ -17,6 +18,7 @@ from lxml import etree
 from .providers import ResourceMissing, EvidenceLimit
 from .domain import ResearchError
 
+FILING_READERS = 4
 VERSION = "filed-common-class-v1"
 CACHE_VERSION = "parsed-filed-evidence-v3-fast-xhtml"
 CLASS_AXES = {"statementclassofstockaxis", "classesofsharecapitalaxis"}
@@ -427,7 +429,16 @@ def inspect_instance(raw, primary, *, symbol, cik, accession, filed, url):
 
 
 def acquire(
-    api, symbol, cik, company, submissions, start, end, progress=lambda *a: None
+    api,
+    symbol,
+    cik,
+    company,
+    submissions,
+    start,
+    end,
+    progress=lambda *a: None,
+    *,
+    readers=None,
 ):
     """Read immutable filed documents once, with persistent provider caching.
 
@@ -584,7 +595,7 @@ def acquire(
         )
 
     pool = (
-        ThreadPoolExecutor(max_workers=2)
+        ThreadPoolExecutor(max_workers=readers or FILING_READERS)
         if hasattr(api, "fork") and len(wanted) > 1
         else None
     )

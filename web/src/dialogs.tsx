@@ -660,9 +660,9 @@ export function ResearchCoverageChoice() {
       </label>
       <p className="field-hint">
         Coverage-limited research excludes stocks with missing or unverified
-        inputs across the test window. Every exclusion is saved. This can
-        introduce survivorship and selection bias; results do not represent the
-        complete S&P 500.
+        inputs during possible holding periods. Every exclusion is saved. This
+        can introduce survivorship and selection bias; results do not represent
+        the complete S&P 500.
       </p>
     </>
   );

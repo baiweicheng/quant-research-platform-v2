@@ -111,10 +111,11 @@ export default function DatasetUpdates({
               : chosen.metadata?.fundamentals
                 ? "Market data + SEC filings"
                 : chosen.metadata?.bundle_role === "prices"
-                  ? "SEC download incomplete · complete it below"
+                  ? "SEC download unfinished · Update completes it"
                   : "Legacy snapshot · SEC filings will be added"}
-            . Older prices and actions outside the recent 10-day refresh window
-            stay frozen; a full download revalidates older history.
+            . Earlier prices stay frozen. Reviewed missing merger terms can be
+            added with source evidence; a full download revalidates older
+            history.
           </p>
         )}
         {task.error && <Notice error>{task.error.message}</Notice>}

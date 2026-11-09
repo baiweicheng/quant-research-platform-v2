@@ -417,3 +417,133 @@ def test_unsafe_factor_ratio_aborts_instead_of_saving_nonfinite_scores(dataset):
     )
     with pytest.raises(ResearchError, match="unsafe factor ratio"):
         rank(changed, "quality", date(2023, 8, 31))
+
+
+def test_two_issuer_pipeline_preserves_outputs_source_order_and_monotonic_progress(
+    tmp_path, dataset
+):
+    import threading
+    from types import SimpleNamespace
+
+    both = replace(
+        dataset,
+        fundamentals={},
+        bars={
+            "ABC": dataset.bars["ABC"],
+            "XYZ": tuple(replace(b, symbol="XYZ") for b in dataset.bars["ABC"]),
+        },
+    )
+    store = Store(tmp_path / "parallel.sqlite3")
+    store.save_dataset(both, b"Captured independent prices", [])
+    barrier = threading.Barrier(2, timeout=5)
+    lock = threading.Lock()
+    active = peak = 0
+    concurrent = True
+
+    class Captures:
+        def __init__(self):
+            self.observations = []
+
+        def fork(self):
+            return Captures()
+
+        def get(self, provider, url, **kw):
+            nonlocal active, peak
+            if url.endswith("company_tickers_exchange.json"):
+                self.observations.append("directory")
+                return dict(fields=["cik", "ticker"], data=[[1, "ABC"], [2, "XYZ"]])
+            cik = 1 if "CIK0000000001" in url else 2
+            label = "submissions" if "/submissions/" in url else "companyfacts"
+            self.observations.append(f"{label}-{cik}")
+            if label == "submissions":
+                with lock:
+                    active += 1
+                    peak = max(peak, active)
+                try:
+                    if concurrent:
+                        barrier.wait()
+                    return dict(
+                        cik=cik,
+                        entityType="operating",
+                        tickers=["ABC" if cik == 1 else "XYZ"],
+                    )
+                finally:
+                    with lock:
+                        active -= 1
+            return {**source(), "cik": cik}
+
+    api = Captures()
+    progress = []
+    parallel = attach(
+        store, both.id, lambda value, message: progress.append(value), api
+    )
+    assert peak == 2 and progress == sorted(progress)
+    assert api.observations == [
+        "directory",
+        "submissions-1",
+        "companyfacts-1",
+        "submissions-2",
+        "companyfacts-2",
+    ]
+    assert [r["symbol"] for r in parallel["metadata"]["fundamentals"]["coverage"]] == [
+        "ABC",
+        "XYZ",
+    ]
+    concurrent = False
+    captured_serial = Captures()
+    serial_api = SimpleNamespace(
+        get=captured_serial.get, observations=captured_serial.observations
+    )
+    sequential = attach(store, both.id, lambda *a: None, serial_api)
+    assert sequential["digest"] == parallel["digest"]
+    assert api.observations == captured_serial.observations
+    assert store.dataset(parallel["id"]).fundamentals.keys() == {"ABC", "XYZ"}
+
+
+def test_slow_first_issuer_does_not_block_later_issuers(tmp_path, dataset, monkeypatch):
+    import threading
+
+    release = threading.Event()
+    names = ["ABC", "XYZ", "ZZZ"]
+    base = replace(
+        dataset,
+        fundamentals={},
+        bars={
+            s: tuple(replace(b, symbol=s) for b in dataset.bars["ABC"]) for s in names
+        },
+    )
+    store = Store(tmp_path / "slow-issuer.sqlite3")
+    store.save_dataset(base, b"Captured fixture", [])
+
+    class Captures:
+        def __init__(self):
+            self.observations = []
+
+        def fork(self):
+            return Captures()
+
+        def get(self, provider, url, **kw):
+            if url.endswith("company_tickers_exchange.json"):
+                return dict(fields=["cik", "ticker"], data=list(enumerate(names, 1)))
+            cik = int(url.rsplit("CIK", 1)[1].split(".")[0])
+            return (
+                dict(cik=cik, entityType="operating")
+                if "/submissions/" in url
+                else {**source(), "cik": cik}
+            )
+
+    def classes(api, symbol, *a, **kw):
+        if symbol == "ABC":
+            assert release.wait(5), (
+                "The next issuer could not advance past a slow filing"
+            )
+        elif symbol == "ZZZ":
+            release.set()
+        return {}
+
+    monkeypatch.setattr("aperture.filing_classes.acquire", classes)
+    result = attach(store, base.id, lambda *a: None, Captures())
+    assert result["metadata"]["fundamentals"]["record_count"] == 3
+    assert [
+        r["symbol"] for r in result["metadata"]["fundamentals"]["coverage"]
+    ] == names

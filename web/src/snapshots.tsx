@@ -149,7 +149,13 @@ export function reviewedActionCorrections(dataset: Dataset) {
   return events
     .filter(
       (event) =>
-        ["identity_continuations", "reviewed_splits"].includes(event?.kind) &&
+        [
+          "identity_continuations",
+          "reviewed_splits",
+          "cash_mergers",
+          "stock_mergers",
+          "stock_and_cash_mergers",
+        ].includes(event?.kind) &&
         typeof event.reviewed_evidence?.url === "string",
     )
     .map((event) => ({

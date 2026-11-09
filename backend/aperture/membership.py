@@ -354,9 +354,15 @@ def resolve(store, payload, start, end):
 
 
 def eligible(dataset: Dataset, decision: date):
+    from .lifecycles import closed_names
+
     audit = dataset.metadata.get("membership")
     if not audit:
-        return set(dataset.metadata.get("custom_symbols", dataset.bars)) - {"SPY"}
+        return (
+            set(dataset.metadata.get("custom_symbols", dataset.bars))
+            - {"SPY"}
+            - closed_names(dataset, decision)
+        )
     if audit["kind"] == "combined":
         history = audit["historical"]
         if (
@@ -373,7 +379,11 @@ def eligible(dataset: Dataset, decision: date):
         names = current_names(audit, decision)
     else:
         names = historical_names(audit, decision)
-    return (names | set(audit["additional_symbols"])) - {"SPY"}
+    return (
+        (names | set(audit["additional_symbols"]))
+        - {"SPY"}
+        - closed_names(dataset, decision)
+    )
 
 
 def current_names(audit, decision):
@@ -401,13 +411,19 @@ def validate_coverage(dataset, start, end, dividend_model=None, excluded_names=N
         audit = audit["historical"]
     historical_names(audit, start)
     historical_names(audit, end)
+    from .lifecycles import terminal_events, event_session
+
+    ceased = {s: event_session(e) for s, e in terminal_events(dataset).items()}
     by_day = {s: {b.session for b in bars} for s, bars in dataset.bars.items()}
     for day in calendar.sessions(start, end):
         from .research_data import blocked_inputs
 
+        needed = historical_names(audit, day) - (excluded_names or set())
+        needed -= {s for s, effective in ceased.items() if effective <= day}
+
         blocked = blocked_inputs(
             dataset,
-            historical_names(audit, day) - (excluded_names or set()),
+            needed,
             day,
             day,
             dividend_model
@@ -419,11 +435,7 @@ def validate_coverage(dataset, start, end, dividend_model=None, excluded_names=N
                 + ", ".join(sorted(blocked)[:12])
                 + ". See per-stock Data reasons; these members cannot be dropped."
             )
-        missing = sorted(
-            s
-            for s in historical_names(audit, day) - (excluded_names or set())
-            if day not in by_day.get(s, set())
-        )
+        missing = sorted(s for s in needed if day not in by_day.get(s, set()))
         if missing:
             raise ResearchError(
                 f"Historical S&P 500 coverage is incomplete on {day}: {', '.join(missing[:12])}. Departed or missing members cannot be dropped from the backtest. Supply supported historical prices/identities before running."

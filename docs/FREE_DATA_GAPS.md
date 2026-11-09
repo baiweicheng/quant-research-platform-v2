@@ -18,7 +18,7 @@ The user approved two independent choices:
 1. Total-return research reinvests known distributions at the ex-date close; strict cash-flow simulation requires verified payment/delivery dates.
 2. Coverage-limited research saves every excluded stock and its reasons, while strict full-index mode requires complete supported inputs.
 
-Coverage-limited selection considers availability throughout the test window, including future dates relative to a decision. It may introduce survivorship and selection bias. Results describe the retained subset, not the complete S&P 500; chronological validation does not remove this limitation. Neither choice approves a strategy for paper/live trading.
+Coverage-limited selection considers availability throughout possible holding windows, including future dates relative to a decision. It may introduce survivorship and selection bias. Results describe the retained subset, not the complete S&P 500; chronological validation does not remove this limitation. Neither choice approves a strategy for paper/live trading.
 
 ## Completion criteria
 
@@ -86,3 +86,7 @@ Thus even a matching ticker and broadly matching series do not establish an
 exact raw-price replacement. Captured probe responses and discrepancy audits
 are retained locally; the available supplementary data did not justify a
 blanket price fallback or resolve missing cash settlement/CVR values.
+
+## Engine 0.6.0 holding-window and merger follow-up
+
+See [historical coverage improvements](HISTORICAL_COVERAGE.md). Scheduled liquidation and supported recipient paths replace the overly broad requirement for quotes through the entire test end after departure. Five reviewed missing merger terms are integrated into Download/Update; four improve eligibility, while DISCK remains blocked by WBD identity. The captured full-period 253-session cases improve from 138 to 117 omissions, with 115 for the shorter fundamental lookback. These residual exclusions remain material; B-033 is open. No last-quote sale, price-proxy bankruptcy write-down, blanket Yahoo fallback or assumed zero-valued contingent right was added.

@@ -17,7 +17,7 @@ from .domain import (
     decimal,
 )
 from .ledger import apply_actions, buy, rebalance, reinvest_research_income
-from .research_data import blocked_inputs, security_events
+from .research_data import blocked_inputs, indexed_issues, security_events
 from .metrics import windows
 from .membership import validate_coverage, HISTORY_NOTE
 from .portfolio import target_weights
@@ -71,9 +71,11 @@ def run(
             f"Choose dates within the stock data coverage: {first_available} to {last_available}."
         )
     from .coverage import plan as coverage_plan
+    from .lifecycles import prepared
 
+    dataset = prepared(dataset)
     coverage_audit = coverage_plan(
-        dataset, days[0], days[-1], identifier, dividend_model, coverage_mode
+        dataset, days[0], days[-1], identifier, dividend_model, coverage_mode, frequency
     )
     excluded_names = {row["symbol"] for row in coverage_audit["excluded"]}
     if excluded_names:
@@ -116,6 +118,8 @@ def run(
         fee_bps=policy.fee_bps,
         slippage_bps=policy.slippage_bps,
     )
+    from .lifecycles import event_session
+
     decisions = calendar.decision_sessions(days, frequency)
     pending: tuple[date, dict[str, Decimal]] | None = None
     curve, trades, decision_log = [], [], []
@@ -133,6 +137,7 @@ def run(
         notes.add(
             "Legacy snapshot: EPS eligibility still uses the former current-ticker screen. In Data, refresh SEC filings & share classes and select the new snapshot to apply filing-specific evidence. Saved historical inputs are not rewritten."
         )
+    notes.add(coverage_audit["price_window_policy"])
     if coverage_mode == "coverage_limited":
         notes.add(coverage_audit["warning"])
         notes.add(
@@ -158,11 +163,40 @@ def run(
             "SPY is missing complete coverage for this period. Benchmark metrics are unavailable."
         )
     first_fill_day = days[1]
+    issue_index = indexed_issues(dataset)
     for index, day in enumerate(days):
         today = {
             symbol: rows[day] for symbol, rows in investible.items() if day in rows
         }
         corporate = dataset.metadata.get("corporate_actions", [])
+        current_mergers = [
+            e
+            for e in corporate
+            if e["kind"] in ("cash_mergers", "stock_mergers", "stock_and_cash_mergers")
+            and event_session(e) == day
+        ]
+        ceased = {e["source"] for e in current_mergers}
+        incoming = {
+            e["target"]
+            for e in current_mergers
+            if e.get("target") and portfolio.positions.get(e["source"], ZERO)
+        }
+        if pending and pending[0] == day:
+            incoming.update(set(pending[1]) - ceased)
+        blocked = blocked_inputs(
+            dataset,
+            set(portfolio.positions) | incoming,
+            day,
+            day,
+            dividend_model,
+            issue_index=issue_index,
+        )
+        if blocked:
+            raise ResearchError(
+                "Held or incoming research positions have unverified inputs: "
+                + ", ".join(sorted(blocked)[:12])
+                + f" on {day}."
+            )
         security_events(portfolio, day, corporate, today, dividend_model)
         opening_income = {
             s: decimal(v)
@@ -172,13 +206,6 @@ def run(
         }
         apply_actions(portfolio, day, today, dividend_model, opening_income)
         if pending and pending[0] == day:
-            ceased = {
-                e["source"]
-                for e in corporate
-                if e["effective"] == str(day)
-                and e["kind"]
-                in ("cash_mergers", "stock_mergers", "stock_and_cash_mergers")
-            }
             targets = {s: w for s, w in pending[1].items() if s not in ceased}
             if ceased & pending[1].keys():
                 notes.add(
@@ -290,7 +317,11 @@ def run(
         "dataset_kind": dataset.kind,
         "dataset_revision": dataset.revision,
         "source_digest": dataset.digest,
-        "input_audit": dataset.metadata,
+        "input_audit": {
+            k: v
+            for k, v in dataset.metadata.items()
+            if k != "_research_terminal_events"
+        },
         "start": str(days[0]),
         "end": str(days[-1]),
         "capital": str(capital),

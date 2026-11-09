@@ -162,3 +162,64 @@ def test_missing_split_requires_exact_identity_primary_evidence_and_price_units(
     apply_actions(portfolio, day, {"CP": rows[day]}, "ex_date")
     assert portfolio.positions == {"CP": D(50)}
     assert portfolio.value({"CP": D(80)}) == D(4000)
+
+
+def test_primary_fingerprint_ignores_only_the_trailing_sec_script():
+    import hashlib
+    from aperture.action_evidence import primary_fingerprint, primary_matches
+
+    body = b"<html><body><p>Each share converts to 1 common share.</p>"
+    close = b"</body></html>"
+    script = b'<script type="text/javascript"  src="/edge/random-one"></script>'
+    changed = b'<script type="text/javascript"  src="/other/random-two"></script>'
+    raw = body + script + close
+    proof = {
+        "sha256": hashlib.sha256(raw).hexdigest(),
+        "content_sha256": primary_fingerprint(raw),
+    }
+    assert primary_matches(raw, proof)
+    assert primary_matches(body + changed + close, proof)
+    assert primary_matches(body + close, proof)
+    assert not primary_matches(
+        body.replace(b"1 common", b"2 common") + changed + close, proof
+    )
+    assert not primary_matches(body + script + b"<p>Amended terms.</p>" + close, proof)
+    assert not primary_matches(
+        body + script.replace(b"></script>", b">changed</script>") + close, proof
+    )
+    assert not primary_matches(
+        body + script.replace(b"/edge/", b"https://example.com/") + close, proof
+    )
+
+
+def test_primary_fingerprint_supports_sec_text_wrapped_xbrl_reports():
+    from aperture.action_evidence import primary_fingerprint
+
+    prefix = b"<DOCUMENT>\n<TEXT>\n<html><body><p>5:1 split</p>"
+    suffix = b"</body>\n</html>\n</TEXT>\n</DOCUMENT>\n"
+    one = b'<script type="text/javascript"  src="/edge/one"></script>'
+    two = b'<script type="text/javascript"  src="/edge/two"></script>'
+    assert primary_fingerprint(prefix + one + suffix) == primary_fingerprint(
+        prefix + two + suffix
+    )
+    assert primary_fingerprint(prefix + one + suffix) != primary_fingerprint(
+        prefix.replace(b"5:1", b"2:1") + two + suffix
+    )
+
+
+def test_uppercase_html_and_sgml_closings_keep_the_same_sec_script_boundary():
+    from aperture.action_evidence import primary_fingerprint
+
+    body = b"<DOCUMENT>\n<TEXT>\n<HTML><BODY><P>46 dollars per share</P>"
+    closing = b"</BODY></HTML>\n</TEXT>\n</DOCUMENT>\n"
+    one = b'<script type="text/javascript"  src="/edge/one"></script>'
+    two = b'<script type="text/javascript"  src="/edge/two"></script>'
+    assert primary_fingerprint(body + one + closing) == primary_fingerprint(
+        body + two + closing
+    )
+    assert primary_fingerprint(body + one + closing) != primary_fingerprint(
+        body.replace(b"46", b"40") + two + closing
+    )
+    assert primary_fingerprint(body + one + closing) != primary_fingerprint(
+        body + two.replace(b"/edge/", b"//external/") + closing
+    )

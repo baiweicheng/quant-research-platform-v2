@@ -1,6 +1,10 @@
 import { expect, it } from "vitest";
 import { render, screen } from "@testing-library/react";
-import { snapshotGroups, SnapshotOptions } from "./snapshots";
+import {
+  snapshotGroups,
+  SnapshotOptions,
+  reviewedActionCorrections,
+} from "./snapshots";
 import { afterWarmup, ResearchCoverageChoice } from "./dialogs";
 import type { Dataset } from "./types";
 
@@ -98,4 +102,33 @@ it("makes both approved coverage policies explicit", () => {
     "strict",
   );
   expect(screen.getByText(/survivorship and selection bias/)).toBeVisible();
+});
+
+it("shows primary-source merger corrections without labeling bare vendor events as reviewed", () => {
+  const kinds = [
+    "identity_continuations",
+    "reviewed_splits",
+    "cash_mergers",
+    "stock_mergers",
+    "stock_and_cash_mergers",
+  ];
+  const events = kinds.map((kind, i) => ({
+    kind,
+    source: `SOURCE${i}`,
+    effective: "2020-01-02",
+    reviewed_evidence: {
+      url: `https://www.sec.gov/filing${i}`,
+      basis: "Completed transaction",
+    },
+  }));
+  const rows = reviewedActionCorrections(
+    snapshot(1, {
+      corporate_actions: [
+        ...events,
+        { kind: "cash_mergers", source: "UNREVIEWED", cash: "10" },
+      ],
+    }),
+  );
+  expect(rows.map((r) => r.symbol)).toEqual(events.map((e) => e.source));
+  expect(rows.every((r) => r.basis === "Completed transaction")).toBe(true);
 });

@@ -336,4 +336,68 @@ def test_accession_readers_share_one_sec_rate_budget(tmp_path, monkeypatch):
         "https://www.sec.gov/Archives/edgar/data/1/000000000123000002/annual.htm"
     )
     api.get("sec", "https://data.sec.gov/submissions/CIK0000000001.json")
-    assert starts == [0.0, 0.18, 0.36]
+    assert starts == [0.0, 0.125, 0.25]
+
+
+def test_slow_filing_reads_get_a_larger_timeout_without_changing_json_requests(
+    tmp_path, monkeypatch
+):
+    seen = []
+
+    def handle(request):
+        seen.append(request.extensions["timeout"])
+        return httpx.Response(200, json={})
+
+    monkeypatch.setattr(Provider, "_wait_sec", lambda _: None)
+    api = Provider(
+        Store(tmp_path / "timeouts.sqlite3"),
+        httpx.Client(timeout=17, transport=httpx.MockTransport(handle)),
+        Settings(sec_agent="test test@example.com"),
+    )
+    api.document(
+        "https://www.sec.gov/Archives/edgar/data/1/000000000123000001/annual.htm"
+    )
+    api.get("sec", "https://data.sec.gov/submissions/CIK0000000001.json")
+    assert seen[0]["read"] == 60 and seen[0]["connect"] == 10 and seen[0]["pool"] == 10
+    assert seen[1]["read"] == 17
+
+
+@pytest.mark.parametrize("owned", [True, False])
+def test_filing_transport_retry_uses_fresh_owned_connections_and_keeps_custom_clients(
+    tmp_path, monkeypatch, owned
+):
+    constructor = httpx.Client
+    clients, calls = [], []
+
+    def respond(request):
+        calls.append(str(request.url))
+        if len(calls) == 1:
+            raise httpx.ReadTimeout("Captured slow response", request=request)
+        return httpx.Response(200, content=b"Complete captured filing")
+
+    def create(**kw):
+        client = constructor(transport=httpx.MockTransport(respond), **kw)
+        clients.append(client)
+        return client
+
+    monkeypatch.setattr("aperture.providers.httpx.Client", create)
+    monkeypatch.setattr("aperture.providers.time.sleep", lambda _: None)
+    custom = None if owned else create(timeout=17)
+    api = Provider(
+        Store(tmp_path / "fresh-connections.sqlite3"),
+        custom,
+        Settings(sec_agent="test test@example.com"),
+    )
+    reader = api.fork()
+    url = "https://www.sec.gov/Archives/edgar/data/1/000000000123000001/annual.htm"
+    assert reader.document(url) == b"Complete captured filing"
+    assert calls == [url, url]
+    assert reader._sec_gate is api._sec_gate
+    assert len(clients) == (2 if owned else 1)
+    assert not clients[0].is_closed
+    if owned:
+        assert clients[1].is_closed
+    assert len(reader.observations) == 1
+    api.close()
+    assert clients[0].is_closed is owned
+    clients[0].close()

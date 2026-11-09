@@ -55,6 +55,8 @@ To bring existing research forward, use **Data → Update a saved dataset → Up
 
 Downloads and updates include the required source checks automatically. There is no routine second SEC/share-class step. **More refresh options** contains optional stage-specific repairs; an interrupted download can complete its SEC stage using the prices already saved. Filing checks are reused when their sources, identity and parser version are unchanged. The initial historical acquisition still retrieves and verifies many original filings; Activity shows progress while the rest of the workspace remains usable. Reviewed corporate-action corrections and their primary sources are expandable in Data.
 
+**Research → New backtest** lets you select several strategies, including Select all, with one shared dataset, date range and policy. One submission queues separate named tasks and results. The worker runs them in sequence to keep memory bounded; the existing comparison view can compare the saved results.
+
 Research setup separates **total-return research** (ex-date closing reinvestment) from **payment-date cash-flow simulation** (verified settlement dates). It also separates **coverage-limited research**, which saves every omitted security and reason, from **strict full-index coverage**, which stops on unresolved required inputs. Coverage-limited results can have survivorship/selection bias and are not complete S&P 500 results. The unresolved free-data gaps remain open in [B-033](docs/FREE_DATA_GAPS.md); these options do not approve trading.
 
 AI-assisted discovery and broader operational reliability/automation remain future milestones. Real-money trading requires a separate later readiness review and explicit authorization.
@@ -89,7 +91,7 @@ npm --prefix web run build
 
 The backend suite includes independent accounting examples, future-price perturbation, late observations, holiday/early-close cutoffs, missing-price failures, persistence/recovery/API tests, and property tests for cash and allocation constraints. Browser UAT is recorded separately in [validation](docs/VALIDATION.md). Unit tests are not a substitute for actual user-style validation or vendor-data audits.
 
-See the [November 8 corrected baselines](docs/RESEARCH_BASELINES_2026-11-08.md), [measured performance](docs/PERFORMANCE.md), and [remaining free-data gaps](docs/FREE_DATA_GAPS.md) for the current research checkpoint.
+See the [November 9 coverage baselines](docs/RESEARCH_BASELINES_2026-11-09.md), [historical coverage improvements](docs/HISTORICAL_COVERAGE.md), [measured performance](docs/PERFORMANCE.md), and [remaining free-data gaps](docs/FREE_DATA_GAPS.md) for the current research checkpoint.
 
 ## Local data and backups
 

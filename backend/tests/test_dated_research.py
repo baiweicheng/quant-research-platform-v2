@@ -813,7 +813,11 @@ def test_refresh_preserves_spanning_identity_issues_and_new_symbol_old_events(ve
 
 @pytest.mark.parametrize(
     "normalizer",
-    ["dated-research-inputs-v1", "dated-research-inputs-v2-reviewed-actions"],
+    [
+        "dated-research-inputs-v1",
+        "dated-research-inputs-v2-reviewed-actions",
+        "dated-research-inputs-v3-holding-lifetimes",
+    ],
 )
 def test_normal_update_keeps_the_combined_dated_research_workflow(
     vendor, monkeypatch, normalizer

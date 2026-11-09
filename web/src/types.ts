@@ -188,6 +188,7 @@ export type Run = Omit<RunSummary, "metrics"> & {
     mode: string;
     excluded_count: number;
     universe_count?: number;
+    price_window_policy?: string;
     warning?: string;
     excluded?: { symbol: string; reasons: string[] }[];
   };

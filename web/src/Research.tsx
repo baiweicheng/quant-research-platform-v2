@@ -452,11 +452,12 @@ export function RunDetail({
               </summary>
               <p>
                 {run.coverage.universe_count} stocks occurred in the requested
-                universe. The full-period availability policy was frozen before
-                simulation.
+                universe. The availability policy was frozen before simulation.
+                {run.coverage.price_window_policy &&
+                  ` ${run.coverage.price_window_policy}`}
               </p>
               <div className="table-scroll">
-                <table>
+                <table className="coverage-table">
                   <thead>
                     <tr>
                       <th>Stock</th>

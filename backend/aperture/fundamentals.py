@@ -7,6 +7,8 @@ Every normalized value retains its accession, reporting dates, and availability.
 import hashlib
 import json
 import re
+import threading
+from concurrent.futures import ThreadPoolExecutor
 from dataclasses import replace
 from datetime import date, timedelta
 from decimal import Decimal
@@ -325,14 +327,44 @@ def attach(
         from .research_data import indexed_issues
 
         issue_index = indexed_issues(base)
-        for index, symbol in enumerate(symbols):
-            progress(
-                5 + round(index / max(len(symbols), 1) * 85),
-                f"Reading SEC filings: {symbol} ({index + 1}/{len(symbols)})",
-            )
+        # Two issuer pipelines overlap slow responses while keeping at most
+        # four accession readers in total. Every descendant shares the same
+        # provider request gate. Results/source IDs are merged in symbol order.
+        parallel = hasattr(api, "fork") and len(symbols) > 1
+        progress_lock = threading.Lock()
+        completed = 0
+        readers = {}
+
+        def cache_stats():
+            if not parallel:
+                return getattr(api, "filing_cache_stats", {})
+            return {
+                key: sum(
+                    getattr(reader, "filing_cache_stats", {}).get(key, 0)
+                    for reader in readers.values()
+                )
+                for key in ("reused", "parsed")
+            }
+
+        def report(symbol, filing=None, total=None):
+            with progress_lock:
+                stats = cache_stats()
+                detail = f", filing {filing}/{total}" if filing is not None else ""
+                progress(
+                    5 + round(completed / max(len(symbols), 1) * 85),
+                    f"Reading SEC filings: {symbol} ({completed}/{len(symbols)} companies complete{detail}; "
+                    f"{stats.get('reused', 0):,} reused, {stats.get('parsed', 0):,} checked)",
+                )
+
+        def read_symbol(symbol):
+            reader = api.fork() if parallel else api
+            with progress_lock:
+                readers[symbol] = reader
+            issuer_statements, issuer_coverage, issuer_hashes = {}, [], {}
+            report(symbol)
             ciks = mapping.get(symbol.replace(".", "-"), set())
             if len(ciks) != 1:
-                coverage.append(
+                issuer_coverage.append(
                     {
                         "symbol": symbol,
                         "records": 0,
@@ -341,21 +373,26 @@ def attach(
                         "value_ready": False,
                     }
                 )
-                continue
+                return (
+                    issuer_statements,
+                    issuer_coverage,
+                    issuer_hashes,
+                    reader.observations if parallel else [],
+                )
             cik = next(iter(ciks))
             try:
-                submissions = api.get(
+                submissions = reader.get(
                     "sec",
                     f"https://data.sec.gov/submissions/CIK{cik}.json",
                     ttl=0 if refresh else 3600,
                 )
-                company = api.get(
+                company = reader.get(
                     "sec",
                     f"https://data.sec.gov/api/xbrl/companyfacts/CIK{cik}.json",
                     ttl=0 if refresh else 3600,
                 )
             except ResourceMissing:
-                coverage.append(
+                issuer_coverage.append(
                     {
                         "symbol": symbol,
                         "cik": cik,
@@ -365,7 +402,12 @@ def attach(
                         "value_ready": False,
                     }
                 )
-                continue
+                return (
+                    issuer_statements,
+                    issuer_coverage,
+                    issuer_hashes,
+                    reader.observations if parallel else [],
+                )
             if (
                 str(company.get("cik", "")).zfill(10) != cik
                 or str(submissions.get("cik", "")).zfill(10) != cik
@@ -374,24 +416,20 @@ def attach(
             from .filing_classes import acquire
 
             class_evidence = acquire(
-                api,
+                reader,
                 symbol,
                 cik,
                 company,
                 submissions,
                 str(first_session - timedelta(days=550)),
                 str(last_session),
-                lambda n, total: progress(
-                    5 + round(index / max(len(symbols), 1) * 85),
-                    f"Verifying filed share classes: {symbol} (company {index + 1}/{len(symbols)}, filing {n}/{total}; "
-                    f"{getattr(api, 'filing_cache_stats', {}).get('reused', 0):,} reused, "
-                    f"{getattr(api, 'filing_cache_stats', {}).get('parsed', 0):,} checked)",
-                ),
+                lambda n, total: report(symbol, n, total),
+                readers=2,
             )
             normalized, issues = normalize(
                 symbol, cik, company, submissions, class_evidence
             )
-            statements[symbol] = normalized
+            issuer_statements[symbol] = normalized
             latest = as_of(normalized, last_session)
             latest_inputs, latest_issue = inputs(
                 replace(base, fundamentals={symbol: normalized}),
@@ -413,7 +451,7 @@ def attach(
                 coverage_issues.append(
                     f"{len(class_evidence) - verified_classes} of {len(class_evidence)} filing accessions have unavailable or unmapped share-class evidence; historical valuation eligibility varies."
                 )
-            source_hashes[symbol] = hashlib.sha256(
+            issuer_hashes[symbol] = hashlib.sha256(
                 json.dumps(
                     {
                         "companyfacts": company,
@@ -424,7 +462,7 @@ def attach(
                     separators=(",", ":"),
                 ).encode()
             ).hexdigest()
-            coverage.append(
+            issuer_coverage.append(
                 {
                     "symbol": symbol,
                     "cik": cik,
@@ -446,6 +484,43 @@ def attach(
                     "share_class_verified": verified_classes,
                 }
             )
+            return (
+                issuer_statements,
+                issuer_coverage,
+                issuer_hashes,
+                reader.observations if parallel else [],
+            )
+
+        def completed_symbol(symbol):
+            nonlocal completed
+            result = read_symbol(symbol)
+            with progress_lock:
+                completed += 1
+            report(symbol)
+            return result
+
+        pool = ThreadPoolExecutor(max_workers=2) if parallel else None
+        try:
+            results = (
+                pool.map(completed_symbol, symbols)
+                if pool
+                else map(completed_symbol, symbols)
+            )
+            for (
+                issuer_statements,
+                issuer_coverage,
+                issuer_hashes,
+                observations,
+            ) in results:
+                statements.update(issuer_statements)
+                coverage.extend(issuer_coverage)
+                source_hashes.update(issuer_hashes)
+                api.observations.extend(observations)
+        finally:
+            if pool:
+                pool.shutdown(wait=True, cancel_futures=True)
+        if parallel:
+            api.filing_cache_stats = cache_stats()
         count = sum(len(items) for items in statements.values())
         if not count and not allow_empty:
             raise ResearchError(
