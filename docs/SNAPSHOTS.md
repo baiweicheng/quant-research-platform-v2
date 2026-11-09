@@ -2,9 +2,9 @@
 
 In **Data → Update a saved dataset**, select the latest complete dataset, then **Update dataset**. Follow Activity and choose the new snapshot in Research when it finishes. No paper configuration or strategy approval is needed. CSV and practice data use their existing import/generation workflows.
 
-An update refreshes S&P membership from its sources, obtains recent prices/actions through the latest completed session, and backfills newly required symbols from the original history start. Existing symbols request only the last ten calendar days of the old snapshot plus subsequent sessions. The entire overlap is replaced, so corrected prices, removed bars, and changed/removed actions cannot leave stale values in the new vintage. Rows before that window remain frozen; **a full download is required to revalidate older prices/actions**. An incremental update is not a promise that a vendor made no older corrections.
+An update refreshes S&P membership from its sources, obtains recent prices/actions through the latest completed session, and backfills newly required symbols from the original history start. Existing quoted symbols request only the last ten calendar days of the old snapshot plus subsequent sessions. A previously empty current-member history receives a full backfill. Expired quote cohorts whose entire saved history predates that overlap remain frozen, preventing a reused ticker from acquiring unrelated current prices. The entire overlap is replaced, so corrected prices, removed bars, and changed/removed actions cannot leave stale values in the new vintage. Rows before that window remain frozen; **a full download is required to revalidate older prices/actions**. An incremental update is not a promise that a vendor made no older corrections.
 
-Every normal download and update includes both market data and SEC filings. Price-only strategies ignore the filing data. Update refreshes the issuer directory, submissions and company facts, retaining filing accessions, original filings, amendments and the availability model. SEC publishes whole company-facts documents, so those requests are not a per-filing delta API. Unchanged received payloads and unchanged normalized statements share local storage. The new enriched snapshot references the newly updated prices; it never silently attaches updated filings to the old price parent.
+Every normal download and update includes both market data and SEC filings. Price-only strategies ignore the filing data. Update refreshes the issuer directory and submissions, retaining accessions, amendments and the availability model. Annual facts refresh when the annual submission signature changes, on a forced financial refresh or after at most 30 days; otherwise the matching captured history is reused. SEC publishes whole company-facts documents, so those requests are not a per-filing delta API. Unchanged received payloads and unchanged normalized statements share local storage. The new enriched snapshot references the newly updated prices; it never silently attaches updated filings to the old price parent.
 
 Every research dataset is immutable. The Data page shows the latest complete version of each saved dataset by default; older versions are under **Show older snapshots**. Research selectors group **Latest snapshots** and **Older snapshots**. Internal price parents are hidden after SEC completes, and unfinished normal downloads cannot be selected for research. Updates offered in the UI use the latest complete version; an API update request for an older member of that family also resolves to the latest complete version. An interrupted SEC stage has a separate completion action.
 
@@ -36,26 +36,12 @@ Total-return research keeps the captured ex-date amount separate from verified p
 
 Strict payment-date simulation retains verified settlement/share-delivery requirements. Dated issues apply to the relevant period and signal lookback instead of marking every date of a symbol permanently unusable. Coverage-limited mode freezes possible-holding-window availability exclusions before simulation, saves every omitted security/reason and warns of survivorship/selection bias. Required membership bounds still apply. Strict full-index mode does not omit unresolved members. See [the open free-data backlog](FREE_DATA_GAPS.md).
 
-Reproduction requires the original immutable snapshot, the saved assumptions and the same engine version. The current engine is 0.6.0; an engine upgrade is distinct from a data refresh. Original saved outputs are retained even after either changes.
+Reproduction requires the original immutable snapshot, the saved assumptions and the same engine version. The current engine is 0.7.0; an engine upgrade is distinct from a data refresh. Original saved outputs are retained even after either changes.
 
-## Reusing filed share-class checks
+## Lightweight annual financial inputs
 
-SEC filing checks have a persistent, per-accession derived cache. Its identity
-includes the security, issuer, filing date, primary document, evidence/parser
-version and parsing engine. Every reused check retains its original captured
-sources and requires matching source fingerprints. New or amended accessions,
-changed identities/sources, parser changes and missing/damaged cache records
-trigger verification. Transport/access errors interrupt the job for retry;
-missing, ambiguous or oversized evidence leaves the affected EPS unavailable.
+Normal acquisition uses structured SEC annual facts and small per-accession EPS assumptions, without bulk historical report-body retrieval. Major reviewed exceptions remain excluded. The 30-day change-aware issuer cache validates source hashes and issuer identity; manual **Refresh SEC financial data** forces a capture. Original filing dates and availability remain unchanged by reuse. The shared SEC request gate is still at most eight starts per second, including retries. See [the policy and its limitations](LIGHTWEIGHT_EPS.md).
 
-Two bounded accession readers share a request-start gate below six SEC requests
-per second, including retries. Filing bodies are read incrementally with a
-96 MiB decompressed limit, rather than fully downloading an unbounded body.
-The parser never resolves external entities. Completed checks survive an
-interruption; unfinished downloads can complete their SEC stage from saved
-prices. Cache reuse changes acquisition work, not historical filing dates or
-financial values. The first full acquisition still requires historical source
-retrieval; warm performance is measured separately from a fresh empty cache.
-
+The older dated share-class parser/cache remains readable for archived evidence. It is not invoked by ordinary 0.7 acquisition. Retaining an old snapshot requires retaining its complete source blocks; there is no blanket expiry that silently destroys reproducibility.
 
 Reviewed absent merger terms can be added to a new snapshot during ordinary Update even when their dates precede the recent price overlap. Their exact listing, primary source fingerprint and final quote session must match. Earlier prices and original saved snapshots are preserved. New source/recipient checks and the holding-window coverage policy apply when running a new result with the new engine; they do not rewrite old results.

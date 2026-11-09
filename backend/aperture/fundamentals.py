@@ -17,8 +17,10 @@ from . import calendar
 from .domain import AnnualStatement, Dataset, ONE, ResearchError, ZERO, decimal
 from .providers import Provider, ResourceMissing
 from .store import Store, now
+from .eps_policy import assess, WARNING as EPS_WARNING, VERSION as EPS_VERSION
+from .annual_refresh import companyfacts as read_companyfacts
 
-VERSION = "annual-us-gaap-v2-filed-classes"
+VERSION = "annual-us-gaap-v3-lightweight-eps"
 AVAILABILITY = "After close + 15 minutes on the first exchange session strictly after the SEC filing date. No same-day publication assumption."
 TAGS = {
     "assets": ("Assets",),
@@ -137,7 +139,14 @@ def normalize(
         )
         eps = value_for("eps") if eps_compatible else None
         if evidence.get("url"):
-            sources["share_class_evidence"] = evidence["url"]
+            key = (
+                "eps_evidence"
+                if evidence.get("class_verified") is False
+                else "share_class_evidence"
+            )
+            sources[key] = evidence["url"]
+        if evidence.get("class_verified") is False:
+            sources["eps_policy"] = EPS_VERSION
         if evidence.get("sha256"):
             sources["share_class_evidence_sha256"] = evidence["sha256"]
         if not eps_compatible:
@@ -291,6 +300,7 @@ def attach(
     *,
     refresh=False,
     allow_empty=False,
+    force_facts=False,
 ) -> dict:
     requested = next((row for row in store.datasets() if row["id"] == dataset_id), None)
     if requested is None:
@@ -327,9 +337,8 @@ def attach(
         from .research_data import indexed_issues
 
         issue_index = indexed_issues(base)
-        # Two issuer pipelines overlap slow responses while keeping at most
-        # four accession readers in total. Every descendant shares the same
-        # provider request gate. Results/source IDs are merged in symbol order.
+        # Two issuer pipelines share the provider request gate. Ordinary
+        # acquisition uses structured facts, without historical report bodies.
         parallel = hasattr(api, "fork") and len(symbols) > 1
         progress_lock = threading.Lock()
         completed = 0
@@ -337,13 +346,13 @@ def attach(
 
         def cache_stats():
             if not parallel:
-                return getattr(api, "filing_cache_stats", {})
+                return getattr(api, "annual_cache_stats", {})
             return {
                 key: sum(
-                    getattr(reader, "filing_cache_stats", {}).get(key, 0)
+                    getattr(reader, "annual_cache_stats", {}).get(key, 0)
                     for reader in readers.values()
                 )
-                for key in ("reused", "parsed")
+                for key in ("reused", "downloaded")
             }
 
         def report(symbol, filing=None, total=None):
@@ -352,8 +361,8 @@ def attach(
                 detail = f", filing {filing}/{total}" if filing is not None else ""
                 progress(
                     5 + round(completed / max(len(symbols), 1) * 85),
-                    f"Reading SEC filings: {symbol} ({completed}/{len(symbols)} companies complete{detail}; "
-                    f"{stats.get('reused', 0):,} reused, {stats.get('parsed', 0):,} checked)",
+                    f"Preparing SEC financials: {symbol} ({completed}/{len(symbols)} companies complete{detail}; "
+                    f"{stats.get('reused', 0):,} histories reused, {stats.get('downloaded', 0):,} refreshed)",
                 )
 
         def read_symbol(symbol):
@@ -386,11 +395,7 @@ def attach(
                     f"https://data.sec.gov/submissions/CIK{cik}.json",
                     ttl=0 if refresh else 3600,
                 )
-                company = reader.get(
-                    "sec",
-                    f"https://data.sec.gov/api/xbrl/companyfacts/CIK{cik}.json",
-                    ttl=0 if refresh else 3600,
-                )
+                company = read_companyfacts(reader, cik, submissions, force=force_facts)
             except ResourceMissing:
                 issuer_coverage.append(
                     {
@@ -413,18 +418,12 @@ def attach(
                 or str(submissions.get("cik", "")).zfill(10) != cik
             ):
                 raise ResearchError(f"SEC issuer identity mismatch for {symbol}.")
-            from .filing_classes import acquire
-
-            class_evidence = acquire(
-                reader,
+            class_evidence = assess(
                 symbol,
                 cik,
                 company,
-                submissions,
                 str(first_session - timedelta(days=550)),
                 str(last_session),
-                lambda n, total: report(symbol, n, total),
-                readers=2,
             )
             normalized, issues = normalize(
                 symbol, cik, company, submissions, class_evidence
@@ -449,7 +448,7 @@ def attach(
             )
             if verified_classes < len(class_evidence):
                 coverage_issues.append(
-                    f"{len(class_evidence) - verified_classes} of {len(class_evidence)} filing accessions have unavailable or unmapped share-class evidence; historical valuation eligibility varies."
+                    f"{len(class_evidence) - verified_classes} of {len(class_evidence)} EPS accessions are excluded by the lightweight share-basis policy."
                 )
             issuer_hashes[symbol] = hashlib.sha256(
                 json.dumps(
@@ -480,8 +479,8 @@ def attach(
                             separators=(",", ":"),
                         ).encode()
                     ),
-                    "share_class_filings": len(class_evidence),
-                    "share_class_verified": verified_classes,
+                    "eps_checks": len(class_evidence),
+                    "eps_accepted": verified_classes,
                 }
             )
             return (
@@ -520,7 +519,7 @@ def attach(
             if pool:
                 pool.shutdown(wait=True, cancel_futures=True)
         if parallel:
-            api.filing_cache_stats = cache_stats()
+            api.annual_cache_stats = cache_stats()
         count = sum(len(items) for items in statements.values())
         if not count and not allow_empty:
             raise ResearchError(
@@ -533,7 +532,9 @@ def attach(
             "units": "USD; reported diluted EPS USD/shares",
             "periods": "Annual 330–400 days; 10-K and 10-K/A only",
             "share_class_evidence_storage": "shared-per-security-v1",
-            "share_basis": "Reported diluted EPS with dated filing-specific common-share evidence; adjusted only for subsequent known splits. Missing/ambiguous class mappings exclude EPS, never inferred from current tickers.",
+            "eps_policy": EPS_VERSION,
+            "share_basis": EPS_WARNING,
+            "refresh_policy": "Annual filing changes trigger financial-history refresh; otherwise captured histories can be reused for up to 30 days. Manual SEC refresh forces a new capture.",
         }
         raw = json.dumps(
             {"price_digest": base.digest, "policy": policy, "sources": source_hashes},
@@ -552,6 +553,7 @@ def attach(
                 "retrieved_at": now(),
                 "observation_ids": api.observations,
                 "source_hashes": source_hashes,
+                "refresh_stats": getattr(api, "annual_cache_stats", {}),
             },
         }
         enriched = replace(
@@ -568,7 +570,8 @@ def attach(
         )
         warnings = list(original_summary["warnings"]) + [
             AVAILABILITY,
-            "Annual US-GAAP support only; missing/custom/IFRS/multi-class valuation inputs are excluded, not fabricated. Annual metrics are not TTM estimates.",
+            "Annual US-GAAP support only; missing/custom/IFRS inputs are excluded. Annual metrics are not TTM estimates.",
+            EPS_WARNING,
             "SEC filings are versioned by accession and filing date. Current issuer mapping does not certify historical universe membership.",
             "Earnings yield uses reported diluted EPS and explicit split adjustments; no current vendor valuation ratios or current share counts are backfilled.",
         ]

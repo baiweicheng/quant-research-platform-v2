@@ -27,6 +27,7 @@ def update(store, identifier, progress, provider=None):
     if normalizer in {
         "dated-research-inputs-v1",
         "dated-research-inputs-v2-reviewed-actions",
+        "dated-research-inputs-v3-holding-lifetimes",
         RESEARCH_VERSION,
     }:
         from .bundles import download

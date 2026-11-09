@@ -90,3 +90,10 @@ blanket price fallback or resolve missing cash settlement/CVR values.
 ## Engine 0.6.0 holding-window and merger follow-up
 
 See [historical coverage improvements](HISTORICAL_COVERAGE.md). Scheduled liquidation and supported recipient paths replace the overly broad requirement for quotes through the entire test end after departure. Five reviewed missing merger terms are integrated into Download/Update; four improve eligibility, while DISCK remains blocked by WBD identity. The captured full-period 253-session cases improve from 138 to 117 omissions, with 115 for the shorter fundamental lookback. These residual exclusions remain material; B-033 is open. No last-quote sale, price-proxy bankruptcy write-down, blanket Yahoo fallback or assumed zero-valued contingent right was added.
+
+
+## Engine 0.7.0 lightweight EPS and ticker guards
+
+Normal acquisition now uses structured SEC annual facts instead of exhaustive report-level share-class checks. It retains cheap units/date/conflict/split checks and excludes Berkshire's unequal-share EPS. Share comparability is an approximation, not a resolution of historical coverage. BNY has an explicit all-recipe identity exclusion because bank prices are mixed with an unrelated fund merger in the provider capture. Expired historical quote cohorts stay frozen during Update to prevent present-day ticker reuse from splicing new prices onto an old security. Empty current-member histories receive full backfill. Sources, validation and residual risks are in [LIGHTWEIGHT_EPS.md](LIGHTWEIGHT_EPS.md). B-033 remains open.
+
+Conflicting terminal alternatives remain material: Paramount cash/share elections need a verified election/proration and recipient path. Removing stale ticker tails must not make this path eligible at an assumed cash recovery. Distinct merger instructions at the same source/date now produce an action conflict for new and archived snapshots; exact duplicates are not treated as alternative economics. See the [Paramount closing filing](https://www.sec.gov/Archives/edgar/data/2041610/000119312525175046/d841914d8k12b.htm).

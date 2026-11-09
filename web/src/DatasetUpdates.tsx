@@ -151,15 +151,15 @@ export default function DatasetUpdates({
               disabled={preparing || filings.isPending || !id}
               onClick={() => filings.mutate()}
             >
-              Refresh SEC filings & share classes
+              Refresh SEC financial data
             </button>
           </div>
           <p className="field-hint">
-            Recheck filing-specific share units in a new snapshot using saved
-            prices. First-time verification reads historical SEC filings and can
-            take longer; completed filing checks are reused on retries and
-            updates. New or changed filings are checked again. Earlier snapshots
-            and results stay available.
+            Force a fresh capture of SEC annual financial data using saved
+            prices. Normal updates check for new annual filings and reuse
+            unchanged histories. Lightweight EPS checks run automatically;
+            complete historical reports are not required. Earlier snapshots and
+            results stay available.
           </p>
           {filings.error && <Notice error>{filings.error.message}</Notice>}
         </details>

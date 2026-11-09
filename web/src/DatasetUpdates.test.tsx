@@ -118,7 +118,7 @@ it("refreshes filed share units against saved prices without a market download",
   const fetcher = setup();
   await userEvent.click(screen.getByText("More refresh options"));
   await userEvent.click(
-    screen.getByRole("button", { name: "Refresh SEC filings & share classes" }),
+    screen.getByRole("button", { name: "Refresh SEC financial data" }),
   );
   await waitFor(() =>
     expect(fetcher).toHaveBeenCalledWith(

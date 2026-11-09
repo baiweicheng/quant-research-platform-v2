@@ -1,8 +1,24 @@
 # Performance and reproducibility
 
-Measured locally on November 8–9, 2026, with engines 0.5.0 and 0.6.0. These are paired workload measurements on one Mac, not hardware-independent guarantees. Downloads and ordinary updates still prepare prices, sectors and SEC inputs together; there is no additional required refresh step.
+Measured locally on November 8–9, 2026. Measurements below distinguish engine 0.7.0 policy changes from earlier paired computation optimizations. These are observations on one Mac, not hardware-independent guarantees. Downloads and ordinary updates still prepare prices, sectors and SEC inputs together; there is no additional required refresh step.
 
-## Measured computation and storage
+## Current lightweight acquisition — engine 0.7.0
+
+| Workload | Observed duration / size | Scope |
+| --- | ---: | --- |
+| Truly empty combined 2016–November 2026 download | **11m33** | Normal browser Download; 762 symbols, 1,783,977 rows, 23,512 annual records |
+| Validated Update / repeated final-guard Update | **3m36 / 3m06** | Normal browser Update; 604 annual histories reused, zero company-facts downloads in each |
+| Cold archive before saved backtests | **468 MB** | Decimal bytes, including captured structured source responses; zero parsed full EPS report records |
+
+The earlier uninterrupted full acquisition took 72m42. The lightweight run uses about **84% less elapsed time**, but this intentionally changes the evidence workload and EPS eligibility; it is not a claim of identical exhaustive verification done faster. The old 0.6.0 normal warm Update took 5m56. Network conditions, cached market responses and concurrent local validation vary. The two accepted update observations are not forecasts for every weekly launch; the second preserves all price and annual blocks exactly while adding the merger-conflict findings.
+
+Ordinary acquisition retains structured SEC facts, submissions and a small reviewed corporate-action source set instead of thousands of EPS report bodies. Annual submissions changes invalidate the financial cache; otherwise matching histories can be reused for up to 30 days. Major reviewed unequal-share/identity cases are blocked, while other class differences can remain. The [policy](LIGHTWEIGHT_EPS.md) explains that accuracy and refresh-delay tradeoff. Two issuer pipelines retain the shared eight-starts-per-second SEC gate. Backtest batches remain sequential to bound memory.
+
+The acceptance update preserves 116 expired quote cohorts and their warnings, preventing current ticker reuse from extending old histories. It additionally backfills the previously empty DOW history; its unresolved pre-2019 identity is explicitly blocked. Unchanged annual blocks remain exactly equal. New snapshots still share price and annual blocks, and Data/Research remain the ordinary user flows.
+
+The fully tested lightweight archive, including five backtests, compacted to **439 MB**, compared with the prior **5.282 GB** working archive. This intentionally removes bulk EPS evidence and superseded research; it is not identical source retention with stronger compression. The user then explicitly requested clearing all downloaded app data and backtests. The final normal database is **147 KB** and the entire `var` directory is about **143 MB**, mostly retained audit, reports and tool caches. A new Download starts with empty market/SEC caches. The already measured acceptance runs remain reports rather than populated app data.
+
+## Earlier paired computation and storage measurements
 
 | Workload | Before | After | Correctness check |
 | --- | ---: | ---: | --- |
@@ -21,7 +37,7 @@ Snapshot I/O converts one security/month at a time rather than retaining a secon
 
 For the 12-snapshot acceptance workspace, this screen projection reduced the serialized dataset portion from 6.76 MB to 4.39 MB (35%). The actual browser metadata download retained all 6,467 detailed filing checks, original observation IDs and source hashes. This measures payload size, not a general page-render timing guarantee.
 
-## Filing acquisition and reuse
+## Historical 0.6.0 exhaustive filing acquisition and reuse
 
 Engine 0.6.0 overlaps two issuer pipelines, each with two accession readers. All four readers share one request gate with at least 0.125 seconds between SEC request starts, including retries. This permits at most eight starts per second across the acquisition. This is below the SEC's [ten requests per second maximum](https://www.sec.gov/about/developer-resources). Requests use the configured identifying contact. Reports are streamed with a 96 MiB decompressed bound; an oversized report leaves the affected EPS units explicitly unverified rather than aborting unrelated issuer evidence or substituting today's class assumptions.
 
@@ -44,6 +60,6 @@ Filing reads allow 60 seconds between response chunks, with ten-second connectio
 
 A real normal-workspace Update with engine 0.6.0 completed in **5 minutes 56 seconds**, retaining identical price/annual blocks and filing checks. This is one observed warm run, separate from the controlled cold-filing comparison.
 
-Initial acquisition still needs to obtain thousands of historical reports. Faster parsing and bounded concurrency do not eliminate that network cost. Warm-update and empty-cache acceptance observations are recorded in [validation](VALIDATION.md), separately from the paired computation benchmarks above. Local scripts and detailed timing/hash artifacts are retained under ignored `var/uat/`; source data and credentials are not committed.
+The historical 0.6.0 policy still needed to obtain thousands of reports. Faster parsing and bounded concurrency do not eliminate that network cost. Warm-update and empty-cache acceptance observations are recorded in [validation](VALIDATION.md), separately from the paired computation benchmarks above. Local scripts and detailed timing/hash artifacts are retained under ignored `var/uat/`; source data and credentials are not committed.
 
-The accepted 2016–November 2026 workspace, original source archive and five saved baselines occupy about 5.2 GB locally. Original filing captures are retained for audit and future reuse; they are a substantial part of the initial disk cost. Shared price blocks avoid copying the price history for each vintage. This is separate from the lower peak RAM measured during snapshot loading.
+The historical 0.6.0 2016–November 2026 workspace, source archive and saved baselines occupied about 5.2 GB locally. Full filing captures were retained in that older archive and dominated its disk cost; the later explicitly authorized reset removed it. Shared price blocks avoid copying the price history for each vintage. This is separate from the lower peak RAM measured during snapshot loading.

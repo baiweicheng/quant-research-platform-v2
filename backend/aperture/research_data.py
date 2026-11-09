@@ -19,7 +19,43 @@ from .action_evidence import (
     VERSION as ACTION_EVIDENCE_VERSION,
 )
 
-VERSION = "dated-research-inputs-v3-holding-lifetimes"
+VERSION = "dated-research-inputs-v4-identity-guards"
+
+
+def unreconciled_mergers(events):
+    issues = []
+    # Separate cash/stock rows may be alternative elections or overlapping
+    # instructions, not additive entitlements. Exact duplicates are harmless
+    # for this gate; distinct economic instructions require reconciliation.
+    merger_terms = defaultdict(set)
+    for event in events:
+        if event["kind"] in {"cash_mergers", "stock_mergers", "stock_and_cash_mergers"}:
+            merger_terms[(event["source"], event["effective"])].add(
+                (
+                    event["kind"],
+                    event.get("target"),
+                    event.get("ratio"),
+                    event.get("cash"),
+                    event.get("pay_date"),
+                )
+            )
+    for (symbol, effective), terms in merger_terms.items():
+        if len(terms) > 1:
+            issues.append(
+                {
+                    "symbol": symbol,
+                    "start": effective,
+                    "end": effective,
+                    "kind": "action",
+                    "reason": "Multiple merger instructions have unreconciled alternatives or overlapping consideration; no cash election, proration or additive recovery is assumed."
+                    + (
+                        " https://www.sec.gov/Archives/edgar/data/2041610/000119312525175046/d841914d8k12b.htm"
+                        if symbol == "PARA"
+                        else ""
+                    ),
+                }
+            )
+    return issues
 
 
 def input_issues(dataset):
@@ -46,6 +82,9 @@ def input_issues(dataset):
                     + alias["source"],
                 }
             )
+    for issue in unreconciled_mergers(dataset.metadata.get("corporate_actions", [])):
+        if issue not in issues:
+            issues.append(issue)
     for event in dataset.metadata.get("corporate_actions", []):
         if event.get("unpriced_consideration"):
             continue
@@ -585,6 +624,14 @@ def download(store, payload, progress, provider=None, base=None):
         if len(names) * len(calendar.sessions(first, last)) > membership.MAX_BARS:
             raise ResearchError("Research acquisition exceeds the 4,000,000-bar limit.")
         groups = defaultdict(list)
+        frozen_quotes = set()
+        from .security_identity import (
+            freeze_historical_quotes,
+            known_gaps,
+            BNY_GAP,
+            DOW_GAP,
+        )
+
         identity = {}
         for symbol in names:
             asof = (
@@ -614,8 +661,11 @@ def download(store, payload, progress, provider=None, base=None):
                     raise ResearchError(
                         f"{symbol}: listing identity changed. Run a full historical identity review before combining prices."
                     )
-            begin = query_start if base and symbol in base.bars else first
-            groups[(str(asof), str(begin))].append(symbol)
+            begin = query_start if base and base.bars.get(symbol) else first
+            if freeze_historical_quotes(base, symbol, asof, query_start):
+                frozen_quotes.add(symbol)
+            else:
+                groups[(str(asof), str(begin))].append(symbol)
             identity[symbol] = {
                 # Historical quotes outside the overlap stay frozen, together
                 # with their original-ticker evidence and unresolved action
@@ -632,7 +682,8 @@ def download(store, payload, progress, provider=None, base=None):
                 ),
                 "basis": "Provider dated symbol mapping; permanent historical security identities are not certified",
             }
-        bars, adjusted = {}, {}
+        bars = {symbol: {} for symbol in names}
+        adjusted = {symbol: {} for symbol in names}
         acquisition = []
         for index, ((asof, begin), stocks) in enumerate(sorted(groups.items())):
             progress(
@@ -690,7 +741,7 @@ def download(store, payload, progress, provider=None, base=None):
         for alias in ALIASES:
             symbol, quote_name = alias["symbol"], alias["quote"]
             until = min(last, date.fromisoformat(alias["until"]))
-            alias_first = query_start if base and symbol in base.bars else first
+            alias_first = query_start if base and base.bars.get(symbol) else first
             if symbol not in bars or until < alias_first:
                 continue
             query = {
@@ -926,27 +977,34 @@ def download(store, payload, progress, provider=None, base=None):
                     {
                         s: m
                         for s, m in marks.items()
-                        if d >= str(overlap) or s not in base.bars
+                        if d >= str(overlap) or not base.bars.get(s)
                     }
                 )
             opening_income = old_marks
             issues = [
-                {**i, "end": min(i["end"], str(overlap - timedelta(days=1)))}
+                {
+                    **i,
+                    "end": i["end"]
+                    if i["symbol"] in frozen_quotes
+                    else min(i["end"], str(overlap - timedelta(days=1))),
+                }
                 for i in base.metadata.get("input_issues", [])
-                if i["start"] < str(overlap)
+                if (base.bars.get(i["symbol"]) or i["symbol"] in frozen_quotes)
+                and (i["start"] < str(overlap) or i["symbol"] in frozen_quotes)
             ] + [
                 {
                     **i,
                     "start": max(i["start"], str(overlap))
-                    if i["symbol"] in base.bars
+                    if base.bars.get(i["symbol"])
                     else i["start"],
                 }
                 for i in issues
-                if i["end"] >= str(overlap) or i["symbol"] not in base.bars
+                if i["symbol"] not in frozen_quotes
+                and (i["end"] >= str(overlap) or not base.bars.get(i["symbol"]))
             ]
             for symbol in names:
                 fresh = bars[symbol]
-                if symbol in base.bars:
+                if base.bars.get(symbol):
                     bars[symbol] = {
                         b.session: b for b in base.bars[symbol] if b.session < overlap
                     }
@@ -956,13 +1014,20 @@ def download(store, payload, progress, provider=None, base=None):
             normalized_events = [
                 e
                 for e in base.metadata.get("corporate_actions", [])
-                if e["effective"] < str(overlap)
+                if (base.bars.get(e["source"]) or e["source"] in frozen_quotes)
+                and (e["effective"] < str(overlap) or e["source"] in frozen_quotes)
             ] + [
                 e
                 for e in normalized_events
-                if e["effective"] >= str(overlap) or e["source"] not in base.bars
+                if e["source"] not in frozen_quotes
+                and (e["effective"] >= str(overlap) or not base.bars.get(e["source"]))
             ]
         normalized_events = apply_missing(normalized_events, supplements, bars, issue)
+        issues = [i for i in issues if i["reason"] not in {BNY_GAP, DOW_GAP}]
+        issues.extend(known_gaps(names, first, last))
+        for finding in unreconciled_mergers(normalized_events):
+            if finding not in issues:
+                issues.append(finding)
         expected_days = set(calendar.sessions(first, last))
         unavailable = {}
         for record in issues:

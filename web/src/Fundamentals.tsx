@@ -119,11 +119,11 @@ export function FundamentalsPanel({ datasets }: { datasets: Dataset[] }) {
           </p>
           <p>
             Some sectors use different accounting. Missing, stale, ambiguous and
-            unsupported inputs exclude a stock. Per-share valuation requires
-            dated evidence from that filing; missing or ambiguous common-share
-            units remain excluded. Today's preferred listings do not invalidate
-            earlier filings. These are annual metrics, not estimates of trailing
-            twelve months.
+            unsupported inputs exclude a stock. Lightweight EPS checks retain
+            dates, units, conflicting-value checks and known unequal-share
+            exclusions. Ordinary share comparability is an approximation;
+            differences between share classes may remain. These are annual
+            metrics, not estimates of trailing twelve months.
           </p>
         </details>
       </div>
@@ -145,6 +145,8 @@ export function FundamentalDetails({ data }: { data: FundamentalCoverage }) {
         decision.
       </p>
       <p>{data.availability}</p>
+      {data.eps_policy && <p>{data.share_basis}</p>}
+      {data.refresh_policy && <p>{data.refresh_policy}</p>}
       <div className="table-scroll">
         <table className="fundamental-table">
           <thead>
@@ -153,7 +155,7 @@ export function FundamentalDetails({ data }: { data: FundamentalCoverage }) {
               <th>Annual periods / filings</th>
               <th>Profitability</th>
               <th>Valuation</th>
-              <th>Filed share units</th>
+              <th>EPS input checks</th>
               <th>Latest fiscal end / filed</th>
               <th>Coverage notes</th>
             </tr>
@@ -168,9 +170,13 @@ export function FundamentalDetails({ data }: { data: FundamentalCoverage }) {
                 <td>{row.quality_ready ? "Eligible input" : "Excluded"}</td>
                 <td>{row.value_ready ? "Eligible input" : "Excluded"}</td>
                 <td>
-                  {row.share_class_filings !== undefined
-                    ? `${row.share_class_verified ?? 0} / ${row.share_class_filings} supported filings`
-                    : "Legacy snapshot · refresh SEC filings"}
+                  {row.eps_checks !== undefined
+                    ? `${row.eps_accepted ?? 0} / ${row.eps_checks} accessions usable · lightweight checks`
+                    : row.share_class_filings !== undefined
+                      ? `${row.share_class_verified ?? 0} / ${row.share_class_filings} supported filings`
+                      : data.eps_policy
+                        ? "Unavailable · see coverage notes"
+                        : "Legacy snapshot · refresh SEC filings"}
                 </td>
                 <td>
                   {row.latest_period || "—"}

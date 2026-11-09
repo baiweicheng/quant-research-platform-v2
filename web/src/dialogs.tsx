@@ -62,6 +62,10 @@ export function TaskDialog({
     ["quality_value", "value_momentum"].some((id) =>
       selectedStrategies.includes(id),
     ) && dataset?.metadata?.fundamentals?.normalizer === "annual-us-gaap-v1";
+  const lightweightEps =
+    ["quality_value", "value_momentum"].some((id) =>
+      selectedStrategies.includes(id),
+    ) && !!dataset?.metadata?.fundamentals?.eps_policy;
   const [start, setStart] = useState(
     dataset ? afterWarmup(dataset.start, dataset.end) : "",
   );
@@ -247,12 +251,18 @@ export function TaskDialog({
             evidence of strategy performance.
           </Notice>
         )}
+        {lightweightEps && (
+          <p className="field-hint">
+            EPS uses lightweight share-class assumptions. Known unequal-share
+            cases are excluded; historical classes are not exhaustively
+            verified.
+          </p>
+        )}
         {legacyClasses && (
           <Notice>
             This snapshot retains the legacy EPS share-class screen. In Data,
-            use Refresh SEC filings & share classes, then choose the new
-            snapshot to apply the corrected method. Earlier saved inputs stay
-            unchanged.
+            use Refresh SEC financial data, then choose the new snapshot to
+            apply the current EPS policy. Earlier saved inputs stay unchanged.
           </Notice>
         )}
         {missingFundamentals && (

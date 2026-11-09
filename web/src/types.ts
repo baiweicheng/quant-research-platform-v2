@@ -11,6 +11,9 @@ export type Strategy = {
 };
 export type FundamentalCoverage = {
   normalizer?: string;
+  eps_policy?: string;
+  share_basis?: string;
+  refresh_policy?: string;
   record_count: number;
   availability: string;
   retrieved_at: string;
@@ -25,6 +28,8 @@ export type FundamentalCoverage = {
     available_at?: string | null;
     share_class_filings?: number;
     share_class_verified?: number;
+    eps_checks?: number;
+    eps_accepted?: number;
   }[];
 };
 export type Signal = {

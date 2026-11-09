@@ -613,6 +613,10 @@ def prepare(store, job, progress, broker):
         {**cfg["policy"], "positions": int(cfg["policy"]["positions"])}
     )
     targets, notes = target_weights(ranked, policy)
+    if cfg["strategy_id"] in {"quality_value", "value_momentum"} and ds.metadata.get(
+        "fundamentals", {}
+    ).get("eps_policy"):
+        notes.append(ds.metadata["fundamentals"]["share_basis"])
     for symbol in targets:
         broker.asset(symbol)
     snap = reconcile(store, broker, performance=True, dataset=ds)

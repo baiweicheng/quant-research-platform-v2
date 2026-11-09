@@ -119,7 +119,14 @@ def execute(store: Store, job: dict):
             "price_dataset_id", payload["dataset_id"]
         )
         sector_snapshot = attach_sectors(store, price_id, update)
-        saved = attach(store, sector_snapshot["id"], update, allow_empty=True)
+        saved = attach(
+            store,
+            sector_snapshot["id"],
+            update,
+            allow_empty=True,
+            refresh=True,
+            force_facts=True,
+        )
         store.finish(
             job,
             {
@@ -251,6 +258,10 @@ def execute(store: Store, job: dict):
         ranked, excluded = rank(dataset, identifier, latest)
         ranked_by_symbol = {stock.symbol: stock for stock in ranked}
         targets, notes = target_weights(ranked, policy)
+        if identifier in {"quality_value", "value_momentum"} and dataset.metadata.get(
+            "fundamentals", {}
+        ).get("eps_policy"):
+            notes.append(dataset.metadata["fundamentals"]["share_basis"])
         if not targets:
             notes.append("No stocks currently qualify. The allocation is 100% cash.")
         body = {

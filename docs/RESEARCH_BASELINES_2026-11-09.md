@@ -1,5 +1,7 @@
 # Coverage research baselines — November 9, 2026
 
+Historical engine 0.6.0 checkpoint. See the [0.7.0 lightweight study](RESEARCH_BASELINES_2026-11-09_LIGHTWEIGHT.md) for newer validation. The subsequent user-requested fresh start removed the app's downloaded data and saved results; preservation statements below describe this earlier checkpoint, not the final empty workspace.
+
 All five strategies were selected and submitted together through the normal production browser interface, engine **0.6.0**, for **January 3, 2017–November 6, 2026**. The ordinary Update workflow produced the shared combined snapshot. These are exploratory, coverage-limited, ex-date total-return calculations; no strategy was approved or activated for trading.
 
 | Recipe | Net return | Largest decline | Mean stock exposure | Exclusions |

@@ -135,9 +135,13 @@ def run(
         == "annual-us-gaap-v1"
     ):
         notes.add(
-            "Legacy snapshot: EPS eligibility still uses the former current-ticker screen. In Data, refresh SEC filings & share classes and select the new snapshot to apply filing-specific evidence. Saved historical inputs are not rewritten."
+            "Legacy snapshot: EPS eligibility uses the former current-ticker screen. In Data, refresh SEC financial data and select the new snapshot to use the current EPS policy. Saved historical inputs are not rewritten."
         )
     notes.add(coverage_audit["price_window_policy"])
+    if identifier in {"quality_value", "value_momentum"}:
+        eps_policy = dataset.metadata.get("fundamentals", {}).get("eps_policy")
+        if eps_policy:
+            notes.add(dataset.metadata["fundamentals"]["share_basis"])
     if coverage_mode == "coverage_limited":
         notes.add(coverage_audit["warning"])
         notes.add(

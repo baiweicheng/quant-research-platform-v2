@@ -267,7 +267,14 @@ def test_enrichment_is_immutable_idempotent_and_worker_results_serialize(
     saved = attach(store, base.id, lambda *args: None, FixtureProvider())
     enriched = store.dataset(saved["id"])
     assert store.dataset(base.id).fundamentals == {}
-    assert enriched.fundamentals == dataset.fundamentals
+    assert {
+        name: tuple(replace(row, sources={}) for row in rows)
+        for name, rows in enriched.fundamentals.items()
+    } == {
+        name: tuple(replace(row, sources={}) for row in rows)
+        for name, rows in dataset.fundamentals.items()
+    }
+    assert enriched.metadata["fundamentals"]["eps_policy"] == "structured-eps-v1"
     assert attach(store, enriched.id, lambda *args: None, FixtureProvider())[
         "already_imported"
     ]
@@ -526,22 +533,17 @@ def test_slow_first_issuer_does_not_block_later_issuers(tmp_path, dataset, monke
             if url.endswith("company_tickers_exchange.json"):
                 return dict(fields=["cik", "ticker"], data=list(enumerate(names, 1)))
             cik = int(url.rsplit("CIK", 1)[1].split(".")[0])
+            if "/companyfacts/" in url:
+                if cik == 1:
+                    assert release.wait(5), "The next issuer could not advance"
+                elif cik == 3:
+                    release.set()
             return (
                 dict(cik=cik, entityType="operating")
                 if "/submissions/" in url
                 else {**source(), "cik": cik}
             )
 
-    def classes(api, symbol, *a, **kw):
-        if symbol == "ABC":
-            assert release.wait(5), (
-                "The next issuer could not advance past a slow filing"
-            )
-        elif symbol == "ZZZ":
-            release.set()
-        return {}
-
-    monkeypatch.setattr("aperture.filing_classes.acquire", classes)
     result = attach(store, base.id, lambda *a: None, Captures())
     assert result["metadata"]["fundamentals"]["record_count"] == 3
     assert [
