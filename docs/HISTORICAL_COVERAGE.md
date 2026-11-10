@@ -4,6 +4,42 @@ Engine 0.6.0 narrows the price history required for exploratory backtests and ad
 
 ## Individual listings and market timing
 
+### Native merger reconciliation (input contract v7)
+
+Primary completed-merger filings establish the first converted market sessions
+for [ANSS, July 17, 2025](https://www.sec.gov/Archives/edgar/data/1013462/000114036125026141/ef20052066_8k.htm),
+[CTLT, December 18, 2024](https://www.sec.gov/Archives/edgar/data/1596783/000119312524280922/d902883d8k.htm)
+and [HES, July 18, 2025](https://www.sec.gov/Archives/edgar/data/4447/000095014225001950/eh250651090_8k.htm).
+Corrections require exact original listing/event IDs, CUSIPs, consideration,
+document fingerprints and source quote lifetimes. The vendor effective date,
+verified legal date and market session remain distinct in provenance. Native
+payment dates and consideration are unchanged; CTLT cash remains a receivable
+until December 19 rather than becoming spendable on conversion.
+
+HES also contains an exact stale September 30, 2024 conversion instruction.
+That reviewed record remains visible as rejected source evidence and cannot
+convert holdings. The actual July 2025 instruction executes once. Unknown or
+changed additional merger instructions prevent this correction; the exception
+does not generally suppress conflicting provider records.
+
+The same filings establish the original three issuers' CIKs, bringing the
+reviewed registry to 13. A price-only eligibility repair was insufficient:
+without these financial mappings the fundamental strategies still had no annual
+records for the recovered names. Final Update adds 114 annual records
+(ANSS 45, CTLT 36, HES 33), reuses 614 histories and downloads three in
+209.176 seconds. All prior annual blocks and actions are unchanged versus the
+intermediate corrected snapshot. Every backtest-period price and all OHLC
+fields are unchanged; 374 November 9 volume revisions occur after the tested
+November 6 end date and are retained as ordinary provider overlap updates.
+
+Price/action exclusions improve from 69/67 to **66/64**, recovering these three
+names with no regressions, or 52 recoveries from the original 118/116. This is
+not complete financial coverage: a separate audit finds **51 otherwise
+price-eligible historical members without issuer financial mappings**. These
+and the remaining price/action exclusions are material unresolved gaps. All
+five full-period browser runs pass independent accounting checks, but none
+beats SPY. No strategy tuning or paper activation is part of this repair.
+
 ### Dated historical issuers (input contract v6)
 
 Ten reviewed filing/quote-vintage pairs identify ADS, BBBY, ENDP, FTR, GPS,

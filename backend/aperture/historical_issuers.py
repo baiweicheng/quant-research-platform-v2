@@ -11,6 +11,36 @@ from .domain import ResearchError
 
 VERSION = "reviewed-historical-issuer-v1"
 ISSUERS = {
+    "ANSS": {
+        "cik": "0001013462",
+        "quote_asof": "2025-07-17",
+        "name": "ANSYS, Inc.",
+        "exchange": "NASDAQ",
+        "url": "https://www.sec.gov/Archives/edgar/data/1013462/000114036125026141/ef20052066_8k.htm",
+        "sha256": "325ac76a936ba8f6dbc02d48316226f89b6ce7719eaad9bbe3453029e6b95f8c",
+        "content_sha256": "426bf69a6bb880823207f8d84fc5337d2ef697122d58b87f5e2805a3997c4ee2",
+        "basis": "The completed-merger filing identifies the original ANSYS common shares and their Nasdaq listing. Its CIK 1013462 financial history belongs to ANSS, independently of Synopsys's financial statements.",
+    },
+    "CTLT": {
+        "cik": "0001596783",
+        "quote_asof": "2024-12-20",
+        "name": "Catalent, Inc.",
+        "exchange": "NYSE",
+        "url": "https://www.sec.gov/Archives/edgar/data/1596783/000119312524280922/d902883d8k.htm",
+        "sha256": "af8020f90073a07d5699ffc7c5e9109bc2394ab9f10568d72e65caecf77bc65e",
+        "content_sha256": "b37d91b7e7c32f8de364489ca542efeab9c53fc3cbc1a545fc6aa67710b91425",
+        "basis": "The completed-merger filing identifies CTLT common stock on NYSE and the original Catalent issuer, CIK 1596783. Historical financial statements retain their own accession and availability dates.",
+    },
+    "HES": {
+        "cik": "0000004447",
+        "quote_asof": "2025-07-22",
+        "name": "Hess Corporation",
+        "exchange": "NYSE",
+        "url": "https://www.sec.gov/Archives/edgar/data/4447/000095014225001950/eh250651090_8k.htm",
+        "sha256": "be047631e330ad26fcbe0ba5f20c99eb727963dce26efb59675913774c3dd7d9",
+        "content_sha256": "f0bdbe694d6db9d01d7c86d2d85de863cb9fc683c2c90434889b106b53bd79c6",
+        "basis": "The completed-merger filing identifies HES common stock on NYSE and Hess's original CIK 4447. The mapped financials belong to Hess rather than the Chevron stock received at conversion.",
+    },
     "BBBY": {
         "cik": "0000886158",
         "quote_asof": "2017-07-25",

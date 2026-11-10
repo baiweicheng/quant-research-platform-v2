@@ -159,3 +159,30 @@ it("shows reviewed trading-session timing with its primary filing", () => {
     },
   ]);
 });
+
+it("labels a rejected vendor merger separately from an executed conversion", () => {
+  const rows = reviewedActionCorrections(
+    snapshot(1, {
+      corporate_actions: [
+        {
+          kind: "rejected_native_merger",
+          source: "HES",
+          effective: "2024-09-30",
+          reviewed_rejection: {
+            url: "https://www.sec.gov/Archives/hess-closing.htm",
+            basis:
+              "Stale instruction; the actual conversion occurred in July 2025.",
+          },
+        },
+      ],
+    }),
+  );
+  expect(rows).toEqual([
+    {
+      symbol: "HES",
+      effective: "Rejected 2024-09-30",
+      url: "https://www.sec.gov/Archives/hess-closing.htm",
+      basis: "Stale instruction; the actual conversion occurred in July 2025.",
+    },
+  ]);
+});

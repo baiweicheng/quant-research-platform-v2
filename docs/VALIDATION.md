@@ -1,5 +1,56 @@
 # Research milestone validation
 
+## 2026-11-10 — native merger dates, rejected HES instruction and issuer histories
+
+Input contract `dated-research-inputs-v7-native-date-reconciliation` passes
+**420 backend / 62 UI tests**, TypeScript/production build, Ruff F lint,
+changed Python formatting, frontend formatting and whitespace checks. Exact
+source/quote/signature guards cover ANSS, CTLT and HES. Held-position tests
+prove that the rejected HES September 2024 instruction does not execute,
+conversion occurs once on July 18, 2025, and unknown alternatives remain
+blocked. CTLT's conversion does not advance its captured cash payment date.
+Data displays rejected evidence separately from accepted market-date corrections.
+
+Actual isolated browser Update first completed the price/action repair in
+**154.601 seconds**, creating `70f72545dea8bc8abe154908`; all 85,867 price blocks
+and 614 annual blocks remained identical. Coverage improved **69/67 to 66/64**
+without newly excluded names. Acceptance then caught the missing original
+financial-issuer mappings for all three recovered names; those mappings were
+added before final acceptance rather than treating price eligibility as enough.
+
+The final ordinary browser Update completed in **209.176 seconds**, creating
+`7d0f657b032fb05be84fb550`, reusing 614 financial histories and downloading three.
+It adds **114 annual records** (45 ANSS, 36 CTLT, 33 HES). All original annual
+blocks and normalized actions match the preceding snapshot exactly. All tested
+prices through November 6 and all OHLC fields are unchanged. The provider revised
+374 volume values on November 9, outside the tested period; the acceptance
+report explicitly records those differences rather than claiming whole-archive
+price-block equality. No new empty-cache timing is claimed.
+
+Independent source audit verifies all **13 primary-document fingerprints**,
+original CIKs/quote vintages, **534 annual records / 1,268 numerical fields**
+against accession/period/unit/filed-date-matched raw SEC companyfacts, and six
+active duplicate-listing checks. All five final January 3, 2017–November 6, 2026
+runs were submitted through the production browser and completed. Independent
+replay exactly matches **12,380 cash/NAV/SPY valuations**, **400,817 filing
+components** and **396,044 EPS/split checks**, including costs, membership,
+caps, merger holdings and final quantities. Net returns are **216.960% momentum,
+132.944% low volatility, 182.192% quality, 238.227% quality value and 252.213%
+value + momentum**, versus **277.699% SPY**. No recipe parameters were tuned.
+
+Desktop/mobile source disclosure and the rejected HES label were observed;
+320px document width remained 320px. Final completed tasks were observed in
+Activity. Reports and screenshots are retained under ignored
+`var/uat/paper-readiness-2026-11-09/native-group/`, with final financial/source
+audits in `issuer-complete/`. Original normal-workspace inputs/results remain
+unchanged; isolated paper orders/plans/approvals are zero and integrity passes.
+
+The **66/64 remaining price/action exclusions are still material**. A separate
+membership audit also finds **51 otherwise price-eligible historical members
+without issuer financial mappings**, so the exclusion count alone does not
+measure complete fundamental coverage. Both these gaps and net SPY
+outperformance remain unachieved; the full paper-readiness goal stays active.
+
 ## 2026-11-09 — dated historical issuers and current listing duplicates
 
 Input contract `dated-research-inputs-v6-dated-issuers` and annual normalizer

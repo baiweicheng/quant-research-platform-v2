@@ -19,7 +19,7 @@ from .action_evidence import (
     VERSION as ACTION_EVIDENCE_VERSION,
 )
 
-VERSION = "dated-research-inputs-v6-dated-issuers"
+VERSION = "dated-research-inputs-v7-native-date-reconciliation"
 MISSING_DIRECTORY = "Historical listing identity is unavailable in the captured directory; a raw-symbol fallback is not issuer verification."
 MULTIPLE_DIRECTORY = "Multiple historical listing identities require dated issuer/share-basis verification."
 

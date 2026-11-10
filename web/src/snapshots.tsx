@@ -155,15 +155,25 @@ export function reviewedActionCorrections(dataset: Dataset) {
           "cash_mergers",
           "stock_mergers",
           "stock_and_cash_mergers",
+          "rejected_native_merger",
         ].includes(event?.kind) &&
-        typeof (event.reviewed_evidence ?? event.reviewed_market_timing)
-          ?.url === "string",
+        typeof (
+          event.reviewed_evidence ??
+          event.reviewed_market_timing ??
+          event.reviewed_rejection
+        )?.url === "string",
     )
     .map((event) => {
-      const evidence = event.reviewed_evidence ?? event.reviewed_market_timing;
+      const evidence =
+        event.reviewed_evidence ??
+        event.reviewed_market_timing ??
+        event.reviewed_rejection;
       return {
         symbol: String(event.source),
-        effective: String(event.effective),
+        effective:
+          event.kind === "rejected_native_merger"
+            ? `Rejected ${event.effective}`
+            : String(event.effective),
         url: String(evidence.url),
         basis: String(evidence.basis),
       };
