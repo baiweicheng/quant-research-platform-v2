@@ -113,9 +113,9 @@ export default function DatasetUpdates({
                 : chosen.metadata?.bundle_role === "prices"
                   ? "SEC download unfinished · Update completes it"
                   : "Legacy snapshot · SEC filings will be added"}
-            . Earlier prices stay frozen. Reviewed missing merger terms can be
-            added with source evidence; a full download revalidates older
-            history.
+            . Earlier prices stay frozen. Reviewed source corrections can repair
+            historical listings and merger timing in the new snapshot. Original
+            snapshots stay unchanged; a full download revalidates older prices.
           </p>
         )}
         {task.error && <Notice error>{task.error.message}</Notice>}

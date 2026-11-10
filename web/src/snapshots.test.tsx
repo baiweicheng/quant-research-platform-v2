@@ -132,3 +132,30 @@ it("shows primary-source merger corrections without labeling bare vendor events 
   expect(rows.map((r) => r.symbol)).toEqual(events.map((e) => e.source));
   expect(rows.every((r) => r.basis === "Completed transaction")).toBe(true);
 });
+
+it("shows reviewed trading-session timing with its primary filing", () => {
+  const rows = reviewedActionCorrections(
+    snapshot(1, {
+      corporate_actions: [
+        {
+          kind: "cash_mergers",
+          source: "NLSN",
+          effective: "2022-10-12",
+          reviewed_market_timing: {
+            url: "https://www.sec.gov/Archives/nielsen.htm",
+            basis: "Suspend before October 12 open after October 11 closing.",
+          },
+        },
+        { kind: "cash_mergers", source: "BARE", effective: "2022-10-11" },
+      ],
+    }),
+  );
+  expect(rows).toEqual([
+    {
+      symbol: "NLSN",
+      effective: "2022-10-12",
+      url: "https://www.sec.gov/Archives/nielsen.htm",
+      basis: "Suspend before October 12 open after October 11 closing.",
+    },
+  ]);
+});

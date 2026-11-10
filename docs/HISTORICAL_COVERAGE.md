@@ -2,6 +2,25 @@
 
 Engine 0.6.0 narrows the price history required for exploratory backtests and adds reviewed missing merger terms. The normal Download and Update workflows apply the data supplements automatically. Original snapshots and saved results remain frozen.
 
+## Individual listings and market timing
+
+Input contract v5 checks the individual asset endpoint when both bulk listing directories omit a security. It requires the exact requested symbol and valid listing metadata, retains unsupported/fund/collision checks, and captures the response through the ordinary provider archive. A missing resource remains unresolved; permission, transport and malformed-response errors fail the acquisition. This recovers provider-directory omissions, not a complete historical security master.
+
+Ordinary Update can revalidate the specific historical missing-directory warning when a captured individual lookup supplies a supported listing. Other identity and action warnings remain. The original snapshot and its prices are preserved; the new snapshot records the prior warning and replacement listing evidence. Historical price downloads are unnecessary for this metadata repair.
+
+Four native merger records have narrow source-verified market-date treatment. Exact listing IDs, event IDs, original CUSIPs, native consideration, source fingerprints and captured quote lifetimes must match. Legal completion dates stay in provenance; trading-session conversion follows the verified suspension:
+
+| Security | Legal closing | First converted market session | Evidence |
+| --- | --- | --- | --- |
+| AGN | 2020-05-08 | 2020-05-11 | [Completed scheme and pre-open suspension](https://www.sec.gov/Archives/edgar/data/1578845/000119312520137717/d927229d8k.htm) |
+| CXO | 2021-01-15 | 2021-01-19 | [NYSE filed suspension](https://www.sec.gov/Archives/edgar/data/876661/000087666121000081/ruleprovisionnotice.htm), [1.46 COP consideration](https://www.sec.gov/Archives/edgar/data/1163165/000156276221000304/R10.htm) |
+| NLSN | 2022-10-11 | 2022-10-12 | [Completed $28 acquisition and suspension](https://www.sec.gov/Archives/edgar/data/1492633/000119312522260583/d407513d8k.htm) |
+| ATVI | 2023-10-13 | 2023-10-13 | [Completed $95 merger and pre-open halt](https://www.sec.gov/Archives/edgar/data/718877/000110465923108985/tm2328253d1_8k.htm) |
+
+ATVI's exact flat, zero-volume October 13 mark is retained as captured data but does not prevent contractual conversion following the verified halt. This is not a generic stale-price rule: a nonzero-volume, differently priced or later mark rejects the exception. These corrections do not manufacture cash payment dates, replace native consideration, or resolve alternative merger elections. Source links appear in the expandable corporate-action audit and full metadata export.
+
+The isolated November 9 candidate recovers 34 names, reducing 118/116 exclusions to 84/82. All 85,736 captured price blocks remain identical. Five full-period browser-submitted results pass independent cash/NAV/SPY accounting at 12,380 valuations, including actual merger holdings. These are partial coverage improvements; the remaining omissions are material, and no candidate strategy beats SPY yet. The paper-readiness goal remains incomplete.
+
 ## What the prior implementation established
 
 The read-only v1 review found retrospective constituent membership and explicit daily Yahoo acquisition. It also found skipped ticker/action failures, forward-filled quotes, and exits using the last available close or a price-based bankruptcy proxy. These choices can make a calculation finish without establishing the historical terminal return. V2 does not adopt those exit assumptions. No v1 code, configuration or tests were reused, and no v1 application or database was run.

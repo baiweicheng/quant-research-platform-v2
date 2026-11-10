@@ -19,7 +19,8 @@ from .action_evidence import (
     VERSION as ACTION_EVIDENCE_VERSION,
 )
 
-VERSION = "dated-research-inputs-v4-identity-guards"
+VERSION = "dated-research-inputs-v5-listing-and-market-timing"
+MISSING_DIRECTORY = "Historical listing identity is unavailable in the captured directory; a raw-symbol fallback is not issuer verification."
 
 
 def unreconciled_mergers(events):
@@ -426,6 +427,11 @@ def download(store, payload, progress, provider=None, base=None):
                         first_membership.setdefault(symbol, days[0])
                         last_membership[symbol] = days[-1]
         primary_symbols = set(names)
+        from .security_identity import supplement_listing_directory
+
+        # Reviewed merger supplements also need the old listing identity, so
+        # recover omitted primary listings before deriving recipient paths.
+        listing_lookups = supplement_listing_directory(api, listing_candidates, names)
         custom_symbols = list(names) if not audit else None
         normalized_events = []
         dependencies = set()
@@ -568,13 +574,19 @@ def download(store, payload, progress, provider=None, base=None):
         names = membership.symbols(
             set(names) | dependencies | (set(base.bars) if base else set())
         )
+        listing_lookups.update(
+            supplement_listing_directory(
+                api, listing_candidates, set(names) - listing_lookups.keys()
+            )
+        )
+        supported_listing_symbols = set()
         for symbol in names:
             rows = list(listing_candidates[symbol].values())
             if not rows:
                 issue(
                     symbol,
                     first,
-                    "Historical listing identity is unavailable in the captured directory; a raw-symbol fallback is not issuer verification.",
+                    MISSING_DIRECTORY,
                     "identity",
                     last,
                 )
@@ -610,6 +622,8 @@ def download(store, payload, progress, provider=None, base=None):
                     "identity",
                     last,
                 )
+            else:
+                supported_listing_symbols.add(symbol)
         overlap = (
             max(
                 first,
@@ -677,6 +691,7 @@ def download(store, payload, progress, provider=None, base=None):
                 ),
                 "asof": str(asof),
                 "candidate_ids": sorted(listing_candidates[symbol]),
+                "individual_lookup": listing_lookups.get(symbol),
                 "listing_id": next(
                     (a.get("id") for a in active if a["symbol"] == symbol), None
                 ),
@@ -966,6 +981,19 @@ def download(store, payload, progress, provider=None, base=None):
                         after,
                         "Dividend amount conflicts with the USD adjusted-price evidence.",
                     )
+        identity_revalidation = [
+            {
+                "symbol": i["symbol"],
+                "prior_issue": i,
+                "listing": listing_lookups[i["symbol"]],
+            }
+            for i in (base.metadata.get("input_issues", []) if base else [])
+            if i["kind"] == "identity"
+            and i["reason"] == MISSING_DIRECTORY
+            and i["symbol"] in supported_listing_symbols
+            and listing_lookups.get(i["symbol"], {}).get("status") == "found"
+        ]
+        revalidated = {i["symbol"] for i in identity_revalidation}
         if base:
             old_marks = {
                 d: dict(m)
@@ -991,6 +1019,11 @@ def download(store, payload, progress, provider=None, base=None):
                 for i in base.metadata.get("input_issues", [])
                 if (base.bars.get(i["symbol"]) or i["symbol"] in frozen_quotes)
                 and (i["start"] < str(overlap) or i["symbol"] in frozen_quotes)
+                and not (
+                    i["symbol"] in revalidated
+                    and i["kind"] == "identity"
+                    and i["reason"] == MISSING_DIRECTORY
+                )
             ] + [
                 {
                     **i,
@@ -1022,6 +1055,9 @@ def download(store, payload, progress, provider=None, base=None):
                 if e["source"] not in frozen_quotes
                 and (e["effective"] >= str(overlap) or not base.bars.get(e["source"]))
             ]
+        from .historical_timing import apply_timing
+
+        normalized_events = apply_timing(normalized_events, identity, bars, api, issue)
         normalized_events = apply_missing(normalized_events, supplements, bars, issue)
         issues = [i for i in issues if i["reason"] not in {BNY_GAP, DOW_GAP}]
         issues.extend(known_gaps(names, first, last))
@@ -1063,6 +1099,7 @@ def download(store, payload, progress, provider=None, base=None):
             ),
             "prices": acquisition,
             "identity": identity,
+            "historical_identity_revalidation": identity_revalidation,
             "research_open_income": opening_income,
             "input_issues": issues,
         }
@@ -1081,6 +1118,7 @@ def download(store, payload, progress, provider=None, base=None):
             "corporate_actions": normalized_events,
             "research_open_income": opening_income,
             "identity_resolution": identity,
+            "historical_identity_revalidation": identity_revalidation,
             "coverage": health,
             "membership": audit,
             "retrieved_at": now(),

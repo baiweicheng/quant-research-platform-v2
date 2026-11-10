@@ -23,6 +23,8 @@ def terminal_events(dataset):
     """
     if "_research_terminal_events" in dataset.metadata:
         return dataset.metadata["_research_terminal_events"]
+    from .historical_timing import verified_nontrading_tail
+
     result = {}
     audit = dataset.metadata.get("membership") or {}
     history = audit.get("historical", {}) if audit.get("kind") == "combined" else audit
@@ -36,7 +38,10 @@ def terminal_events(dataset):
         cash, ratio = decimal(event.get("cash", 0)), decimal(event.get("ratio", 0))
         if (
             not rows
-            or rows[-1].session >= effective
+            or (
+                rows[-1].session >= effective
+                and not verified_nontrading_tail(event, rows)
+            )
             or source == target
             or cash < ZERO
             or (event["kind"] == "cash_mergers" and cash <= ZERO)

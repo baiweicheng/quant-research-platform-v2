@@ -2,6 +2,46 @@
 
 from datetime import date
 
+
+def supplement_listing_directory(api, candidates, names):
+    """Resolve omissions in bulk assets without overriding a listed collision.
+
+    The individual endpoint can retain inactive listings omitted by both bulk
+    directories. This supplies the same provider metadata, not certification of
+    an issuer's entire history. Existing corporate-action/identity gates apply.
+    """
+    from urllib.parse import quote
+
+    from .config import PAPER_URL
+    from .domain import ResearchError
+    from .providers import ResourceMissing
+
+    lookups = {}
+    for symbol in sorted(set(names)):
+        if candidates.get(symbol):
+            continue
+        try:
+            asset = api.get(
+                "alpaca", PAPER_URL + "/v2/assets/" + quote(symbol, safe=""), ttl=86400
+            )
+        except ResourceMissing:
+            lookups[symbol] = {"status": "not_found"}
+            continue
+        if (
+            not isinstance(asset, dict)
+            or asset.get("symbol") != symbol
+            or not isinstance(asset.get("id"), str)
+            or not asset["id"]
+            or not asset.get("name")
+        ):
+            raise ResearchError(
+                f"{symbol}: individual asset lookup returned inconsistent listing metadata."
+            )
+        candidates[symbol][asset["id"]] = asset
+        lookups[symbol] = {"status": "found", "listing_id": asset["id"]}
+    return lookups
+
+
 BNY_GAP = (
     "BNY bank prices are paired with unrelated former BNY municipal-fund actions "
     "in the provider capture. The bank/fund action identities are not reconciled; "

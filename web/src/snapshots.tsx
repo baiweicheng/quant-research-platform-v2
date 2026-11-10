@@ -156,12 +156,16 @@ export function reviewedActionCorrections(dataset: Dataset) {
           "stock_mergers",
           "stock_and_cash_mergers",
         ].includes(event?.kind) &&
-        typeof event.reviewed_evidence?.url === "string",
+        typeof (event.reviewed_evidence ?? event.reviewed_market_timing)
+          ?.url === "string",
     )
-    .map((event) => ({
-      symbol: String(event.source),
-      effective: String(event.effective),
-      url: String(event.reviewed_evidence.url),
-      basis: String(event.reviewed_evidence.basis),
-    }));
+    .map((event) => {
+      const evidence = event.reviewed_evidence ?? event.reviewed_market_timing;
+      return {
+        symbol: String(event.source),
+        effective: String(event.effective),
+        url: String(evidence.url),
+        basis: String(evidence.basis),
+      };
+    });
 }
