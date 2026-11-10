@@ -14,6 +14,46 @@ def event_session(event):
     return calendar.sessions(day, day + timedelta(days=10))[0]
 
 
+def recipients(event):
+    """Stock consideration as (symbol, shares per source share) pairs.
+
+    Reviewed multi-security conversions list every recipient explicitly;
+    native vendor instructions carry at most one target.
+    """
+    if event.get("targets"):
+        return [(t["symbol"], decimal(t["ratio"])) for t in event["targets"]]
+    if event.get("target"):
+        return [(event["target"], decimal(event.get("ratio", 0)))]
+    return []
+
+
+def zero_recovery(event):
+    """Only a reviewed cancellation may end a holding without consideration."""
+    evidence = event.get("reviewed_evidence") or {}
+    return bool(
+        evidence.get("zero_recovery")
+        and event["kind"] == "cash_mergers"
+        and decimal(event.get("cash", 0)) == ZERO
+        and not recipients(event)
+    )
+
+
+def complete_consideration(event):
+    """A conversion needs a verified recipient/ratio or cash amount.
+
+    A reviewed failure with no equity recovery is the only zero-value case.
+    """
+    if event.get("unpriced_consideration"):
+        return False
+    cash = decimal(event.get("cash", 0))
+    stock = recipients(event)
+    if cash < ZERO or any(ratio <= ZERO or not symbol for symbol, ratio in stock):
+        return False
+    if event["kind"] == "cash_mergers":
+        return cash > ZERO or zero_recovery(event)
+    return bool(stock)
+
+
 def terminal_events(dataset):
     """Only complete conversions followed by no further source quotes.
 
@@ -32,20 +72,17 @@ def terminal_events(dataset):
     for event in dataset.metadata.get("corporate_actions", []):
         if event["kind"] not in MERGERS or event.get("unpriced_consideration"):
             continue
-        source, target = event["source"], event.get("target")
+        source = event["source"]
         rows = dataset.bars.get(source, ())
         effective = event_session(event)
-        cash, ratio = decimal(event.get("cash", 0)), decimal(event.get("ratio", 0))
         if (
             not rows
             or (
                 rows[-1].session >= effective
                 and not verified_nontrading_tail(event, rows)
             )
-            or source == target
-            or cash < ZERO
-            or (event["kind"] == "cash_mergers" and cash <= ZERO)
-            or (event["kind"] != "cash_mergers" and (not target or ratio <= ZERO))
+            or any(symbol == source for symbol, _ in recipients(event))
+            or not complete_consideration(event)
         ):
             continue
         previous = False

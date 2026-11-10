@@ -1,6 +1,8 @@
 # Free-data coverage backlog
 
-Tracked as **B-033 (open)** in the local project backlog; requested November 4, 2026. The target is market/SEC inputs from January 2016, supporting strict full-index research from January 2017 through the latest completed session. A successful exploratory backtest does not close this item.
+Tracked as **B-033** in the local project backlog; requested November 4, 2026. The target is market/SEC inputs from January 2016, supporting strict full-index research from January 2017 through the latest completed session. A successful exploratory backtest does not close this item.
+
+**Status, November 10, 2026 (input contract v9):** the 66/64 price/action exclusions are resolved; all five recipes have zero exclusions from January 2017. Strict full-index validation passes in total-return (ex-date) mode from January 3, 2017 through November 10, 2026. Strict payment-date simulation is still blocked by missing verified payment dates (DOC, ORCL, XRX). Remaining gaps are listed in [historical coverage](HISTORICAL_COVERAGE.md).
 
 ## Evidence and remaining work
 

@@ -19,15 +19,45 @@ def test_exact_dated_filing_and_quote_vintage_are_required(symbol, monkeypatch):
     monkeypatch.setitem(proof, "sha256", hashlib.sha256(raw).hexdigest())
     calls = []
     api = SimpleNamespace(document=lambda url: calls.append(url) or raw)
-    result = verify(symbol, proof["quote_asof"], api)
+    listings = proof.get("listing_ids")
+    result = verify(symbol, proof["quote_asof"], api, listings)
     assert result == {"symbol": symbol, "version": VERSION, **proof}
     assert calls == [proof["url"]]
-    assert verify(symbol, "2026-11-06", api) is None
-    assert verify("UNREVIEWED", proof["quote_asof"], api) is None
+    assert verify(symbol, "2026-11-06", api, listings) is None
+    assert verify("UNREVIEWED", proof["quote_asof"], api, listings) is None
     assert calls == [proof["url"]]
     api.document = lambda url: b"Changed issuer evidence"
     with pytest.raises(ResearchError, match="fingerprint changed"):
-        verify(symbol, proof["quote_asof"], api)
+        verify(symbol, proof["quote_asof"], api, listings)
+
+
+def test_still_listed_issuer_follows_later_vintages_only_with_the_reviewed_listings(
+    monkeypatch,
+):
+    proof = ISSUERS["SOLS"]
+    raw = b"Still-listed issuer fixture"
+    monkeypatch.setitem(proof, "sha256", hashlib.sha256(raw).hexdigest())
+    api = SimpleNamespace(document=lambda url: raw)
+    listings = proof["listing_ids"]
+    # A later Update moves the latest quote vintage forward.
+    assert (
+        verify("SOLS", "2026-12-31", api, list(reversed(listings)))["cik"]
+        == proof["cik"]
+    )
+    assert verify("SOLS", "2026-11-06", api, listings) is None
+    # A new or missing directory record under the ticker fails closed.
+    assert verify("SOLS", "2026-12-31", api, [*listings, "another-listing"]) is None
+    assert verify("SOLS", "2026-12-31", api, listings[:1]) is None
+    supplied = {"symbol": "SOLS", "version": VERSION, **proof}
+    metadata = {
+        "historical_issuer_evidence": {"SOLS": supplied},
+        "identity_resolution": {
+            "SOLS": {"asof": "2026-12-31", "candidate_ids": sorted(listings)}
+        },
+    }
+    assert mapping_evidence(metadata, "SOLS") == supplied
+    metadata["identity_resolution"]["SOLS"]["candidate_ids"] = listings[:1]
+    assert mapping_evidence(metadata, "SOLS") is None
 
 
 def test_imported_or_stale_evidence_cannot_override_current_issuer():
@@ -51,8 +81,9 @@ def test_separation_issuer_mapping_requires_the_repaired_price_contract(symbol):
         "normalizer_version": "dated-research-inputs-v7-native-date-reconciliation",
     }
     assert mapping_evidence(metadata, symbol) is None
-    metadata["normalizer_version"] = proof["required_price_contract"]
-    assert mapping_evidence(metadata, symbol) == proof
+    for contract in proof["required_price_contracts"]:
+        metadata["normalizer_version"] = contract
+        assert mapping_evidence(metadata, symbol) == proof
 
 
 def test_primary_issuer_revalidation_preserves_old_quotes_and_other_blocks(

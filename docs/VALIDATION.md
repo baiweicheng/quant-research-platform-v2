@@ -1,5 +1,66 @@
 # Research milestone validation
 
+## 2026-11-10 — reviewed security events: the 66/64 exclusions included
+
+Input contract `dated-research-inputs-v9-reviewed-security-events` and annual
+normalizer `annual-us-gaap-v5-successors-and-eps-elements` pass **629 backend /
+65 UI tests**, TypeScript/production build, Ruff F lint, changed-file Python
+formatting, frontend formatting and whitespace checks. New regressions cover
+reviewed terminal conversions, distributions, lifetimes, vendor rejections,
+duplicate dividends, multi-recipient and zero-recovery conversions, same-day
+merger entitlements, the implausible-factor guard, Rule 12g-3 predecessor
+financials, the EPS element order and scale-error guard, the short roster lead
+before a first trade in both the coverage plan and backtest validation, a
+still-listed issuer proof across later quote vintages, and repeat incremental
+Updates that carry earlier reviewed records.
+
+Acceptance used an isolated copy of the normal workspace (three 0.7.0
+snapshots, seven results). An actual browser Update of the November 6 snapshot
+revalidated the full history once in **636.3 seconds**. A repeat browser Update
+completed in **169.4 seconds** and created `fa1cbb88c5ea581a24f3ebdb`. Between the
+two snapshots, only November 10 volumes (527 series) changed. Annual records
+(27,426), financial histories and opening distribution marks are identical; the
+repeat also resolves Solstice's listing proof. A fresh empty-workspace
+acquisition through the same Download code took **714.8 seconds**, run while
+browser backtests used the worker.
+
+On `fa1cbb88c5ea581a24f3ebdb`, all **66 names excluded by v8** (64 for the two
+quality recipes) are inside the universe of every recipe. Every recipe has
+**704 stocks and zero exclusions** for January 3, 2017–November 6, 2026. The
+five unchanged recipes then completed through the browser for that period.
+Independent replay exactly matches **12,380 daily cash/NAV/SPY valuations**,
+**445,940 filing components** and **443,930 EPS/split checks**, with zero error.
+Final holdings, caps, membership, costs and 22 merger conversions also match.
+The conversions include former exclusions held through their reviewed terms:
+MON, TWX, COL, AET, WFM, WCG, ANDV, CELG, and FOXA.OLD/FOX.OLD into new Fox
+plus Disney. Isolated paper orders/plans/approvals are zero; integrity is ok.
+
+| Recipe | Normal 0.7.0 (118/116 excluded) | v8 (66/64) | v9 (0) | v9 drawdown |
+| --- | ---: | ---: | ---: | ---: |
+| 12–1 Momentum | 226.14% | 227.67% | 214.59% | −37.04% |
+| Defensive Low Volatility | 132.01% | 132.94% | 135.91% | −26.70% |
+| Profitability / Quality | 181.15% | 173.59% | 165.91% | −31.21% |
+| Quality Value | 248.87% | 212.24% | 200.86% | −32.92% |
+| Value + Momentum | 246.52% | 236.76% | 275.83% | −40.95% |
+
+SPY returned 277.70% over the same period. Differences combine the newly
+included stocks with the corrected spin-offs, dividends and financial inputs.
+These are data/accounting validation runs, not strategy tuning.
+
+The independent primary-source audit re-checks fingerprints and stated terms for
+43 terminal conversions, 29 distributions, five lifetimes, eight dividend
+amounts and ten succession filings, with zero failures. The first browser batch
+failed in all five recipes because the backtest's coverage validation lacked
+the coverage plan's five-session roster lead (AMCR); the second repeat-Update
+attempt failed on a carried SW rejection. Both were fixed and re-verified; no
+failed attempt is counted as acceptance. The normal workspace database, WAL and
+`.env` hashes are unchanged.
+
+Gross profitability is still missing for 40.8% of member-weeks; this is the
+next item. See [historical coverage](HISTORICAL_COVERAGE.md) for the remaining
+minor gaps. Reports and screenshots are under ignored
+`var/uat/data-gap-v9-2026-11-10/acceptance/`.
+
 ## 2026-11-10 — separation share units and 51 restored financial histories
 
 Input contract `dated-research-inputs-v8-reviewed-separations` passes **486

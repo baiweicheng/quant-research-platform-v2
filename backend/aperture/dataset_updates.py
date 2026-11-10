@@ -32,6 +32,7 @@ def update(store, identifier, progress, provider=None):
         "dated-research-inputs-v5-listing-and-market-timing",
         "dated-research-inputs-v6-dated-issuers",
         "dated-research-inputs-v7-native-date-reconciliation",
+        "dated-research-inputs-v8-reviewed-separations",
         RESEARCH_VERSION,
     }:
         from .bundles import download
@@ -40,6 +41,14 @@ def update(store, identifier, progress, provider=None):
         if audit:
             progress(2, "Refreshing membership before the incremental update")
             membership.refresh_all(store)
+        # Earlier input contracts froze vendor actions that reviewed records
+        # now correct (duplicate dividends, distributions recorded as splits,
+        # other securities' actions). Their first update revalidates the full
+        # history once; later updates of the current contract are incremental.
+        # The earlier snapshot and its saved results are never modified.
+        incremental = base if normalizer == RESEARCH_VERSION else None
+        if incremental is None:
+            progress(3, "Input corrections changed; revalidating the full history once")
         return download(
             store,
             {
@@ -53,7 +62,7 @@ def update(store, identifier, progress, provider=None):
             },
             progress,
             provider,
-            base=base,
+            base=incremental,
             refresh=True,
         )
     if normalizer and normalizer.startswith("dated-research-inputs-"):

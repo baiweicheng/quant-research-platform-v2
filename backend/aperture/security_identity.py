@@ -118,28 +118,14 @@ DOW_GAP = (
 
 
 def known_gaps(names, first, last):
-    gaps = []
-    if "BNY" in names:
-        gaps.append(
-            {
-                "symbol": "BNY",
-                "start": str(first),
-                "end": str(last),
-                "kind": "identity",
-                "reason": BNY_GAP,
-            }
-        )
-    if "DOW" in names and first < date(2019, 4, 2):
-        gaps.append(
-            {
-                "symbol": "DOW",
-                "start": str(first),
-                "end": str(min(last, date(2019, 4, 1))),
-                "kind": "identity",
-                "reason": DOW_GAP,
-            }
-        )
-    return gaps
+    """Unreconciled identity paths that still require exclusion.
+
+    BNY's fund records are now rejected by their raw-symbol epoch and DOW's
+    pre-separation quotes are outside its reviewed listing lifetime
+    (``reviewed_events``), so neither needs a blanket gap. The constants stay
+    to remove the superseded issues from earlier snapshots.
+    """
+    return []
 
 
 def freeze_historical_quotes(base, symbol, asof, begin):

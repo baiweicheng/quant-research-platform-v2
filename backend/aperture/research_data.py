@@ -12,14 +12,14 @@ from zoneinfo import ZoneInfo
 from . import calendar, membership
 from .domain import Bar, Dataset, ResearchError, ZERO, decimal
 from .store import now
-from .research_overrides import ALIASES, CONFLICTS
+from .research_overrides import ALIASES, CONFLICTS, PREDECESSORS, RENAMES
 from .action_evidence import (
     verified_continuation,
     supplement_splits,
     VERSION as ACTION_EVIDENCE_VERSION,
 )
 
-VERSION = "dated-research-inputs-v8-reviewed-separations"
+VERSION = "dated-research-inputs-v9-reviewed-security-events"
 MISSING_DIRECTORY = "Historical listing identity is unavailable in the captured directory; a raw-symbol fallback is not issuer verification."
 MULTIPLE_DIRECTORY = "Multiple historical listing identities require dated issuer/share-basis verification."
 
@@ -29,16 +29,20 @@ def unreconciled_mergers(events):
     # Separate cash/stock rows may be alternative elections or overlapping
     # instructions, not additive entitlements. Exact duplicates are harmless
     # for this gate; distinct economic instructions require reconciliation.
+    # A vendor sometimes repeats one instruction with a later processing or
+    # payment date; identical economic terms are the same entitlement.
+    from .lifecycles import recipients
+
     merger_terms = defaultdict(set)
     for event in events:
         if event["kind"] in {"cash_mergers", "stock_mergers", "stock_and_cash_mergers"}:
             merger_terms[(event["source"], event["effective"])].add(
                 (
                     event["kind"],
-                    event.get("target"),
-                    event.get("ratio"),
-                    event.get("cash"),
-                    event.get("pay_date"),
+                    tuple(
+                        sorted((s, str(r.normalize())) for s, r in recipients(event))
+                    ),
+                    str(decimal(event.get("cash") or 0).normalize()),
                 )
             )
     for (symbol, effective), terms in merger_terms.items():
@@ -87,18 +91,12 @@ def input_issues(dataset):
     for issue in unreconciled_mergers(dataset.metadata.get("corporate_actions", [])):
         if issue not in issues:
             issues.append(issue)
+    from .lifecycles import MERGERS, complete_consideration
+
     for event in dataset.metadata.get("corporate_actions", []):
-        if event.get("unpriced_consideration"):
+        if event.get("unpriced_consideration") or event["kind"] not in MERGERS:
             continue
-        cash, ratio = decimal(event.get("cash", 0)), decimal(event.get("ratio", 0))
-        if (
-            cash < ZERO
-            or (event["kind"] == "cash_mergers" and cash <= ZERO)
-            or (
-                event["kind"] in ("stock_mergers", "stock_and_cash_mergers")
-                and (not event.get("target") or ratio <= ZERO)
-            )
-        ):
+        if not complete_consideration(event):
             issues.append(
                 {
                     "symbol": event["source"],
@@ -139,9 +137,14 @@ def blocked_inputs(dataset, names, start, end, mode="ex_date", *, issue_index=No
 
 
 def security_events(portfolio, day, events, bars, model):
-    """Verified contractual merger consideration; never invent a terminal price."""
-    from .lifecycles import event_session
+    """Verified contractual merger consideration; never invent a terminal price.
 
+    Returns the recipient shares issued today, so same-day recipient
+    entitlements stay with holders of record at the prior close.
+    """
+    from .lifecycles import complete_consideration, event_session, recipients
+
+    issued = defaultdict(lambda: ZERO)
     for event in events:
         if (
             event["kind"]
@@ -161,28 +164,21 @@ def security_events(portfolio, day, events, bars, model):
             raise ResearchError(
                 f"{symbol} merger includes unlisted contingent rights ({event['unpriced_consideration']}) without a verified market value. This held position cannot be valued as cash-only."
             )
-        cash = decimal(event.get("cash", 0))
-        ratio = decimal(event.get("ratio", 0))
-        if (
-            cash < ZERO
-            or (event["kind"] == "cash_mergers" and cash <= ZERO)
-            or (
-                event["kind"] in ("stock_mergers", "stock_and_cash_mergers")
-                and (not event.get("target") or ratio <= ZERO)
-            )
-        ):
+        if not complete_consideration(event):
             raise ResearchError(
                 f"{symbol}: merger consideration is incomplete or invalid on {day}. A held position cannot be removed at an assumed zero recovery."
             )
         portfolio.positions.pop(symbol)
-        if event.get("target"):
-            if event["target"] not in bars:
+        for target, ratio in recipients(event):
+            if target not in bars:
                 raise ResearchError(
-                    f"Missing merger consideration price: {event['target']} on {day}."
+                    f"Missing merger consideration price: {target} on {day}."
                 )
-            portfolio.positions[event["target"]] = portfolio.positions.get(
-                event["target"], ZERO
-            ) + quantity * decimal(event["ratio"])
+            portfolio.positions[target] = (
+                portfolio.positions.get(target, ZERO) + quantity * ratio
+            )
+            if target != symbol:  # A same-issuer continuation keeps its record date.
+                issued[target] += quantity * ratio
         if decimal(event.get("cash", "0")):
             pay = event.get("pay_date")
             if model == "pay_date" and (not pay or pay < str(day)):
@@ -193,6 +189,7 @@ def security_events(portfolio, day, events, bars, model):
             portfolio.receivables.append(
                 (date.fromisoformat(pay), quantity * decimal(event["cash"]))
             )
+    return dict(issued)
 
 
 def _parse_pages(pages, symbols, first, last):
@@ -243,11 +240,19 @@ def download(store, payload, progress, provider=None, base=None):
     try:
         names, audit, sectors = membership.resolve(store, payload, first, last)
         progress(3, "Reading dated identities and corporate-action evidence")
+        # Reviewed earlier tickers of indexed securities carry their own
+        # dividends and actions; request them with the indexed labels.
+        alias_quotes = {
+            a["quote"]
+            for a in ALIASES
+            if first <= date.fromisoformat(a["until"])
+            and (a["symbol"] in names or a["quote"] in names)
+        }
         action_pages = batch_pages(
             api,
             "/v1/corporate-actions",
             {
-                "symbols": ",".join(names),
+                "symbols": ",".join(membership.symbols(set(names) | alias_quotes)),
                 "start": str(first - timedelta(days=90)),
                 "end": str(last + timedelta(days=90)),
                 "limit": 1000,
@@ -341,10 +346,27 @@ def download(store, payload, progress, provider=None, base=None):
             ],
             key=lambda e: e["process_date"],
         )
+        known = {(e["old_symbol"], e["new_symbol"]) for e in renames}
+        renames = sorted(
+            renames
+            + [
+                {"kind": "name_changes", "reviewed": True, **r}
+                for r in RENAMES
+                if (r["old_symbol"], r["new_symbol"]) not in known
+            ],
+            key=lambda e: e["process_date"],
+        )
 
         def canonical(symbol, day):
-            if symbol in ("DOW", "DD") and str(day) < "2017-09-01":
+            if symbol in PREDECESSORS and str(day) < PREDECESSORS[symbol][0]:
                 return symbol + ".OLD"
+            for alias in ALIASES:
+                if (
+                    symbol == alias["quote"] != alias["symbol"]
+                    and str(day) <= alias["until"]
+                ):
+                    symbol = alias["symbol"]
+                    break
             seen = set()
             after = str(day)
             for _ in range(20):
@@ -471,6 +493,36 @@ def download(store, payload, progress, provider=None, base=None):
             names, listing_candidates, list(events.values()), first, last, api
         )
         dependencies.update(e["target"] for e in supplements if e.get("target"))
+        from . import reviewed_events
+
+        dependencies.update(reviewed_events.dependencies(names, first, last))
+        displaced = reviewed_events.displaced_native()
+        set_aside = {}
+
+        def excluded_native(event, raw, day, owner):
+            """Reviewed rejections and displaced vendor proxies, kept in provenance."""
+            reason = reviewed_events.rejected_native(event, raw, day, owner)
+            if reason:
+                set_aside[event["id"]] = {
+                    "status": "rejected",
+                    "symbol": owner,
+                    "raw_symbol": raw,
+                    "kind": event["kind"],
+                    "date": str(day),
+                    "basis": reason,
+                }
+                return True
+            if event["id"] in displaced and displaced[event["id"]] == owner:
+                set_aside[event["id"]] = {
+                    "status": "displaced",
+                    "symbol": owner,
+                    "raw_symbol": raw,
+                    "kind": event["kind"],
+                    "date": str(day),
+                    "basis": "Superseded by a reviewed distribution with primary-source terms.",
+                }
+                return True
+            return False
 
         for event in events.values():
             kind = event["kind"]
@@ -490,8 +542,11 @@ def download(store, payload, progress, provider=None, base=None):
             )
             if not symbol or not first <= day <= last or kind == "name_changes":
                 continue
+            raw_symbol = symbol
             symbol = canonical(symbol, day)
             if symbol not in names:
+                continue
+            if excluded_native(event, raw_symbol, day, symbol):
                 continue
             record = {
                 "id": event["id"],
@@ -612,18 +667,26 @@ def download(store, payload, progress, provider=None, base=None):
                 asof = last_membership[symbol]
             from .separations import dependency_asof
 
-            return (
-                date(2017, 8, 31)
-                if symbol in ("DOW.OLD", "DD.OLD")
-                else dependency_asof(symbol, primary_symbols, asof)
-            )
+            predecessor = PREDECESSORS.get(symbol.removesuffix(".OLD"))
+            if symbol.endswith(".OLD") and predecessor:
+                return date.fromisoformat(predecessor[1])
+            if symbol not in primary_symbols and symbol in reviewed_asof:
+                return reviewed_asof[symbol]
+            return dependency_asof(symbol, primary_symbols, asof)
+
+        reviewed_asof = reviewed_events.children_asof()
 
         from .historical_issuers import verify as verify_issuer
 
         issuer_evidence = {
             symbol: proof
             for symbol in names
-            if (proof := verify_issuer(symbol, quote_asof(symbol), api)) is not None
+            if (
+                proof := verify_issuer(
+                    symbol, quote_asof(symbol), api, sorted(listing_candidates[symbol])
+                )
+            )
+            is not None
         }
         supported_listing_symbols = set()
         for symbol in names:
@@ -763,16 +826,50 @@ def download(store, payload, progress, provider=None, base=None):
             adj_rows = _parse_pages(
                 split_pages, quote_names.values(), date.fromisoformat(begin), last
             )
+            # A multi-symbol request can silently omit one of two symbols that
+            # the provider links to related issuers (for example DOW with DD).
+            # Request each omitted symbol alone before treating it as missing.
+            for quote_name in sorted(set(quote_names.values())):
+                if raw_rows[quote_name] and adj_rows[quote_name]:
+                    continue
+                single = {**query, "symbols": quote_name}
+                for adjustment, parsed in (("raw", raw_rows), ("split", adj_rows)):
+                    pages = batch_pages(
+                        api,
+                        "/v2/stocks/bars",
+                        {**single, "adjustment": adjustment},
+                        "bars",
+                    )
+                    rows = _parse_pages(
+                        pages, [quote_name], date.fromisoformat(begin), last
+                    )[quote_name]
+                    if rows:
+                        parsed[quote_name] = rows
+                    acquisition.append(
+                        {
+                            "individual_retry": {**single, "adjustment": adjustment},
+                            "digest": store.capture_source(
+                                json.dumps(pages, sort_keys=True).encode()
+                            ),
+                        }
+                    )
             for symbol, quote_name in quote_names.items():
+                # A predecessor label keeps only quotes before its successor's
+                # first session; the same ticker later denotes another issuer.
+                cutoff = (
+                    date.fromisoformat(PREDECESSORS[quote_name][0])
+                    if symbol.endswith(".OLD") and quote_name in PREDECESSORS
+                    else date.max
+                )
                 bars[symbol] = {
                     d: replace(b, symbol=symbol)
                     for d, b in raw_rows[quote_name].items()
-                    if not symbol.endswith(".OLD") or d < date(2017, 9, 1)
+                    if d < cutoff
                 }
                 adjusted[symbol] = {
                     d: replace(b, symbol=symbol)
                     for d, b in adj_rows[quote_name].items()
-                    if not symbol.endswith(".OLD") or d < date(2017, 9, 1)
+                    if d < cutoff
                 }
             acquisition.append(
                 {
@@ -795,7 +892,7 @@ def download(store, payload, progress, provider=None, base=None):
                 continue
             query = {
                 "symbols": quote_name,
-                "asof": alias["until"],
+                "asof": alias.get("asof", alias["until"]),
                 "start": str(alias_first),
                 "end": calendar.close_time(until).isoformat(),
                 "timeframe": "1Day",
@@ -823,6 +920,12 @@ def download(store, payload, progress, provider=None, base=None):
                     }
                 )
             identity[symbol]["reviewed_alias"] = alias
+            # The original ticker's corporate actions were requested with the
+            # indexed labels and mapped to this security through ``until``;
+            # its split-adjusted quotes enter the same cross-check below.
+            if quote_name in alias_quotes:
+                identity[symbol]["original_actions_reconciled"] = True
+                identity[symbol]["original_action_query"] = quote_name
         # New Ingersoll Rand (formerly GDI) is a different equity from the
         # old IR parent, which became TT. Do not use the old equity as warm-up.
         if "IR" in bars and any(
@@ -865,7 +968,51 @@ def download(store, payload, progress, provider=None, base=None):
                     ),
                 }
             )
+        # Original-ticker sessions are checked against the same quote vintage
+        # that supplied their prices, not the later listing's mapping.
+        for alias in ALIASES:
+            symbol, quote_name = alias["symbol"], alias["quote"]
+            until = min(last, date.fromisoformat(alias["until"]))
+            alias_first = query_start if base and base.bars.get(symbol) else first
+            if (
+                symbol not in foreign_names
+                or identity.get(symbol, {}).get("reviewed_alias") != alias
+                or until < alias_first
+            ):
+                continue
+            query = {
+                "symbols": quote_name,
+                "asof": alias.get("asof", alias["until"]),
+                "start": str(alias_first),
+                "end": calendar.close_time(until).isoformat(),
+                "timeframe": "1Day",
+                "feed": "sip",
+                "currency": "USD",
+                "adjustment": "dividend",
+                "limit": 10000,
+                "sort": "asc",
+            }
+            pages = batch_pages(api, "/v2/stocks/bars", query, "bars")
+            rows = _parse_pages(pages, [quote_name], alias_first, until)[quote_name]
+            dividend_adjusted[symbol] = {
+                **{
+                    d: b
+                    for d, b in dividend_adjusted.get(symbol, {}).items()
+                    if d > until
+                },
+                **rows,
+            }
+            acquisition.append(
+                {
+                    "dividend_unit_check": query,
+                    "alias": alias,
+                    "digest": store.capture_source(
+                        json.dumps(pages, sort_keys=True).encode()
+                    ),
+                }
+            )
         progress(60, "Normalizing ex-date income and contractual corporate actions")
+        dividend_records = {}
         for event in events.values():
             kind = event["kind"]
             if kind not in (
@@ -875,16 +1022,46 @@ def download(store, payload, progress, provider=None, base=None):
                 "stock_dividends",
             ):
                 continue
-            symbol = event.get("symbol")
+            raw_symbol = event.get("symbol")
             day = date.fromisoformat(event.get("ex_date") or event["process_date"])
-            symbol = canonical(symbol, day) if symbol else None
+            symbol = canonical(raw_symbol, day) if raw_symbol else None
             if symbol not in bars or day not in bars[symbol]:
+                continue
+            if excluded_native(event, raw_symbol, day, symbol):
                 continue
             bar = bars[symbol][day]
             if event["id"] in CONFLICTS:
                 issue(symbol, day, CONFLICTS[event["id"]])
                 continue
             if kind == "cash_dividends":
+                # One distribution is sometimes listed under both an old and
+                # a new CUSIP around a redomicile or holding-company exchange.
+                # Identical terms on two securities IDs are one entitlement.
+                signature = (
+                    symbol,
+                    str(day),
+                    str(decimal(event["rate"]).normalize()),
+                    event.get("record_date"),
+                    event.get("payable_date"),
+                )
+                prior = dividend_records.get(signature)
+                if (
+                    prior
+                    and prior.get("cusip")
+                    and event.get("cusip")
+                    and prior["cusip"] != event["cusip"]
+                ):
+                    set_aside[event["id"]] = {
+                        "status": "duplicate",
+                        "symbol": symbol,
+                        "raw_symbol": raw_symbol,
+                        "kind": kind,
+                        "date": str(day),
+                        "duplicate_of": prior["id"],
+                        "basis": "The same cash distribution (amount, record and payable dates) is recorded under a second CUSIP; it is counted once.",
+                    }
+                    continue
+                dividend_records.setdefault(signature, event)
                 if (
                     event.get("currency") not in (None, "", "USD")
                     or event.get("due_bill_on_date")
@@ -1005,10 +1182,10 @@ def download(store, payload, progress, provider=None, base=None):
                 half = Decimal(".005")
                 low = (a.close - b.close * (pa + half) / (pb - half)) / b.split
                 high = (a.close - b.close * (pa - half) / (pb + half)) / b.split
-                if (
-                    not low - Decimal(".00001")
-                    <= b.research_dividend
-                    <= high + Decimal(".00001")
+                if not low - Decimal(".00001") <= b.research_dividend <= high + Decimal(
+                    ".00001"
+                ) and not reviewed_events.verified_dividend(
+                    symbol, after, b.research_dividend
                 ):
                     issue(
                         symbol,
@@ -1104,7 +1281,7 @@ def download(store, payload, progress, provider=None, base=None):
 
         separation_checks = []
 
-        def separation_quotes(stocks, begin, end, asof):
+        def separation_quotes(stocks, begin, end, asof, adjustment="raw"):
             query = {
                 "symbols": ",".join(sorted(stocks)),
                 "timeframe": "1Day",
@@ -1114,8 +1291,8 @@ def download(store, payload, progress, provider=None, base=None):
                 "currency": "USD",
                 "limit": 10000,
                 "sort": "asc",
-                "asof": asof,
-                "adjustment": "raw",
+                **({"asof": asof} if asof else {}),
+                "adjustment": adjustment,
             }
             pages = batch_pages(api, "/v2/stocks/bars", query, "bars")
             separation_checks.append(
@@ -1144,6 +1321,44 @@ def download(store, payload, progress, provider=None, base=None):
 
         normalized_events = apply_timing(normalized_events, identity, bars, api, issue)
         normalized_events = apply_missing(normalized_events, supplements, bars, issue)
+        # Carried vendor records later reviewed as another security's actions.
+        normalized_events = [
+            e
+            for e in normalized_events
+            if not reviewed_events.rejected_native(
+                e.get("source_record") or {"id": e["id"]},
+                (e.get("source_record") or {}).get("symbol")
+                or (e.get("source_record") or {}).get("acquiree_symbol")
+                or e["source"],
+                e["effective"],
+                e["source"],
+            )
+        ]
+        quote_supplements = reviewed_events.supplement_quotes(
+            bars, identity, first, last, issue, separation_quotes
+        )
+        normalized_events, issues, reviewed_receipts = reviewed_events.apply(
+            bars,
+            identity,
+            normalized_events,
+            opening_income,
+            issues,
+            first,
+            last,
+            api,
+            issue,
+        )
+        receipt_ids = {r["id"] for r in reviewed_receipts}
+        normalized_events = [
+            e for e in normalized_events if e["id"] not in receipt_ids
+        ] + reviewed_receipts
+        reviewed_days = {
+            (e["source"], e["effective"])
+            for e in normalized_events
+            if e["kind"] in ("reviewed_distributions", "reviewed_separations")
+        }
+        for finding in reviewed_events.implausible_share_factors(bars, reviewed_days):
+            issue(*finding)
         issues = [i for i in issues if i["reason"] not in {BNY_GAP, DOW_GAP}]
         issues.extend(known_gaps(names, first, last))
         for finding in unreconciled_mergers(normalized_events):
@@ -1188,6 +1403,9 @@ def download(store, payload, progress, provider=None, base=None):
             "historical_identity_revalidation": identity_revalidation,
             "reviewed_separation_evidence": separation_receipts,
             "separation_price_checks": separation_checks,
+            "reviewed_event_version": reviewed_events.VERSION,
+            "set_aside_vendor_records": set_aside,
+            "reviewed_quote_supplements": quote_supplements,
             "research_open_income": opening_income,
             "input_issues": issues,
         }
@@ -1210,6 +1428,9 @@ def download(store, payload, progress, provider=None, base=None):
             "historical_identity_revalidation": identity_revalidation,
             "reviewed_separation_evidence": separation_receipts,
             "separation_price_checks": separation_checks,
+            "reviewed_event_version": reviewed_events.VERSION,
+            "set_aside_vendor_records": set_aside,
+            "reviewed_quote_supplements": quote_supplements,
             "coverage": health,
             "membership": audit,
             "retrieved_at": now(),

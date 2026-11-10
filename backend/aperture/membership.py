@@ -399,6 +399,24 @@ def current_names(audit, decision):
     return {m["symbol"] for m in audit["members"]}
 
 
+MAX_LISTING_LEAD = 5
+
+
+def listing_lead(member_days, quoted):
+    """Roster sessions before a new listing's first regular-way trade.
+
+    A retrospective roster can date an addition a few sessions before the new
+    listing first trades. No position can be bought before that trade, so up
+    to five such sessions at the start of membership need no prices. Longer
+    gaps, or gaps after earlier quotes, remain missing inputs.
+    """
+    opening = min(quoted) if quoted else None
+    leading = [day for day in member_days if opening and day < opening]
+    if leading and len(leading) <= MAX_LISTING_LEAD and leading[0] == member_days[0]:
+        return set(leading)
+    return set()
+
+
 def validate_coverage(dataset, start, end, dividend_model=None, excluded_names=None):
     audit = dataset.metadata.get("membership")
     if not audit:
@@ -415,10 +433,21 @@ def validate_coverage(dataset, start, end, dividend_model=None, excluded_names=N
 
     ceased = {s: event_session(e) for s, e in terminal_events(dataset).items()}
     by_day = {s: {b.session for b in bars} for s, bars in dataset.bars.items()}
-    for day in calendar.sessions(start, end):
+    sessions = calendar.sessions(start, end)
+    roster = {day: historical_names(audit, day) for day in sessions}
+    member_days = {}
+    for day in sessions:
+        for symbol in roster[day]:
+            member_days.setdefault(symbol, []).append(day)
+    lead = {
+        symbol: listing_lead(days, by_day.get(symbol, set()))
+        for symbol, days in member_days.items()
+    }
+    for day in sessions:
         from .research_data import blocked_inputs
 
-        needed = historical_names(audit, day) - (excluded_names or set())
+        needed = roster[day] - (excluded_names or set())
+        needed -= {s for s in needed if day in lead.get(s, ())}
         needed -= {s for s, effective in ceased.items() if effective <= day}
 
         blocked = blocked_inputs(

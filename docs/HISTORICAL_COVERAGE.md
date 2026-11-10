@@ -2,6 +2,114 @@
 
 Engine 0.6.0 narrows the price history required for exploratory backtests and adds reviewed missing merger terms. The normal Download and Update workflows apply the data supplements automatically. Original snapshots and saved results remain frozen.
 
+## Reviewed security events and financial successions (input contract v9)
+
+Input contract `dated-research-inputs-v9-reviewed-security-events` with annual
+normalizer `annual-us-gaap-v5-successors-and-eps-elements` removes the remaining
+price/action exclusions for January 3, 2017–November 6, 2026. All five recipes
+now use the full **704-stock** dated universe with **zero exclusions**, down
+from 66 (momentum, low volatility, value + momentum) and 64 (quality, quality
+value). The ordinary Download and Update apply every repair; no new user step
+exists. The first Update of an older snapshot revalidates the full history once,
+because earlier snapshots froze vendor records that these reviews correct.
+
+Most former exclusions had prices through the real final session, but the
+vendor's terminal record was missing, misdated or incomplete. The reviewed
+registry (`backend/aperture/reviewed_events.py`) holds primary-filing terms,
+fingerprints and the captured final close for each case:
+
+- **43 terminal conversions**, including cash, stock and mixed mergers, the
+  21st Century Fox split into Disney plus new Fox shares, and conversions on
+  the first session after trading stopped. Elections model the non-electing
+  holder, never a favourable choice in hindsight (Andeavor, GGP, Paramount).
+  Silicon Valley Bank, First Republic and Signature Bank end at zero value,
+  following receivership with no later exchange trade.
+- **29 reviewed distributions** replace spin-off proxies that the vendor recorded
+  as parent reverse splits. Without the fix, TGNA, CNX, EQT and UTX/RTX showed
+  one-day losses of 58–90%. Spin-offs missing from vendor data are added (YUM,
+  PNR, JCI, BIIB, MRK, IBM). Children are valued at their ex-date close.
+- **Five listing lifetimes** remove quotes that belong to another security under
+  the same ticker (DOW before April 2, 2019; FOXA/FOX before the new Fox; Under
+  Armour Class A history under the Class C label; IHS Markit marks after its
+  conversion).
+- The same dividend listed under a second CUSIP counts once (33 records). Two
+  more duplicate payments are rejected individually: TransDigm's $90 special
+  and a second Xcel dividend. Eight foreign-issuer dividend amounts are
+  confirmed from the issuer's periodic report.
+- Vendor records belonging to other securities are rejected: BNY's municipal
+  fund before the bank adopted the ticker, a fund liquidation under the reused
+  CA ticker, Caesars/Eldorado, Physicians Realty/Healthpeak, and a phantom RJF
+  stock dividend. Level 3's final October 2017 sessions come from the undated
+  quote mapping; every overlapping row has to match exactly.
+- Old tickers (YHOO/AABA, DLPH/APTV, CDAY/DAY, LB/BBWI, BHI/BHGE, WYN/WYND,
+  FMC Technologies/TechnipFMC) now include the old ticker's corporate actions.
+- A new guard blocks any unreviewed split or distribution day whose total return
+  differs from SPY by more than about −22%/+28%. Such a day indicates a
+  mislabeled or doubled action. Reviewed days and genuine large moves on
+  dividend days are not affected.
+- Shares received in a merger on its effective session were not held at the
+  prior close. They no longer receive that session's split or ex-date
+  entitlement. Coverage ignores repeated zero-volume closing marks after
+  trading stops. It also ignores up to five roster sessions before a new
+  listing's first trade; backtest validation applies the same rule.
+
+Financial inputs gained three repairs:
+
+- **Nine reviewed Rule 12g-3 successions** (ExxonMobil 2026, APA, Broadcom,
+  Bunge, BlackRock, Cigna, Disney, Xerox, and WestRock/Smurfit Westrock). The
+  current SEC ticker map points at the new registrant. The predecessor's own
+  annual reports, filed before the succession, are now used for the same listed
+  shares. WestRock's reports stop at the July 2024 Smurfit combination, which
+  paid $5.00 per share and added a merged business.
+- Diluted EPS uses `EarningsPerShareDiluted`, then the combined
+  `EarningsPerShareBasicAndDiluted` element, then diluted EPS from continuing
+  operations. The last applies only when the filing has no whole-entity net
+  element. Many single-class filers without discontinued operations tag their
+  bottom-line EPS only this way (Monster, Regency, Kimco, Analog Devices,
+  American Express 2014–2018, Halliburton, Exelon, ConocoPhillips). Earnings
+  before discontinued operations is also the usual research earnings measure.
+- Positive EPS above the decision share price is rejected as a filing scale
+  error. Example: Halliburton's 2023–2025 10-Ks tag $1.73 as 1,730,000. Losses
+  larger than the share price remain valid negative inputs.
+
+Weekly S&P 500 member observations lacking a value (earnings-yield) input fell
+from **37,156 of 258,682 (14.4%)** in the earlier normal snapshot to **5,844
+(2.3%)**. Those lacking a quality (gross-profitability) input fell from 119,007
+(46.0%) to 105,532 (40.8%). The same audit covers the 513 weekly decisions from
+2017-01-03.
+
+### Remaining gaps
+
+- **Backtests starting in 2016** still exclude members that left the index in
+  2016 and have no directory identity or merger terms, for example EMC, TWC,
+  BRCM and Cameron. Counts: 21 for a February 2016 start, 9 for June, 1 (old
+  Arconic) for October, 0 from 2017. The default start date is January 2017.
+  The three 253-session recipes cannot rank stocks in 2016 anyway.
+- **Value inputs (2.3% of member-weeks):** the main causes are multi-class issuers
+  that report EPS only per class (Berkshire by design, Hershey, Constellation
+  Brands, Visa, Discovery, Under Armour, Alphabet in some years, Erie, KKR,
+  Ares) and banks that filed with the FDIC (First Republic, Signature). Newly
+  listed companies before their first 10-K, Halliburton's three scale-error
+  filings and a small remainder account for the rest.
+- **Quality inputs are the next item, not a minor gap.** Gross profitability is
+  missing for 40.8% of member-weeks. About 21.7 points are financials,
+  utilities and REITs (about 56,000 member-weeks), where gross profit is often
+  not a reported line. About 19 points are operating companies, for example
+  UNP, XOM and MCD in every week, and Intuit, Oracle and Verizon until roughly
+  the last two years. That pattern may be an extraction gap; the cause has not
+  been diagnosed. Missing profitability leaves a stock unranked rather than
+  excluded, so the exclusion counts above do not show it.
+- **Payment-date simulation:** strict full-index validation passes in
+  total-return (ex-date) mode from January 3, 2017 through November 10, 2026.
+  The stricter cash-flow mode still lacks verified payment dates for DOC, ORCL
+  and XRX.
+- **Approximations:** Celgene's tradeable CVR is valued at its first close
+  ($2.25). Walgreens' asset-proceeds right is not credited. Technip Energies
+  (Paris-only) is valued from the vendor's adjustment. Millrose is valued at
+  its first regular-way close, 13 sessions after Lennar's ex-date. Sectors
+  remain static current/last-known labels. The roster is retrospective; its
+  size stays between 503 and 507 share classes throughout.
+
 ## Individual listings and market timing
 
 ### Reviewed separations and expanded issuer coverage (input contract v8)

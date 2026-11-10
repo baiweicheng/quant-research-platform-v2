@@ -817,6 +817,8 @@ def test_refresh_preserves_spanning_identity_issues_and_new_symbol_old_events(ve
         "dated-research-inputs-v1",
         "dated-research-inputs-v2-reviewed-actions",
         "dated-research-inputs-v3-holding-lifetimes",
+        "dated-research-inputs-v8-reviewed-separations",
+        "dated-research-inputs-v9-reviewed-security-events",
     ],
 )
 def test_normal_update_keeps_the_combined_dated_research_workflow(
@@ -824,6 +826,7 @@ def test_normal_update_keeps_the_combined_dated_research_workflow(
 ):
     from dataclasses import replace
     from aperture.dataset_updates import update
+    from aperture.research_data import VERSION
 
     s, p, state = vendor
     saved = download(s, payload(), lambda *a: None, p)
@@ -850,7 +853,13 @@ def test_normal_update_keeps_the_combined_dated_research_workflow(
     )
     assert update(s, versioned.id, lambda *a: None, p) == saved
     assert len(calls) == 1 and calls[0][1]["refresh"] is True
-    assert calls[0][1]["base"].id == versioned.id
+    # Earlier contracts froze vendor actions now corrected by reviewed
+    # records, so their first update revalidates the full history once.
+    if normalizer == VERSION:
+        assert calls[0][1]["base"].id == versioned.id
+    else:
+        assert calls[0][1]["base"] is None
+        assert calls[0][0]["start"] == d.metadata["download"]["start"]
 
 
 def test_unknown_dated_input_version_does_not_fall_back_to_legacy_download(vendor):

@@ -12,18 +12,25 @@ def apply_actions(
     bars: dict[str, Bar],
     dividend_model="pay_date",
     opening_income=None,
+    fresh=None,
 ) -> None:
-    """Apply splits and accrue only overnight holders' dividend entitlements."""
-    for symbol, quantity in list(portfolio.positions.items()):
-        if quantity <= ZERO:
+    """Apply splits and accrue only overnight holders' dividend entitlements.
+
+    Shares issued as merger consideration at today's effective time were not
+    held at the prior close. They neither split again nor receive the
+    recipient's same-day ex-date dividends or spin-off distributions.
+    """
+    for symbol, held in list(portfolio.positions.items()):
+        if held <= ZERO:
             continue
         if symbol not in bars:
             raise ResearchError(
                 f"Missing {symbol} price on {day}. A held stock cannot be silently removed or exited at an assumed price."
             )
         bar = bars[symbol]
-        quantity *= bar.split
-        portfolio.positions[symbol] = quantity
+        issued = min(held, (fresh or {}).get(symbol, ZERO))
+        quantity = (held - issued) * bar.split
+        portfolio.positions[symbol] = quantity + issued
         if dividend_model == "ex_date":
             amount = (bar.research_dividend or bar.dividend) + bar.research_distribution
             if amount:

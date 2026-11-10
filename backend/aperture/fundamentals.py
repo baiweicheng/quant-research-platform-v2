@@ -17,10 +17,15 @@ from . import calendar
 from .domain import AnnualStatement, Dataset, ONE, ResearchError, ZERO, decimal
 from .providers import Provider, ResourceMissing
 from .store import Store, now
-from .eps_policy import assess, WARNING as EPS_WARNING, VERSION as EPS_VERSION
+from .eps_policy import (
+    assess,
+    EPS_TAGS,
+    WARNING as EPS_WARNING,
+    VERSION as EPS_VERSION,
+)
 from .annual_refresh import companyfacts as read_companyfacts
 
-VERSION = "annual-us-gaap-v4-dated-issuers"
+VERSION = "annual-us-gaap-v5-successors-and-eps-elements"
 AVAILABILITY = "After close + 15 minutes on the first exchange session strictly after the SEC filing date. No same-day publication assumption."
 TAGS = {
     "assets": ("Assets",),
@@ -31,8 +36,15 @@ TAGS = {
         "SalesRevenueNet",
     ),
     "cost": ("CostOfRevenue", "CostOfGoodsAndServicesSold", "CostOfGoodsSold"),
-    "eps": ("EarningsPerShareDiluted",),
+    # The combined element is the filer's diluted EPS when basic and diluted
+    # are reported as one amount; a separate diluted fact takes precedence,
+    # then the continuing-operations elements (see ``EPS_TAGS``).
+    "eps": EPS_TAGS,
 }
+# Positive diluted EPS above the share price (a P/E below one) is not a
+# plausible reported value for a listed common share; it indicates an XBRL
+# scale error (for example 1,730,000 for $1.73).
+IMPLAUSIBLE_EPS = "Reported positive EPS exceeds the decision share price, which indicates a filing scale error. EPS valuation is excluded for this filing."
 FUNDAMENTAL_STRATEGIES = ("quality", "quality_value", "value_momentum")
 
 
@@ -68,7 +80,7 @@ def normalize(
     filed_dates, forms = {}, {}
     wanted = {tag for tags in TAGS.values() for tag in tags}
     for tag in wanted:
-        unit = "USD/shares" if tag == "EarningsPerShareDiluted" else "USD"
+        unit = "USD/shares" if tag in TAGS["eps"] else "USD"
         for item in facts.get(tag, {}).get("units", {}).get(unit, []):
             if item.get("form") not in ("10-K", "10-K/A"):
                 continue
@@ -203,6 +215,7 @@ def as_of(
         if s.available_at <= cutoff
         and s.end <= decision
         and (decision - s.end).days <= 550
+        and decision < date.fromisoformat(s.sources.get("valid_before", "9999-12-31"))
     ]
     if not eligible:
         return None
@@ -274,8 +287,14 @@ def inputs(
         for bar in bars:
             if statement.filed < bar.session <= decision:
                 factor *= bar.split
-        values["eps_asof"] = statement.eps / factor
-        values["earnings_yield"] = values["eps_asof"] / bars[-1].close
+        eps_asof = statement.eps / factor
+        # A loss can exceed the share price; a positive P/E below one cannot
+        # be a plausible reported value and indicates an XBRL scale error.
+        if eps_asof > bars[-1].close:
+            values["valuation_issue"] = IMPLAUSIBLE_EPS
+        else:
+            values["eps_asof"] = eps_asof
+            values["earnings_yield"] = eps_asof / bars[-1].close
     elif statement.eps is not None and not split_history_complete:
         values["valuation_issue"] = (
             "Price/action history after this filing is incomplete; intervening split units cannot be verified."
@@ -375,6 +394,23 @@ def attach(
             from .historical_issuers import mapping_evidence
 
             historical_issuer = mapping_evidence(base.metadata, symbol)
+            if historical_issuer and historical_issuer["cik"] is None:
+                issuer_coverage.append(
+                    {
+                        "symbol": symbol,
+                        "records": 0,
+                        "historical_issuer_evidence": historical_issuer,
+                        "reason": "The reviewed issuer filed with a bank regulator, not the SEC; no SEC annual financials exist for it.",
+                        "quality_ready": False,
+                        "value_ready": False,
+                    }
+                )
+                return (
+                    issuer_statements,
+                    issuer_coverage,
+                    issuer_hashes,
+                    reader.observations if parallel else [],
+                )
             if historical_issuer:
                 ciks = {historical_issuer["cik"]}
             if len(ciks) != 1:
@@ -433,6 +469,71 @@ def attach(
             normalized, issues = normalize(
                 symbol, cik, company, submissions, class_evidence
             )
+            # A reviewed Rule 12g-3 predecessor filed the listed shares'
+            # annual reports before the successor registrant existed.
+            from .historical_issuers import predecessors
+
+            prior_sources, prior_coverage = [], []
+            for proof in [] if historical_issuer else predecessors(symbol, cik, reader):
+                prior = proof["cik"]
+                prior_submissions = reader.get(
+                    "sec",
+                    f"https://data.sec.gov/submissions/CIK{prior}.json",
+                    ttl=0 if refresh else 3600,
+                )
+                prior_company = read_companyfacts(
+                    reader, prior, prior_submissions, force=force_facts
+                )
+                if (
+                    str(prior_company.get("cik", "")).zfill(10) != prior
+                    or str(prior_submissions.get("cik", "")).zfill(10) != prior
+                ):
+                    raise ResearchError(f"SEC issuer identity mismatch for {symbol}.")
+                prior_classes = assess(
+                    symbol,
+                    prior,
+                    prior_company,
+                    str(first_session - timedelta(days=550)),
+                    str(last_session),
+                )
+                prior_rows, _ = normalize(
+                    symbol, prior, prior_company, prior_submissions, prior_classes
+                )
+                effective = date.fromisoformat(proof["effective"])
+                marks = {"predecessor_issuer": proof["url"]}
+                if proof.get("valid_before"):
+                    marks["valid_before"] = proof["valid_before"]
+                prior_rows = tuple(
+                    replace(row, sources={**row.sources, **marks})
+                    for row in prior_rows
+                    if row.filed < effective
+                )
+                normalized = tuple(
+                    sorted(
+                        normalized + prior_rows,
+                        key=lambda s: (s.end, s.available_at, s.accession, s.start),
+                    )
+                )
+                class_evidence = {**class_evidence, **prior_classes}
+                prior_sources.append(
+                    {
+                        "companyfacts": prior_company,
+                        "submissions": prior_submissions,
+                        "filed_share_classes": prior_classes,
+                    }
+                )
+                prior_coverage.append(
+                    {
+                        "cik": prior,
+                        "name": proof["name"],
+                        "effective": proof["effective"],
+                        "valid_before": proof.get("valid_before"),
+                        "url": proof["url"],
+                        "records": len(prior_rows),
+                    }
+                )
+            if prior_coverage and normalized:
+                issues = [i for i in issues if "No supported" not in i]
             issuer_statements[symbol] = normalized
             latest = as_of(normalized, last_session)
             latest_inputs, latest_issue = inputs(
@@ -461,6 +562,7 @@ def attach(
                         "companyfacts": company,
                         "submissions": submissions,
                         "filed_share_classes": class_evidence,
+                        **({"predecessors": prior_sources} if prior_sources else {}),
                     },
                     sort_keys=True,
                     separators=(",", ":"),
@@ -472,6 +574,11 @@ def attach(
                     "cik": cik,
                     "records": len(normalized),
                     "historical_issuer_evidence": historical_issuer,
+                    **(
+                        {"predecessor_issuers": prior_coverage}
+                        if prior_coverage
+                        else {}
+                    ),
                     "reason": "; ".join(dict.fromkeys(coverage_issues)),
                     "quality_ready": latest_inputs.get("profitability", ZERO) > ZERO,
                     "value_ready": latest_inputs.get("earnings_yield", ZERO) > ZERO,
@@ -535,11 +642,11 @@ def attach(
             "normalizer": VERSION,
             "availability": AVAILABILITY,
             "staleness_days": 550,
-            "units": "USD; reported diluted EPS USD/shares",
+            "units": "USD; reported diluted EPS USD/shares (EarningsPerShareDiluted, else the combined EarningsPerShareBasicAndDiluted amount, else diluted EPS from continuing operations when the filing reports no whole-entity net element). Positive EPS above the decision share price is rejected as a likely scale error.",
             "periods": "Annual 330–400 days; 10-K and 10-K/A only",
             "share_class_evidence_storage": "shared-per-security-v1",
             "eps_policy": EPS_VERSION,
-            "issuer_mapping": "Current SEC directory or reviewed filing evidence for the exact historical quote vintage; never an inferred successor ticker.",
+            "issuer_mapping": "Current SEC directory, reviewed filing evidence for the exact historical quote vintage, or reviewed Rule 12g-3 predecessor registrants of the same listed shares (their reports filed before the succession); never an inferred successor ticker.",
             "share_basis": EPS_WARNING,
             "refresh_policy": "Annual filing changes trigger financial-history refresh; otherwise captured histories can be reused for up to 30 days. Manual SEC refresh forces a new capture.",
         }

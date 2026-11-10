@@ -4,6 +4,7 @@ import {
   snapshotGroups,
   SnapshotOptions,
   reviewedActionCorrections,
+  mergerActionGaps,
 } from "./snapshots";
 import { afterWarmup, ResearchCoverageChoice } from "./dialogs";
 import type { Dataset } from "./types";
@@ -213,4 +214,59 @@ it("shows source-backed separation economics alongside merger corrections", () =
       basis: "One new parent and one Corteva share for every three old shares.",
     },
   ]);
+});
+it("lists reviewed distributions and lifetimes with their primary filings", () => {
+  const rows = reviewedActionCorrections(
+    snapshot(1, {
+      corporate_actions: [
+        {
+          kind: "reviewed_distributions",
+          source: "TGNA",
+          effective: "2017-06-01",
+          reviewed_evidence: {
+            url: "https://www.sec.gov/Archives/tegna.htm",
+            basis: "One Cars.com share per three TEGNA shares.",
+          },
+        },
+        {
+          kind: "reviewed_lifetimes",
+          source: "DOW",
+          effective: "2019-04-02",
+          reviewed_evidence: {
+            url: "https://www.sec.gov/Archives/dow.htm",
+            basis: "Dow Inc. began regular-way trading April 2, 2019.",
+          },
+        },
+      ],
+    }),
+  );
+  expect(rows.map((r) => [r.symbol, r.effective])).toEqual([
+    ["TGNA", "2017-06-01"],
+    ["DOW", "2019-04-02"],
+  ]);
+});
+it("does not report a reviewed bank failure or multi-security conversion as missing terms", () => {
+  const gaps = mergerActionGaps(
+    snapshot(1, {
+      corporate_actions: [
+        {
+          kind: "cash_mergers",
+          source: "SIVB",
+          cash: "0",
+          reviewed_evidence: { zero_recovery: true, url: "u", basis: "b" },
+        },
+        {
+          kind: "stock_mergers",
+          source: "FOXA.OLD",
+          ratio: "0",
+          targets: [
+            { symbol: "FOXA", ratio: "0.3333333333" },
+            { symbol: "DIS", ratio: "0.3328202389" },
+          ],
+        },
+        { kind: "cash_mergers", source: "UNKNOWN", cash: "0" },
+      ],
+    }),
+  );
+  expect(gaps).toEqual(["UNKNOWN"]);
 });

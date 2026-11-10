@@ -134,8 +134,11 @@ export function mergerActionGaps(dataset: Dataset) {
             e &&
             typeof e === "object" &&
             (e.unpriced_consideration ||
-              (e.kind === "cash_mergers" && Number(e.cash ?? 0) <= 0) ||
+              (e.kind === "cash_mergers" &&
+                Number(e.cash ?? 0) <= 0 &&
+                !e.reviewed_evidence?.zero_recovery) ||
               (["stock_mergers", "stock_and_cash_mergers"].includes(e.kind) &&
+                !(Array.isArray(e.targets) && e.targets.length) &&
                 (!e.target || Number(e.ratio ?? 0) <= 0))),
         )
         .map((e) => String(e.source)),
@@ -153,6 +156,8 @@ export function reviewedActionCorrections(dataset: Dataset) {
           "identity_continuations",
           "reviewed_splits",
           "reviewed_separations",
+          "reviewed_distributions",
+          "reviewed_lifetimes",
           "cash_mergers",
           "stock_mergers",
           "stock_and_cash_mergers",

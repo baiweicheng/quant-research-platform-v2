@@ -8,6 +8,17 @@ Dates, currency, periods, conflicting facts and splits are validated separately.
 import re
 
 VERSION = "structured-eps-v1"
+# Whole-entity annual diluted EPS elements, in precedence order. Many filers
+# without discontinued operations tag their bottom-line diluted EPS with the
+# continuing-operations element only; it is used only when no net element is
+# reported for that accession and period. Earnings before discontinued
+# operations is also the conventional earnings measure for value research.
+EPS_TAGS = (
+    "EarningsPerShareDiluted",
+    "EarningsPerShareBasicAndDiluted",
+    "IncomeLossFromContinuingOperationsPerDilutedShare",
+    "IncomeLossFromContinuingOperationsPerBasicAndDilutedShare",
+)
 WARNING = (
     "Lightweight EPS research: reported SEC per-share values are assumed to match "
     "ordinary listed shares. Share-class differences may remain; historical "
@@ -25,13 +36,15 @@ UNEQUAL_ISSUERS = {
 def assess(symbol, cik, company, start, end):
     """Record the lightweight assumption per accession; never label it verified."""
     wanted = {}
-    facts = (
-        company.get("facts", {})
+    facts = [
+        fact
+        for tag in EPS_TAGS
+        for fact in company.get("facts", {})
         .get("us-gaap", {})
-        .get("EarningsPerShareDiluted", {})
+        .get(tag, {})
         .get("units", {})
         .get("USD/shares", [])
-    )
+    ]
     for fact in facts:
         if (
             fact.get("form") in {"10-K", "10-K/A"}

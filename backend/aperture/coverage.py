@@ -5,11 +5,31 @@ from collections import defaultdict
 from datetime import timedelta
 
 from . import calendar, membership
-from .lifecycles import prepared, terminal_events, event_session
+from .lifecycles import prepared, recipients, terminal_events, event_session
 from .domain import ResearchError
 
 MODES = ("strict", "coverage_limited")
 WARNING = "Coverage-limited exploratory research: stocks with missing or unverified inputs are excluded using availability over their possible holding windows, including dates after a decision. This can introduce survivorship and selection bias. These results do not represent a complete S&P 500 backtest or establish trading readiness."
+
+
+def executable_sessions(rows):
+    """Sessions with usable quotes for a possible holding window.
+
+    A provider can repeat the last close as flat zero-volume marks after a
+    security stops trading. Those trailing marks are not executable prices and
+    cannot satisfy a holding window; earlier isolated halts are retained.
+    """
+    rows = list(rows)
+    end = len(rows)
+    while end > 1:
+        bar, previous = rows[end - 1], rows[end - 2]
+        if not (
+            bar.volume == 0
+            and bar.open == bar.high == bar.low == bar.close == previous.close
+        ):
+            break
+        end -= 1
+    return {bar.session for bar in rows[:end]}
 
 
 def plan(dataset, start, end, identifier, dividend_model, mode, frequency="weekly"):
@@ -27,7 +47,7 @@ def plan(dataset, start, end, identifier, dividend_model, mode, frequency="weekl
     reasons = defaultdict(list)
     windows = {}
     terminals = terminal_events(dataset)
-    available = {s: {b.session for b in rows} for s, rows in dataset.bars.items()}
+    available = {s: executable_sessions(rows) for s, rows in dataset.bars.items()}
 
     def liquidation(last_member):
         # A departure does not create an extra trade. Hold through the next
@@ -49,8 +69,8 @@ def plan(dataset, start, end, identifier, dividend_model, mode, frequency="weekl
         stop = event_session(event) if event else None
         if stop and begin <= stop <= finish:
             result = [(symbol, begin, stop - timedelta(days=1))]
-            if event.get("target"):
-                result += paths(event["target"], stop, finish, (*seen, symbol))
+            for target, _ in recipients(event):
+                result += paths(target, stop, finish, (*seen, symbol))
             return result
         return [(symbol, begin, finish)]
 
@@ -59,6 +79,15 @@ def plan(dataset, start, end, identifier, dividend_model, mode, frequency="weekl
 
         issues = indexed_issues(dataset)
         for owner, member_days in sorted(members.items()):
+            # A retrospective roster can date an addition a few sessions before
+            # the new listing's first regular-way trade. No position can be
+            # bought before that trade, so those days need no prices. Longer
+            # gaps, or gaps after earlier quotes, remain missing inputs.
+            lead = membership.listing_lead(member_days, available.get(owner, set()))
+            if lead:
+                member_days = [d for d in member_days if d not in lead]
+                if not member_days:
+                    continue
             # Separate membership spells: a stock cannot be held across a gap
             # after a scheduled exit, but a later re-entry needs its own path.
             spans = []

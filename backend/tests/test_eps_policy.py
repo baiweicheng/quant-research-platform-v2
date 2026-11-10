@@ -58,6 +58,64 @@ def test_lightweight_eps_keeps_conflict_currency_period_and_availability_guards(
     assert not assess("ABC", CIK, source(), "2024-01-01", "2024-12-31")
 
 
+def _with_eps_elements(**values):
+    company = source()
+    gaap = company["facts"]["us-gaap"]
+    template = gaap.pop("EarningsPerShareDiluted")["units"]["USD/shares"][0]
+    for tag, value in values.items():
+        gaap[tag] = {"units": {"USD/shares": [{**template, "val": value}]}}
+    return company
+
+
+def test_continuing_operations_eps_is_used_only_without_a_net_element():
+    tag = "IncomeLossFromContinuingOperationsPerDilutedShare"
+    row = normalized(_with_eps_elements(**{tag: 3}))[0]
+    assert row.eps == 3 and row.eps_compatible and row.sources["eps"] == tag
+    # A whole-entity net element in the same accession/period takes precedence.
+    row = normalized(_with_eps_elements(**{tag: 3, "EarningsPerShareDiluted": 2}))[0]
+    assert row.eps == 2 and row.sources["eps"] == "EarningsPerShareDiluted"
+    row = normalized(
+        _with_eps_elements(**{tag: 3, "EarningsPerShareBasicAndDiluted": 2.5})
+    )[0]
+    assert row.eps == 2.5 and row.sources["eps"] == "EarningsPerShareBasicAndDiluted"
+    # Conflicting values in the selected element are not replaced by a later one.
+    company = _with_eps_elements(**{tag: 3})
+    facts = company["facts"]["us-gaap"][tag]["units"]["USD/shares"]
+    facts.append({**facts[0], "val": 7})
+    assert normalized(company)[0].eps is None
+
+
+def test_eps_above_the_share_price_is_rejected_as_a_scale_error(dataset):  # noqa: F811
+    from aperture.fundamentals import IMPLAUSIBLE_EPS, inputs
+
+    decision = date(2023, 8, 31)
+    scaled = replace(
+        dataset,
+        fundamentals={
+            "ABC": tuple(
+                replace(row, eps=row.eps * 1_000_000)
+                for row in dataset.fundamentals["ABC"]
+            )
+        },
+    )
+    values, reason = inputs(scaled, "ABC", decision)
+    assert reason is None and "earnings_yield" not in values
+    assert values["valuation_issue"] == IMPLAUSIBLE_EPS
+    values, _ = inputs(dataset, "ABC", decision)
+    assert values["eps_asof"] == 4 and values["earnings_yield"] > 0
+    # A loss larger than the share price is a valid (negative) input.
+    loss = replace(
+        dataset,
+        fundamentals={
+            "ABC": tuple(
+                replace(row, eps=-row.eps * 100) for row in dataset.fundamentals["ABC"]
+            )
+        },
+    )
+    values, _ = inputs(loss, "ABC", decision)
+    assert values["eps_asof"] == -400 and values["earnings_yield"] < 0
+
+
 def test_attach_never_downloads_full_filings_and_does_not_count_assumptions_as_verified(
     tmp_path,
     dataset,  # noqa: F811

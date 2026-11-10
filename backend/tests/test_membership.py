@@ -399,6 +399,42 @@ def test_missing_departed_member_is_a_hard_failure_before_simulation(timeline):
         rank(absent, "momentum", date(2024, 7, 5))
 
 
+@pytest.mark.parametrize(
+    "first_trade,passes", [("2024-07-11", True), ("2024-07-16", False)]
+)
+def test_short_roster_lead_before_a_first_trade_matches_the_coverage_plan(
+    timeline, first_trade, passes
+):
+    """A roster may date an addition up to five sessions before the listing trades.
+
+    The backtest's coverage validation and the coverage plan apply the same rule;
+    a longer lead remains missing prices.
+    """
+    from aperture.coverage import plan
+
+    listed = replace(
+        timeline,
+        bars={
+            s: tuple(
+                b
+                for b in bars
+                if s != "NEW" or b.session >= date.fromisoformat(first_trade)
+            )
+            for s, bars in timeline.bars.items()
+        },
+    )
+    start, end = date(2024, 7, 1), date(2024, 7, 31)
+    audit = plan(listed, start, end, "quality", "ex_date", "coverage_limited")
+    excluded = {x["symbol"] for x in audit["excluded"]}
+    if passes:
+        membership.validate_coverage(listed, start, end)
+        assert "NEW" not in excluded
+    else:
+        with pytest.raises(ResearchError, match="Departed or missing"):
+            membership.validate_coverage(listed, start, end)
+        assert "NEW" in excluded
+
+
 def test_backtest_uses_old_and_new_members_with_next_session_fills(timeline):
     result = run(
         timeline,

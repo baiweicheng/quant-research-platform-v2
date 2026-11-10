@@ -17,6 +17,7 @@ from .domain import (
     decimal,
 )
 from .ledger import apply_actions, buy, rebalance, reinvest_research_income
+from .lifecycles import recipients
 from .research_data import blocked_inputs, indexed_issues, security_events
 from .metrics import windows
 from .membership import validate_coverage, HISTORY_NOTE
@@ -181,9 +182,10 @@ def run(
         ]
         ceased = {e["source"] for e in current_mergers}
         incoming = {
-            e["target"]
+            target
             for e in current_mergers
-            if e.get("target") and portfolio.positions.get(e["source"], ZERO)
+            if portfolio.positions.get(e["source"], ZERO)
+            for target, _ in recipients(e)
         }
         if pending and pending[0] == day:
             incoming.update(set(pending[1]) - ceased)
@@ -201,14 +203,16 @@ def run(
                 + ", ".join(sorted(blocked)[:12])
                 + f" on {day}."
             )
-        security_events(portfolio, day, corporate, today, dividend_model)
+        fresh = security_events(portfolio, day, corporate, today, dividend_model)
         opening_income = {
             s: decimal(v)
             for s, v in dataset.metadata.get("research_open_income", {})
             .get(str(day), {})
             .items()
         }
-        apply_actions(portfolio, day, today, dividend_model, opening_income)
+        apply_actions(
+            portfolio, day, today, dividend_model, opening_income, fresh=fresh
+        )
         if pending and pending[0] == day:
             targets = {s: w for s, w in pending[1].items() if s not in ceased}
             if ceased & pending[1].keys():
