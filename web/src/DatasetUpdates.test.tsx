@@ -66,7 +66,7 @@ it("updates the selected SEC vintage and explains sharing and older history", as
   expect(screen.getByLabelText("Dataset to update")).toHaveValue("sec");
   expect(screen.getByText(/Market data \+ SEC filings/)).toBeVisible();
   expect(screen.getByText(/shares unchanged data/)).toBeVisible();
-  expect(screen.getByText(/Reviewed source corrections/)).toBeVisible();
+  expect(screen.getByText(/reviewed source correction/)).toBeVisible();
   await userEvent.click(screen.getByRole("button", { name: "Update dataset" }));
   await waitFor(() =>
     expect(fetcher).toHaveBeenCalledWith(

@@ -113,9 +113,10 @@ export default function DatasetUpdates({
                 : chosen.metadata?.bundle_role === "prices"
                   ? "SEC download unfinished · Update completes it"
                   : "Legacy snapshot · SEC filings will be added"}
-            . Earlier prices stay frozen. Reviewed source corrections can repair
-            historical listings and merger timing in the new snapshot. Original
-            snapshots stay unchanged; a full download revalidates older prices.
+            . Earlier inputs are retained unless a reviewed source correction
+            applies. Any historical repair is recorded in the new snapshot.
+            Original snapshots stay unchanged; a full download revalidates older
+            prices.
           </p>
         )}
         {task.error && <Notice error>{task.error.message}</Notice>}

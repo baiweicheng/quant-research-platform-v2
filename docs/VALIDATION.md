@@ -1,5 +1,72 @@
 # Research milestone validation
 
+## 2026-11-10 — separation share units and 51 restored financial histories
+
+Input contract `dated-research-inputs-v8-reviewed-separations` passes **486
+backend / 63 UI tests**, TypeScript/production build, Ruff F lint, changed-file
+Python formatting, frontend formatting and whitespace checks. Tests distinguish
+real parent shares from adjustment factors, value the Arconic child while
+retaining Howmet, reject the child's later acquisition as a parent liquidation,
+and keep pre/post-split distribution units separate for Corteva. Source,
+listing, quote-vintage, price-prefix and native-instruction changes fail closed.
+A frozen-update contract verifies that a reviewed historical repair survives
+assembly of the earlier blocks and does not mutate the old snapshot.
+
+Actual isolated browser Update completed in **256.253 seconds**, creating
+`9240bf1b070e51b2822e5462`. It restores **51 financial histories / 1,636 annual
+records**, reuses 622 histories and downloads 46. Shared issuers account for
+the difference between history and download counts. All 51 restored histories
+have annual records. The reviewed registry contains 64 mappings; the snapshot
+has 25,691 annual records in total. Existing date/unit/conflict/split and known
+unequal-share safeguards remain in place.
+
+Independent financial-source audit verifies **64 primary fingerprints** and
+**4,802 numerical fields across 2,170 mapped annual records** against exact raw
+SEC accession, period, unit and filing dates. Separate source/price checks verify
+four separation/inception filings and three bounded raw-quote queries. All
+**617 earlier financial blocks remain identical**. Only ARNC, HWM, DWDP and DD
+historical series change; there are no unrelated price revisions in this
+acceptance. HWM gains the original-parent prefix, old ARNC follows the continuing
+parent, and the new DowDuPont issuer discards pre-inception predecessor quotes.
+Three old DWDP shares deliver one DD and one CTVA share before research
+reinvestment, rather than applying the vendor's adjustment factors as share counts.
+
+A second actual browser Update completed in **214.365 seconds**, creating
+`b2926146443bfc004c9f4b3a`, reusing **668 histories / zero company-facts downloads**.
+Every price block, annual block, normalized action and opening distribution mark
+is identical to the first candidate. This verifies repeated-update idempotence
+and cache reuse. These are warm-update observations; no new empty-cache timing
+is claimed for this group.
+
+All five unchanged recipes completed January 3, 2017–November 6, 2026 through
+the browser on that final snapshot. Their submitted dataset/date payloads were
+verified before acceptance. Independent replay exactly matches **12,380 daily
+cash/NAV/SPY valuations**, **418,281 filing components** and **413,290 EPS/split
+checks**, including restored issuers, actual mergers, costs, membership, caps and
+final quantities. These are data/accounting validation runs; strategy tuning
+and SPY-outperformance research are outside the user's updated goal.
+
+The browser displays 27 reviewed action corrections and 64 issuer mappings with
+primary links, including the rejected Arconic-child instruction. The revised
+Update disclosure distinguishes retained history from reviewed corrections.
+Both source sections fit a 320px viewport with document width 320px. All five
+correct-period tasks were observed complete in Activity; screenshots are retained.
+An earlier isolated attempt with unretained browser date edits was stopped before
+any results were saved and its five tasks retained as superseded failures. It is
+not accepted validation and did not affect normal research.
+
+Reports, independent scripts and screenshots are under ignored
+`var/uat/paper-readiness-2026-11-09/separation-group/`. The original normal
+workspace's seven result bodies and three dataset digests are preserved.
+Isolated paper orders/plans/approvals remain zero and integrity checks pass.
+
+The remaining **66/64 price/action exclusions are material**. A wider inventory
+also identifies unusual adjustment factors requiring primary review; these
+include genuine stock changes as well as potential further distribution/cohort
+defects. They are not automatically classified as errors or exclusions. The
+data-gap goal remains incomplete and continuation is paused at this handoff;
+arithmetic replay does not establish complete economic source certification. See [historical coverage](HISTORICAL_COVERAGE.md).
+
 ## 2026-11-10 — native merger dates, rejected HES instruction and issuer histories
 
 Input contract `dated-research-inputs-v7-native-date-reconciliation` passes

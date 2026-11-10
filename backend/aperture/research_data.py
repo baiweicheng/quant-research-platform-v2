@@ -19,7 +19,7 @@ from .action_evidence import (
     VERSION as ACTION_EVIDENCE_VERSION,
 )
 
-VERSION = "dated-research-inputs-v7-native-date-reconciliation"
+VERSION = "dated-research-inputs-v8-reviewed-separations"
 MISSING_DIRECTORY = "Historical listing identity is unavailable in the captured directory; a raw-symbol fallback is not issuer verification."
 MULTIPLE_DIRECTORY = "Multiple historical listing identities require dated issuer/share-basis verification."
 
@@ -448,6 +448,9 @@ def download(store, payload, progress, provider=None, base=None):
         custom_symbols = list(names) if not audit else None
         normalized_events = []
         dependencies = set()
+        from .separations import dependencies as separation_dependencies
+
+        dependencies.update(separation_dependencies(names, first, last))
         spin_events = []
         issues = []
 
@@ -607,7 +610,13 @@ def download(store, payload, progress, provider=None, base=None):
                 and symbol not in dependencies
             ):
                 asof = last_membership[symbol]
-            return date(2017, 8, 31) if symbol in ("DOW.OLD", "DD.OLD") else asof
+            from .separations import dependency_asof
+
+            return (
+                date(2017, 8, 31)
+                if symbol in ("DOW.OLD", "DD.OLD")
+                else dependency_asof(symbol, primary_symbols, asof)
+            )
 
         from .historical_issuers import verify as verify_issuer
 
@@ -1091,6 +1100,46 @@ def download(store, payload, progress, provider=None, base=None):
                 if e["source"] not in frozen_quotes
                 and (e["effective"] >= str(overlap) or not base.bars.get(e["source"]))
             ]
+        from .separations import apply as apply_separations
+
+        separation_checks = []
+
+        def separation_quotes(stocks, begin, end, asof):
+            query = {
+                "symbols": ",".join(sorted(stocks)),
+                "timeframe": "1Day",
+                "start": str(begin),
+                "end": str(end + timedelta(days=1)),
+                "feed": "sip",
+                "currency": "USD",
+                "limit": 10000,
+                "sort": "asc",
+                "asof": asof,
+                "adjustment": "raw",
+            }
+            pages = batch_pages(api, "/v2/stocks/bars", query, "bars")
+            separation_checks.append(
+                {
+                    "query": query,
+                    "digest": store.capture_source(
+                        json.dumps(pages, sort_keys=True).encode()
+                    ),
+                }
+            )
+            return _parse_pages(pages, stocks, begin, end)
+
+        normalized_events, separation_receipts = apply_separations(
+            bars,
+            identity,
+            list(events.values()),
+            normalized_events,
+            opening_income,
+            first,
+            last,
+            api,
+            issue,
+            separation_quotes,
+        )
         from .historical_timing import apply_timing
 
         normalized_events = apply_timing(normalized_events, identity, bars, api, issue)
@@ -1137,6 +1186,8 @@ def download(store, payload, progress, provider=None, base=None):
             "identity": identity,
             "historical_issuer_evidence": issuer_evidence,
             "historical_identity_revalidation": identity_revalidation,
+            "reviewed_separation_evidence": separation_receipts,
+            "separation_price_checks": separation_checks,
             "research_open_income": opening_income,
             "input_issues": issues,
         }
@@ -1157,6 +1208,8 @@ def download(store, payload, progress, provider=None, base=None):
             "identity_resolution": identity,
             "historical_issuer_evidence": issuer_evidence,
             "historical_identity_revalidation": identity_revalidation,
+            "reviewed_separation_evidence": separation_receipts,
+            "separation_price_checks": separation_checks,
             "coverage": health,
             "membership": audit,
             "retrieved_at": now(),

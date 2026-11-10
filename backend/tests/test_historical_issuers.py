@@ -42,6 +42,19 @@ def test_imported_or_stale_evidence_cannot_override_current_issuer():
     assert mapping_evidence(metadata, "TMK") is None
 
 
+@pytest.mark.parametrize("symbol", ["ARNC", "DWDP"])
+def test_separation_issuer_mapping_requires_the_repaired_price_contract(symbol):
+    proof = {"symbol": symbol, "version": VERSION, **ISSUERS[symbol]}
+    metadata = {
+        "historical_issuer_evidence": {symbol: proof},
+        "identity_resolution": {symbol: {"asof": proof["quote_asof"]}},
+        "normalizer_version": "dated-research-inputs-v7-native-date-reconciliation",
+    }
+    assert mapping_evidence(metadata, symbol) is None
+    metadata["normalizer_version"] = proof["required_price_contract"]
+    assert mapping_evidence(metadata, symbol) == proof
+
+
 def test_primary_issuer_revalidation_preserves_old_quotes_and_other_blocks(
     vendor,  # noqa: F811
     monkeypatch,

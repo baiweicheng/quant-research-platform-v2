@@ -4,6 +4,66 @@ Engine 0.6.0 narrows the price history required for exploratory backtests and ad
 
 ## Individual listings and market timing
 
+### Reviewed separations and expanded issuer coverage (input contract v8)
+
+The historical issuer registry now contains **64 reviewed mappings**, adding
+51 original financial histories and 1,636 annual records to the preceding
+snapshot. Every added history has annual records; unavailable profitability or
+nonpositive factors can still make a stock ineligible for an individual recipe.
+The issuer mapping does not establish exhaustive EPS share-class verification.
+Raw SEC accession, annual period, units and filing availability remain checked.
+Examples requiring care include old DNB versus its later IPO, original CHK
+versus post-bankruptcy equity, the XL insurer versus XL Fleet, and Envision's
+post-2016 issuer versus the archived AmSurg CIK. Combined Allergan and Duke
+Realty filings distinguish the common-stock parent from subsidiary co-registrants.
+
+Issuer evidence alone was insufficient for two price cohorts. The ordinary
+Download/Update workflow now reconciles their economic share counts:
+
+- [Old Arconic/Howmet](https://www.sec.gov/Archives/edgar/data/4281/000110465920043824/tm2015094d1_8k.htm):
+  one continuing Howmet parent share plus 0.25 new Arconic Corporation shares
+  per old share on April 1, 2020. Captured HWM prices continue the parent;
+  the old parent's prefix supplies HWM's verified pre-rename history. The
+  later $30 acquisition of the spun-off Arconic child does not liquidate the
+  old parent. Its exact native instruction remains visible as rejected evidence.
+- [Dow distribution](https://www.sec.gov/Archives/edgar/data/1666700/000119312519095042/d725044d8k.htm):
+  one DOW share per three parent shares before regular trading April 2, 2019.
+  The vendor's 1.487 adjustment factor does not create extra parent shares.
+- [Corteva and the parent reverse split](https://www.sec.gov/Archives/edgar/data/1666700/000119312519163322/d715311d8k.htm):
+  three old parent shares become one DD share plus one CTVA share for the
+  June 3, 2019 session. Distribution amounts are expressed per post-split
+  parent share, so the child is not divided by three a second time.
+
+Both DWDP and the continuing DD issuer discard unsupported quotes before the
+new company's [September 1, 2017 first trading date, Item 5](https://www.sec.gov/Archives/edgar/data/1666700/000166670019000006/a2018dwdp10-k.htm).
+The separately captured DD.OLD predecessor is unaffected. The reviewed DWDP
+quote vintage supplies the continuing issuer's prices; DD at that earlier
+as-of date denotes a different, ceased security and is not a valid substitute.
+
+These repairs require exact listing/quote cohorts, primary-document
+fingerprints, native instruction signatures and captured delivery-date quotes.
+Changed or additional instructions require review. Research values distributions
+at their actual opening/closing marks and reinvests at the closing parent price,
+following the existing ex-date convention; no opening cash is invented. Strict
+payment-date share delivery remains unsupported. Historical ticker boundaries
+can still cause a modeled sale/rebuy rather than seamless position renaming.
+
+The isolated first Update completed in **256.253 seconds**; a repeat completed
+in **214.365 seconds**, reused 668 financial histories without company-facts
+downloads, and retained exactly identical price/annual blocks, actions and
+distribution marks. All 617 earlier financial blocks are unchanged. An
+independent source audit verifies 64 filing fingerprints and 4,802 numerical
+fields across 2,170 mapped annual records; a separate share/price audit verifies
+the separation terms. Only the four reviewed historical series change, with no
+unrelated price revisions in this acceptance. No new cold-download timing is
+claimed. Original normal-workspace research remains unchanged.
+
+This is partial data-gap progress. The remaining price/action exclusions are
+material, and further distribution/adjustment-factor and terminal/identity
+review continues. A ledger replay establishes arithmetic consistency with
+inputs, not universal economic source correctness. The active goal now covers
+data-gap resolution only; strategy outperformance research is deferred.
+
 ### Native merger reconciliation (input contract v7)
 
 Primary completed-merger filings establish the first converted market sessions

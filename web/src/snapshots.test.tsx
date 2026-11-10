@@ -186,3 +186,31 @@ it("labels a rejected vendor merger separately from an executed conversion", () 
     },
   ]);
 });
+
+it("shows source-backed separation economics alongside merger corrections", () => {
+  expect(
+    reviewedActionCorrections(
+      snapshot(1, {
+        corporate_actions: [
+          {
+            kind: "reviewed_separations",
+            source: "DWDP",
+            effective: "2019-06-03",
+            reviewed_evidence: {
+              url: "https://www.sec.gov/Archives/corteva.htm",
+              basis:
+                "One new parent and one Corteva share for every three old shares.",
+            },
+          },
+        ],
+      }),
+    ),
+  ).toEqual([
+    {
+      symbol: "DWDP",
+      effective: "2019-06-03",
+      url: "https://www.sec.gov/Archives/corteva.htm",
+      basis: "One new parent and one Corteva share for every three old shares.",
+    },
+  ]);
+});

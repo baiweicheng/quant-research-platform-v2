@@ -152,6 +152,7 @@ export function reviewedActionCorrections(dataset: Dataset) {
         [
           "identity_continuations",
           "reviewed_splits",
+          "reviewed_separations",
           "cash_mergers",
           "stock_mergers",
           "stock_and_cash_mergers",
