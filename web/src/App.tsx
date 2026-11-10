@@ -30,6 +30,7 @@ import Research from "./Research";
 import MarketData from "./MarketData";
 import DatasetUpdates from "./DatasetUpdates";
 import SectorCoverage from "./Sectors";
+import HistoricalIssuers from "./HistoricalIssuers";
 import {
   snapshotGroups,
   snapshotName,
@@ -674,6 +675,7 @@ function DataPage({
                     </ul>
                   </details>
                 )}
+                <HistoricalIssuers dataset={dataset} />
                 {dataset.metadata?.validation_issues?.map((reason) => (
                   <Notice error key={reason}>
                     {reason}

@@ -20,7 +20,7 @@ from .store import Store, now
 from .eps_policy import assess, WARNING as EPS_WARNING, VERSION as EPS_VERSION
 from .annual_refresh import companyfacts as read_companyfacts
 
-VERSION = "annual-us-gaap-v3-lightweight-eps"
+VERSION = "annual-us-gaap-v4-dated-issuers"
 AVAILABILITY = "After close + 15 minutes on the first exchange session strictly after the SEC filing date. No same-day publication assumption."
 TAGS = {
     "assets": ("Assets",),
@@ -372,6 +372,11 @@ def attach(
             issuer_statements, issuer_coverage, issuer_hashes = {}, [], {}
             report(symbol)
             ciks = mapping.get(symbol.replace(".", "-"), set())
+            from .historical_issuers import mapping_evidence
+
+            historical_issuer = mapping_evidence(base.metadata, symbol)
+            if historical_issuer:
+                ciks = {historical_issuer["cik"]}
             if len(ciks) != 1:
                 issuer_coverage.append(
                     {
@@ -466,6 +471,7 @@ def attach(
                     "symbol": symbol,
                     "cik": cik,
                     "records": len(normalized),
+                    "historical_issuer_evidence": historical_issuer,
                     "reason": "; ".join(dict.fromkeys(coverage_issues)),
                     "quality_ready": latest_inputs.get("profitability", ZERO) > ZERO,
                     "value_ready": latest_inputs.get("earnings_yield", ZERO) > ZERO,
@@ -533,6 +539,7 @@ def attach(
             "periods": "Annual 330–400 days; 10-K and 10-K/A only",
             "share_class_evidence_storage": "shared-per-security-v1",
             "eps_policy": EPS_VERSION,
+            "issuer_mapping": "Current SEC directory or reviewed filing evidence for the exact historical quote vintage; never an inferred successor ticker.",
             "share_basis": EPS_WARNING,
             "refresh_policy": "Annual filing changes trigger financial-history refresh; otherwise captured histories can be reused for up to 30 days. Manual SEC refresh forces a new capture.",
         }
@@ -572,7 +579,7 @@ def attach(
             AVAILABILITY,
             "Annual US-GAAP support only; missing/custom/IFRS inputs are excluded. Annual metrics are not TTM estimates.",
             EPS_WARNING,
-            "SEC filings are versioned by accession and filing date. Current issuer mapping does not certify historical universe membership.",
+            "SEC filings are versioned by accession and filing date. Issuer mappings use the current SEC directory or explicit dated filing evidence; historical universe membership remains independently constrained.",
             "Earnings yield uses reported diluted EPS and explicit split adjustments; no current vendor valuation ratios or current share counts are backfilled.",
         ]
         progress(97, "Saving the filing-versioned combined dataset")

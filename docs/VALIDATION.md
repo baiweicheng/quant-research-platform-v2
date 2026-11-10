@@ -1,5 +1,54 @@
 # Research milestone validation
 
+## 2026-11-09 — dated historical issuers and current listing duplicates
+
+Input contract `dated-research-inputs-v6-dated-issuers` and annual normalizer
+`annual-us-gaap-v4-dated-issuers` pass **403 backend / 61 UI tests**, production
+and TypeScript build, Ruff F lint, changed-file Python formatting, frontend
+formatting and whitespace checks. Tests require exact primary-source/quote-vintage
+evidence, reject tampered mapping metadata and changed documents, retain issuer
+mismatch and future-filing gates, and verify immutable targeted revalidation.
+Current duplicate reconciliation requires matching descriptors, admission cohort,
+unique active record and matching active individual lookup; former/reused symbols
+and differing names/classes stay unresolved. Clearing one directory-warning kind
+cannot accidentally clear another unsupported kind.
+
+Actual isolated browser Update completed in **156.126 seconds**, reusing 610
+annual histories and downloading four. It creates snapshot
+`b3efdac6f4a55de632732d34`, adds 420 annual records across ten historical ticker
+mappings, and recovers 15 more names: ADS, BBBY, COHR, COR, ECHO, ENDP, FTR, GPS,
+HRS, KORS, LHX, MNK, P, SYMC and TMK. Exclusions improve **84/82 to 69/67**, a
+total of 49 recoveries from the user's original 118/116. There are no newly
+excluded names. All **85,867 price blocks**, original annual records, corporate
+actions and original saved result bodies remain identical. The normal workspace
+retains the user's five original backtests and is not modified by this acceptance.
+
+Independent source checks verify all ten captured primary-document fingerprints,
+exact quote vintages, original CIKs, and **1,009 numerical fields** across the
+420 added annual records against their accession/period/unit/filed-date-matched
+SEC companyfacts. Six current duplicate resolutions match active lookup responses;
+IR retains its separate action blockers. This establishes the specific mappings,
+not a complete historical security master or exhaustive share-class certification.
+
+All five unchanged January 3, 2017–November 6, 2026 strategies were submitted in
+one actual browser batch and completed after restart with the final source.
+Independent Decimal replay exactly matches **12,380 cash/NAV/SPY valuations**,
+**399,041 filing components** and **394,268 EPS/split checks**, including actual
+merger holdings, costs, membership, caps and final quantities. Net cumulative
+returns are **206.850% momentum, 132.944% low volatility, 182.192% quality,
+228.689% quality value and 247.409% value + momentum**, versus **277.699% SPY**.
+The results change materially when missing names return; no recipe tuning or
+outperformance claim is made. The remaining exclusions are material and the
+two-part paper-readiness goal remains incomplete.
+
+The Data evidence disclosure shows all ten mappings, quote dates and primary
+filing links. Actual 320px review has document width 320px, readable wrapped
+sources and reachable controls. All five completed tasks and the successful
+Update were observed in Activity. Detailed reports and scripts are retained in
+ignored `var/uat/paper-readiness-2026-11-09/issuer-group/`. These are warm-update
+measurements, not new empty-cache timing. No paper activation, account reset or
+order submission occurred; isolated paper plan/order/approval counts remain zero.
+
 ## 2026-11-09 — first paper-readiness coverage repair group
 
 Input contract `dated-research-inputs-v5-listing-and-market-timing` passes **380 backend / 61 UI tests**, production/TypeScript build, changed-file format, Ruff F lint and whitespace checks. Tests cover exact individual-listing recovery, retained fund/collision/error gates, immutable targeted historical revalidation, native merger signatures, conflicting alternatives, primary-source changes, quote lifetime and exact non-trading-mark checks. The ordinary update route retains support for v4 snapshots.

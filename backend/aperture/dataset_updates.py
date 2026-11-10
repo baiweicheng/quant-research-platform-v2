@@ -29,6 +29,7 @@ def update(store, identifier, progress, provider=None):
         "dated-research-inputs-v2-reviewed-actions",
         "dated-research-inputs-v3-holding-lifetimes",
         "dated-research-inputs-v4-identity-guards",
+        "dated-research-inputs-v5-listing-and-market-timing",
         RESEARCH_VERSION,
     }:
         from .bundles import download

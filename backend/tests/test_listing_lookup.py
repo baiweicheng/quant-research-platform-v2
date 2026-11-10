@@ -103,7 +103,7 @@ def test_update_revalidates_only_exact_missing_directory_issue(
 ):
     from datetime import date
     from dataclasses import replace
-    from aperture.research_data import download, MISSING_DIRECTORY
+    from aperture.research_data import download, MISSING_DIRECTORY, MULTIPLE_DIRECTORY
 
     store, api, state = vendor
     get = api.get
@@ -133,7 +133,11 @@ def test_update_revalidates_only_exact_missing_directory_issue(
         old,
         metadata={
             **old.metadata,
-            "input_issues": [*old.metadata["input_issues"], unrelated],
+            "input_issues": [
+                *old.metadata["input_issues"],
+                unrelated,
+                {**unrelated, "reason": MULTIPLE_DIRECTORY},
+            ],
         },
     )
     available = True
@@ -145,6 +149,7 @@ def test_update_revalidates_only_exact_missing_directory_issue(
         is fund
     )
     assert unrelated in new.metadata["input_issues"]
+    assert {**unrelated, "reason": MULTIPLE_DIRECTORY} in new.metadata["input_issues"]
     assert bool(new.metadata["historical_identity_revalidation"]) is (not fund)
     assert tuple(b for b in new.bars["ABC"] if b.session < date(2017, 1, 24)) == tuple(
         b for b in old.bars["ABC"] if b.session < date(2017, 1, 24)

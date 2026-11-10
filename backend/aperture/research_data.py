@@ -19,8 +19,9 @@ from .action_evidence import (
     VERSION as ACTION_EVIDENCE_VERSION,
 )
 
-VERSION = "dated-research-inputs-v5-listing-and-market-timing"
+VERSION = "dated-research-inputs-v6-dated-issuers"
 MISSING_DIRECTORY = "Historical listing identity is unavailable in the captured directory; a raw-symbol fallback is not issuer verification."
+MULTIPLE_DIRECTORY = "Multiple historical listing identities require dated issuer/share-basis verification."
 
 
 def unreconciled_mergers(events):
@@ -427,7 +428,19 @@ def download(store, payload, progress, provider=None, base=None):
                         first_membership.setdefault(symbol, days[0])
                         last_membership[symbol] = days[-1]
         primary_symbols = set(names)
-        from .security_identity import supplement_listing_directory
+        from .security_identity import (
+            supplement_listing_directory,
+            reconcile_current_listings,
+        )
+
+        current_members = {
+            m["symbol"]: m for m in (audit or {}).get("current", {}).get("members", [])
+        }
+        if audit and audit["kind"] == "current":
+            current_members = {m["symbol"]: m for m in audit["members"]}
+        current_listing_audit = reconcile_current_listings(
+            api, listing_candidates, current_members, first_membership
+        )
 
         # Reviewed merger supplements also need the old listing identity, so
         # recover omitted primary listings before deriving recipient paths.
@@ -579,10 +592,36 @@ def download(store, payload, progress, provider=None, base=None):
                 api, listing_candidates, set(names) - listing_lookups.keys()
             )
         )
+
+        def quote_asof(symbol):
+            asof = (
+                last
+                if symbol in core_current
+                or symbol in active_names
+                or symbol not in last_membership
+                else last_membership[symbol]
+            )
+            if (
+                symbol in last_membership
+                and symbol not in core_current
+                and symbol not in dependencies
+            ):
+                asof = last_membership[symbol]
+            return date(2017, 8, 31) if symbol in ("DOW.OLD", "DD.OLD") else asof
+
+        from .historical_issuers import verify as verify_issuer
+
+        issuer_evidence = {
+            symbol: proof
+            for symbol in names
+            if (proof := verify_issuer(symbol, quote_asof(symbol), api)) is not None
+        }
         supported_listing_symbols = set()
         for symbol in names:
             rows = list(listing_candidates[symbol].values())
-            if not rows:
+            if symbol in issuer_evidence:
+                supported_listing_symbols.add(symbol)
+            elif not rows:
                 issue(
                     symbol,
                     first,
@@ -594,7 +633,7 @@ def download(store, payload, progress, provider=None, base=None):
                 issue(
                     symbol,
                     first,
-                    "Multiple historical listing identities require dated issuer/share-basis verification.",
+                    MULTIPLE_DIRECTORY,
                     "identity",
                     last,
                 )
@@ -648,23 +687,7 @@ def download(store, payload, progress, provider=None, base=None):
 
         identity = {}
         for symbol in names:
-            asof = (
-                last
-                if symbol in core_current
-                or symbol in active_names
-                or symbol not in last_membership
-                else last_membership[symbol]
-            )
-            # A formerly indexed ticker with a current unrelated listing must
-            # use its indexed vintage, rather than today's symbol mapping.
-            if (
-                symbol in last_membership
-                and symbol not in core_current
-                and symbol not in dependencies
-            ):
-                asof = last_membership[symbol]
-            if symbol in ("DOW.OLD", "DD.OLD"):
-                asof = date(2017, 8, 31)
+            asof = quote_asof(symbol)
             if base and symbol in base.metadata.get("identity_resolution", {}):
                 old_identity = base.metadata["identity_resolution"][symbol]
                 old_id = old_identity.get("listing_id")
@@ -692,6 +715,8 @@ def download(store, payload, progress, provider=None, base=None):
                 "asof": str(asof),
                 "candidate_ids": sorted(listing_candidates[symbol]),
                 "individual_lookup": listing_lookups.get(symbol),
+                "current_listing_resolution": current_listing_audit.get(symbol),
+                "historical_issuer_evidence": issuer_evidence.get(symbol),
                 "listing_id": next(
                     (a.get("id") for a in active if a["symbol"] == symbol), None
                 ),
@@ -985,15 +1010,26 @@ def download(store, payload, progress, provider=None, base=None):
             {
                 "symbol": i["symbol"],
                 "prior_issue": i,
-                "listing": listing_lookups[i["symbol"]],
+                "listing": listing_lookups.get(i["symbol"]),
+                "issuer_evidence": issuer_evidence.get(i["symbol"]),
+                "current_listing_resolution": current_listing_audit.get(i["symbol"]),
             }
             for i in (base.metadata.get("input_issues", []) if base else [])
             if i["kind"] == "identity"
-            and i["reason"] == MISSING_DIRECTORY
+            and i["reason"] in (MISSING_DIRECTORY, MULTIPLE_DIRECTORY)
             and i["symbol"] in supported_listing_symbols
-            and listing_lookups.get(i["symbol"], {}).get("status") == "found"
+            and (
+                (
+                    i["reason"] == MISSING_DIRECTORY
+                    and listing_lookups.get(i["symbol"], {}).get("status") == "found"
+                )
+                or i["symbol"] in issuer_evidence
+                or i["symbol"] in current_listing_audit
+            )
         ]
-        revalidated = {i["symbol"] for i in identity_revalidation}
+        revalidated = {
+            (i["symbol"], i["prior_issue"]["reason"]) for i in identity_revalidation
+        }
         if base:
             old_marks = {
                 d: dict(m)
@@ -1020,9 +1056,9 @@ def download(store, payload, progress, provider=None, base=None):
                 if (base.bars.get(i["symbol"]) or i["symbol"] in frozen_quotes)
                 and (i["start"] < str(overlap) or i["symbol"] in frozen_quotes)
                 and not (
-                    i["symbol"] in revalidated
+                    (i["symbol"], i["reason"]) in revalidated
                     and i["kind"] == "identity"
-                    and i["reason"] == MISSING_DIRECTORY
+                    and i["reason"] in (MISSING_DIRECTORY, MULTIPLE_DIRECTORY)
                 )
             ] + [
                 {
@@ -1099,6 +1135,7 @@ def download(store, payload, progress, provider=None, base=None):
             ),
             "prices": acquisition,
             "identity": identity,
+            "historical_issuer_evidence": issuer_evidence,
             "historical_identity_revalidation": identity_revalidation,
             "research_open_income": opening_income,
             "input_issues": issues,
@@ -1118,6 +1155,7 @@ def download(store, payload, progress, provider=None, base=None):
             "corporate_actions": normalized_events,
             "research_open_income": opening_income,
             "identity_resolution": identity,
+            "historical_issuer_evidence": issuer_evidence,
             "historical_identity_revalidation": identity_revalidation,
             "coverage": health,
             "membership": audit,

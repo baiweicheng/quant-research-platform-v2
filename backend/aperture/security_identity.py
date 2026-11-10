@@ -3,6 +3,62 @@
 from datetime import date
 
 
+def reconcile_current_listings(api, candidates, members, first_membership):
+    """Resolve duplicate provider IDs only in a supported current-index cohort.
+
+    Match every descriptive listing field, the unique active record and an
+    individual lookup. The first eligible date must be no earlier than the
+    current constituent's recorded admission. Old/reused tickers and different
+    classes/names remain unresolved; all original IDs remain in the audit.
+    """
+    from urllib.parse import quote
+
+    from .config import PAPER_URL
+    from .domain import ResearchError
+
+    audit = {}
+    for symbol, observed in members.items():
+        rows = list(candidates.get(symbol, {}).values())
+        if (
+            len(rows) < 2
+            or not observed.get("date_added")
+            or symbol not in first_membership
+        ):
+            continue
+        if first_membership[symbol] < date.fromisoformat(observed["date_added"]):
+            continue
+        fields = ("symbol", "name", "exchange", "class")
+        if (
+            any(not r.get(k) for r in rows for k in fields)
+            or len({tuple(r[k] for k in fields) for r in rows}) != 1
+        ):
+            continue
+        active = [r for r in rows if r.get("status") == "active"]
+        if len(active) != 1:
+            continue
+        asset = api.get(
+            "alpaca", PAPER_URL + "/v2/assets/" + quote(symbol, safe=""), ttl=86400
+        )
+        if (
+            not isinstance(asset, dict)
+            or asset.get("id") != active[0]["id"]
+            or asset.get("status") != "active"
+            or any(asset.get(k) != active[0][k] for k in fields)
+        ):
+            raise ResearchError(
+                f"{symbol}: individual and bulk listing identities disagree."
+            )
+        audit[symbol] = {
+            "basis": "Matching provider lookup and identical listing descriptors, within the current constituent admission cohort",
+            "all_candidate_ids": sorted(candidates[symbol]),
+            "selected_id": asset["id"],
+            "date_added": observed["date_added"],
+            "first_eligible": str(first_membership[symbol]),
+        }
+        candidates[symbol] = {asset["id"]: asset}
+    return audit
+
+
 def supplement_listing_directory(api, candidates, names):
     """Resolve omissions in bulk assets without overriding a listed collision.
 

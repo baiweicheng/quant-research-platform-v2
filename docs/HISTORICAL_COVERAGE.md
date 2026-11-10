@@ -4,6 +4,50 @@ Engine 0.6.0 narrows the price history required for exploratory backtests and ad
 
 ## Individual listings and market timing
 
+### Dated historical issuers (input contract v6)
+
+Ten reviewed filing/quote-vintage pairs identify ADS, BBBY, ENDP, FTR, GPS,
+HRS, KORS, MNK, SYMC and TMK independently of the SEC's current ticker
+directory. The exact primary-document fingerprints and provider quote-asof
+dates must match. These mappings also load each original issuer's annual SEC
+history; they never substitute an unrelated present-day holder of a reused
+ticker. For example, [BBBY's 2017 cover](https://www.sec.gov/Archives/edgar/data/886158/000117184317003900/R1.htm)
+identifies CIK 886158, and [Frontier's 2016 annual report, Item 5](https://www.sec.gov/Archives/edgar/data/20520/000002052017000003/ftr-20161231x10k.htm)
+identifies the original FTR common stock. Neither mapping crosses the later
+bankruptcy into new equity. [KORS's annual cover](https://www.sec.gov/Archives/edgar/data/1530721/000153072118000035/R1.htm)
+explicitly reports its ticker; a quarterly cover that omitted it was insufficient.
+
+Issuer certification is retrospective identity evidence, not a point-in-time
+security master. Financial values remain accession/filing-date versioned, with
+the existing unit, split, annual-period, share-basis and availability checks.
+Price/action conflicts, missing quotes and unsupported terminal consideration
+remain independent blockers. This does not implement a general share-class or
+rename-conversion engine; a rename at an index ticker boundary can still
+generate a modeled sale/rebuy rather than seamless continuity.
+
+For current constituents, duplicate provider listing IDs can be reconciled
+only when all names/classes/exchanges match, exactly one candidate is active,
+an individual lookup confirms that active ID and status, and the first
+eligible date is within the constituent's recorded admission cohort. Different
+descriptors, older cohorts and former/reused tickers remain ambiguous. All
+original candidate IDs survive in the audit. Six current duplicate records
+qualify in the acceptance archive; IR retains its separate action blockers.
+
+Ordinary Update revalidates only the exact missing/multiple-directory warning
+supported by the new evidence. It preserves the earlier snapshot, historical
+prices, and other warnings. Data exposes the ten historical mappings and their
+primary links in an expandable evidence section; no new routine action is needed.
+
+The November 9 isolated browser Update completed in 156.126 seconds, reused
+610 annual histories and downloaded four, and reduced exclusions from 84/82 to
+69/67: 15 more recovered, 49 versus the user's original 118/116. No previously
+eligible security became excluded. All 85,867 price blocks (including the
+recent overlap), existing annual records, corporate actions and original saved
+results remained unchanged. The ten mapped tickers add 420 annual records; an independent audit
+matches 1,009 available numerical fields to their exact captured SEC facts and
+verifies all ten primary-document fingerprints and six active lookup responses.
+The remaining exclusions are material; full paper readiness is not established.
+
 Input contract v5 checks the individual asset endpoint when both bulk listing directories omit a security. It requires the exact requested symbol and valid listing metadata, retains unsupported/fund/collision checks, and captures the response through the ordinary provider archive. A missing resource remains unresolved; permission, transport and malformed-response errors fail the acquisition. This recovers provider-directory omissions, not a complete historical security master.
 
 Ordinary Update can revalidate the specific historical missing-directory warning when a captured individual lookup supplies a supported listing. Other identity and action warnings remain. The original snapshot and its prices are preserved; the new snapshot records the prior warning and replacement listing evidence. Historical price downloads are unnecessary for this metadata repair.
