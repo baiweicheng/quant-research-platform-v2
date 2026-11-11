@@ -549,3 +549,116 @@ def test_slow_first_issuer_does_not_block_later_issuers(tmp_path, dataset, monke
     assert [
         r["symbol"] for r in result["metadata"]["fundamentals"]["coverage"]
     ] == names
+
+
+def test_combined_goods_and_service_costs_b039a():
+    company = {
+        "cik": 1,
+        "facts": {
+            "us-gaap": {
+                "Assets": {"units": {"USD": [fact(45907, instant=True)]}},
+                "Revenues": {"units": {"USD": [fact(18274)]}},
+                "CostOfGoodsSold": {"units": {"USD": [fact(8214)]}},
+                "CostOfServices": {"units": {"USD": [fact(1691)]}},
+                "EarningsPerShareDiluted": {"units": {"USD/shares": [fact(4)]}},
+            }
+        },
+    }
+    rows = statements(company)
+    assert len(rows) == 1
+    assert rows[0].gross_profit == 18274 - 8214 - 1691 == 8369
+    assert (
+        rows[0].sources["gross_profit"]
+        == "Revenues - CostOfGoodsSold + CostOfServices"
+    )
+
+
+def test_partial_cost_fallback_rejected_when_service_revenue_reported_without_service_cost():
+    company = {
+        "cik": 1,
+        "facts": {
+            "us-gaap": {
+                "Assets": {"units": {"USD": [fact(1000, instant=True)]}},
+                "Revenues": {"units": {"USD": [fact(500)]}},
+                "SalesRevenueGoodsNet": {"units": {"USD": [fact(300)]}},
+                "SalesRevenueServicesNet": {"units": {"USD": [fact(200)]}},
+                "CostOfGoodsSold": {"units": {"USD": [fact(150)]}},
+                "EarningsPerShareDiluted": {"units": {"USD/shares": [fact(1)]}},
+            }
+        },
+    }
+    rows = statements(company)
+    assert len(rows) == 1
+    assert rows[0].gross_profit is None
+    assert any("Partial-cost fallback rejected" in issue for issue in rows[0].issues)
+
+
+def test_contract_revenue_including_assessed_tax_and_cost_of_goods_and_services():
+    company = {
+        "cik": 1,
+        "facts": {
+            "us-gaap": {
+                "Assets": {"units": {"USD": [fact(25000, instant=True)]}},
+                "RevenueFromContractWithCustomerIncludingAssessedTax": {
+                    "units": {"USD": [fact(38973)]}
+                },
+                "CostOfGoodsAndServicesSold": {"units": {"USD": [fact(27831)]}},
+                "EarningsPerShareDiluted": {"units": {"USD/shares": [fact(2)]}},
+            }
+        },
+    }
+    rows = statements(company)
+    assert len(rows) == 1
+    assert rows[0].gross_profit == 38973 - 27831 == 11142
+    assert (
+        "RevenueFromContractWithCustomerIncludingAssessedTax - CostOfGoodsAndServicesSold"
+        in rows[0].sources["gross_profit"]
+    )
+
+
+def test_pure_service_cost_recovery():
+    company = {
+        "cik": 1,
+        "facts": {
+            "us-gaap": {
+                "Assets": {"units": {"USD": [fact(10000, instant=True)]}},
+                "RevenueFromContractWithCustomerExcludingAssessedTax": {
+                    "units": {"USD": [fact(6000)]}
+                },
+                "CostOfServices": {"units": {"USD": [fact(2500)]}},
+                "EarningsPerShareDiluted": {"units": {"USD/shares": [fact(3)]}},
+            }
+        },
+    }
+    rows = statements(company)
+    assert len(rows) == 1
+    assert rows[0].gross_profit == 3500
+    assert "CostOfServices" in rows[0].sources["gross_profit"]
+
+
+def test_profitability_diagnostic_distinguishes_noncomparable_sectors(dataset):
+    stmt = replace(statements()[0], gross_profit=None)
+    ds_fin = replace(
+        dataset, sectors={"ABC": "Financials"}, fundamentals={"ABC": (stmt,)}
+    )
+    vals_fin, _ = inputs(ds_fin, "ABC", date(2023, 8, 31))
+    assert (
+        vals_fin.get("profitability_issue")
+        == "Gross profit is not applicable for Financials under US-GAAP."
+    )
+
+    ds_tech = replace(
+        dataset,
+        sectors={"ABC": "Information Technology"},
+        fundamentals={"ABC": (stmt,)},
+    )
+    vals_tech, _ = inputs(ds_tech, "ABC", date(2023, 8, 31))
+    assert "unavailable" in vals_tech.get("profitability_issue", "")
+
+    ranked, excluded = rank(ds_fin, "quality", date(2023, 8, 31))
+    assert not ranked
+    assert (
+        excluded[0]["reason"]
+        == "Gross profit is not applicable for Financials under US-GAAP."
+    )
+

@@ -25,22 +25,29 @@ from .eps_policy import (
 )
 from .annual_refresh import companyfacts as read_companyfacts
 
-VERSION = "annual-us-gaap-v5-successors-and-eps-elements"
+VERSION = "annual-us-gaap-v6-gross-profit-and-service-costs"
 AVAILABILITY = "After close + 15 minutes on the first exchange session strictly after the SEC filing date. No same-day publication assumption."
 TAGS = {
     "assets": ("Assets",),
     "gross_profit": ("GrossProfit",),
     "revenue": (
         "RevenueFromContractWithCustomerExcludingAssessedTax",
+        "RevenueFromContractWithCustomerIncludingAssessedTax",
         "Revenues",
         "SalesRevenueNet",
     ),
-    "cost": ("CostOfRevenue", "CostOfGoodsAndServicesSold", "CostOfGoodsSold"),
+    "cost": (
+        "CostOfRevenue",
+        "CostOfGoodsAndServicesSold",
+        "CostOfGoodsSold",
+        "CostOfServices",
+    ),
     # The combined element is the filer's diluted EPS when basic and diluted
     # are reported as one amount; a separate diluted fact takes precedence,
     # then the continuing-operations elements (see ``EPS_TAGS``).
     "eps": EPS_TAGS,
 }
+REVENUE_COMPONENTS = ("SalesRevenueGoodsNet", "SalesRevenueServicesNet")
 # Positive diluted EPS above the share price (a P/E below one) is not a
 # plausible reported value for a listed common share; it indicates an XBRL
 # scale error (for example 1,730,000 for $1.73).
@@ -78,7 +85,7 @@ def normalize(
     class_evidence = class_evidence or {}
     groups: dict[tuple, dict[str, set[Decimal]]] = {}
     filed_dates, forms = {}, {}
-    wanted = {tag for tags in TAGS.values() for tag in tags}
+    wanted = {tag for tags in TAGS.values() for tag in tags} | set(REVENUE_COMPONENTS)
     for tag in wanted:
         unit = "USD/shares" if tag in TAGS["eps"] else "USD"
         for item in facts.get(tag, {}).get("units", {}).get(unit, []):
@@ -136,10 +143,90 @@ def normalize(
         if gross is None and "gross_profit" not in conflicted:
             # Only exactly matched flow durations, units and accession can be
             # subtracted. Revenue and cost from a different filing never mix.
-            revenue, cost = value_for("revenue"), value_for("cost")
-            if revenue is not None and cost is not None:
+            revenue = value_for("revenue")
+            if revenue is None and "revenue" not in conflicted:
+                goods_rev_cand = values.get("SalesRevenueGoodsNet", set())
+                srv_rev_cand = values.get("SalesRevenueServicesNet", set())
+                if len(goods_rev_cand) > 1 or len(srv_rev_cand) > 1:
+                    conflicted.add("revenue")
+                    row_issues.append(
+                        "Conflicting component revenue values in the same filing/period; not selected."
+                    )
+                else:
+                    goods_rev = next(iter(goods_rev_cand)) if goods_rev_cand else None
+                    srv_rev = next(iter(srv_rev_cand)) if srv_rev_cand else None
+                    if goods_rev is not None and srv_rev is not None:
+                        revenue = goods_rev + srv_rev
+                        sources["revenue"] = (
+                            "SalesRevenueGoodsNet + SalesRevenueServicesNet"
+                        )
+                    elif goods_rev is not None:
+                        revenue = goods_rev
+                        sources["revenue"] = "SalesRevenueGoodsNet"
+                    elif srv_rev is not None:
+                        revenue = srv_rev
+                        sources["revenue"] = "SalesRevenueServicesNet"
+
+            # Determine economically complete cost of goods and services:
+            # 1. Primary aggregate cost tags: CostOfRevenue, then CostOfGoodsAndServicesSold
+            cost = None
+            cost_source = None
+            for tag in ("CostOfRevenue", "CostOfGoodsAndServicesSold"):
+                candidates = values.get(tag, set())
+                if len(candidates) > 1:
+                    conflicted.add("cost")
+                    row_issues.append(
+                        f"Conflicting {tag} values in the same filing/period; not selected."
+                    )
+                    break
+                if candidates:
+                    cost = next(iter(candidates))
+                    cost_source = tag
+                    break
+
+            # 2. Component cost tags if aggregate tag absent
+            if cost is None and "cost" not in conflicted:
+                cogs_cand = values.get("CostOfGoodsSold", set())
+                cos_cand = values.get("CostOfServices", set())
+                if len(cogs_cand) > 1 or len(cos_cand) > 1:
+                    conflicted.add("cost")
+                    row_issues.append(
+                        "Conflicting component cost values in the same filing/period; not selected."
+                    )
+                else:
+                    cogs = next(iter(cogs_cand)) if cogs_cand else None
+                    cos = next(iter(cos_cand)) if cos_cand else None
+                    if cogs is not None and cos is not None:
+                        cost = cogs + cos
+                        cost_source = "CostOfGoodsSold + CostOfServices"
+                    elif cos is not None and cogs is None:
+                        cost = cos
+                        cost_source = "CostOfServices"
+                    elif cogs is not None and cos is None:
+                        # Detect partial-cost fallback: if filing reports service revenue but no service cost
+                        srv_rev_cand = values.get("SalesRevenueServicesNet", set())
+                        srv_rev = (
+                            next(iter(srv_rev_cand))
+                            if srv_rev_cand and len(srv_rev_cand) == 1
+                            else ZERO
+                        )
+                        if srv_rev > ZERO:
+                            row_issues.append(
+                                "Partial-cost fallback rejected: filing reports service revenue without service cost."
+                            )
+                        else:
+                            cost = cogs
+                            cost_source = "CostOfGoodsSold"
+
+            if (
+                revenue is not None
+                and cost is not None
+                and "cost" not in conflicted
+                and "revenue" not in conflicted
+            ):
                 gross = revenue - cost
-                sources["gross_profit"] = sources["revenue"] + " - " + sources["cost"]
+                sources["cost"] = cost_source
+                sources["gross_profit"] = sources["revenue"] + " - " + cost_source
         # Eligibility belongs to this accession, never today's ticker count.
         evidence = class_evidence.get(accession, {})
         eps_compatible = bool(
@@ -267,6 +354,25 @@ def inputs(
     }
     if statement.assets and statement.gross_profit is not None:
         values["profitability"] = statement.gross_profit / statement.assets
+    elif statement.gross_profit is None:
+        sector = dataset.sectors.get(symbol, "Unknown")
+        if sector in ("Financials", "Utilities", "Real Estate"):
+            values["profitability_issue"] = (
+                f"Gross profit is not applicable for {sector} under US-GAAP."
+            )
+        else:
+            values["profitability_issue"] = next(
+                (
+                    issue
+                    for issue in statement.issues
+                    if "partial-cost" in issue.lower()
+                    or "gross profit" in issue.lower()
+                    or "cost" in issue.lower()
+                ),
+                "Annual gross profit is unavailable in filing.",
+            )
+    elif not statement.assets or statement.assets <= ZERO:
+        values["profitability_issue"] = "Filing reports nonpositive or missing assets."
     action_days = calendar.sessions(statement.filed + timedelta(days=1), decision)
     known_days = {bar.session for bar in bars}
     from .research_data import blocked_inputs

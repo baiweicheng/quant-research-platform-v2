@@ -146,7 +146,20 @@ def rank(
                     {
                         "symbol": symbol,
                         "reason": reason
-                        or components.get("valuation_issue")
+                        or (
+                            components.get("profitability_issue")
+                            if "profitability" in factors
+                            and components.get("profitability", 0) <= 0
+                            and components.get("profitability_issue")
+                            else None
+                        )
+                        or (
+                            components.get("valuation_issue")
+                            if "earnings_yield" in factors
+                            and components.get("earnings_yield", 0) <= 0
+                            and components.get("valuation_issue")
+                            else None
+                        )
                         or "All required factors must be available and positive: "
                         + ", ".join(factors)
                         + ".",
