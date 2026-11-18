@@ -15,7 +15,7 @@ const protocol = {
   name: "Study",
   hypothesis: "Test persistence",
   dataset_name: "Prices",
-  strategy: { name: "Momentum", version: "1.0.0" },
+  strategy: { id: "momentum", name: "Momentum", version: "1.0.0" },
   start: "2023-01-03",
   development_end: "2025-12-31",
   holdout_start: "2026-01-02",

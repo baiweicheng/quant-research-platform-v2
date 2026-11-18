@@ -8,7 +8,18 @@ from uuid import uuid4
 
 from . import __version__, calendar
 from .broker import NY, TERMINAL, Broker, ReconciliationPending
-from .domain import CENT, ONE, SHARE, ZERO, Policy, ResearchError, decimal, strategy
+from .domain import (
+    ARCHIVED_STRATEGIES,
+    CENT,
+    ONE,
+    SHARE,
+    ZERO,
+    Policy,
+    ResearchError,
+    decimal,
+    runnable_strategy,
+    strategy,
+)
 from .portfolio import target_weights
 from .signals import rank
 from .store import decode, encode, now
@@ -62,7 +73,7 @@ def configuration(store):
 
 
 def save_configuration(store, data):
-    recipe = strategy(data["strategy_id"])
+    recipe = runnable_strategy(data["strategy_id"])
     policy = policy_from(data)
     if not decimal(".01") <= policy.cash_reserve <= decimal(".5"):
         raise ResearchError(
@@ -187,6 +198,8 @@ def approval(store, cfg=None, snapshot=None):
 
 def apply_membership_update(store):
     cfg = configuration(store)
+    if cfg:
+        runnable_strategy(cfg["strategy_id"])
     pending = store.preference("paper_membership_update")
     current = store.membership("current")
     if (
@@ -233,6 +246,8 @@ def apply_membership_update(store):
 
 def approve_strategy(store, data):
     cfg = configuration(store)
+    if cfg:
+        runnable_strategy(cfg["strategy_id"])
     snap = store.preference("paper_snapshot", {})
     if not cfg or not snap:
         raise ResearchError(
@@ -318,6 +333,14 @@ def plan(store, identifier):
     return p
 
 
+def require_runnable_plan(p):
+    identifier = p.get("strategy", {}).get("id") or p.get("config", {}).get(
+        "strategy_id"
+    )
+    if identifier:
+        runnable_strategy(identifier)
+
+
 def set_state(store, identifier, state, message):
     with store.connect() as db:
         current = db.execute(
@@ -360,6 +383,11 @@ def orders(store, identifier=None):
 def public_state(store):
     cfg = configuration(store)
     snap = store.preference("paper_snapshot")
+    archived_strategy = (
+        strategy(cfg["strategy_id"])["name"]
+        if cfg and cfg["strategy_id"] in ARCHIVED_STRATEGIES
+        else None
+    )
     with store.connect() as db:
         events = [
             dict(r)
@@ -367,6 +395,7 @@ def public_state(store):
         ]
     return {
         "config": cfg,
+        "archived_strategy": archived_strategy,
         "snapshot": snap,
         "approval": approval(store),
         "plans": plans(store),
@@ -376,8 +405,12 @@ def public_state(store):
         "performance": store.preference("paper_performance"),
         "last_error": store.preference("paper_error"),
         "worker_seen": store.preference("worker_seen"),
-        "automatic_status": store.preference(
-            "paper_auto_status", "Manual mode. Prepare a weekly review when ready."
+        "automatic_status": (
+            "Choose an available paper strategy in settings to prepare a new review."
+            if archived_strategy
+            else store.preference(
+                "paper_auto_status", "Manual mode. Prepare a weekly review when ready."
+            )
         ),
         "fill_check": store.preference("paper_fill_check"),
         "membership_update": store.preference("paper_membership_update"),
@@ -482,7 +515,8 @@ def prepare(store, job, progress, broker):
         raise ResearchError(
             "Choose the paper strategy, universe and risk policy first."
         )
-    if strategy(cfg["strategy_id"])["version"] != cfg["strategy_version"]:
+    recipe = runnable_strategy(cfg["strategy_id"])
+    if recipe["version"] != cfg["strategy_version"]:
         raise ResearchError(
             "The strategy implementation version changed. Save new settings and obtain fresh approval."
         )
@@ -676,7 +710,7 @@ def prepare(store, job, progress, broker):
         "dataset_id": ds.id,
         "dataset_name": ds.name,
         "source_digest": ds.digest,
-        "strategy": strategy(cfg["strategy_id"]),
+        "strategy": recipe,
         "decision_session": str(latest),
         "execute_session": str(calendar.next_session(latest)),
         "last_execution_session": str(
@@ -763,7 +797,10 @@ def prepare(store, job, progress, broker):
 
 def schedule(store, identifier):
     p = plan(store, identifier)
+    require_runnable_plan(p)
     cfg = configuration(store)
+    if cfg:
+        runnable_strategy(cfg["strategy_id"])
     a = approval(store)
     if p["state"] != "prepared":
         raise ResearchError(
@@ -801,7 +838,10 @@ def schedule(store, identifier):
 
 def retry_quote(store, identifier):
     p = plan(store, identifier)
+    require_runnable_plan(p)
     cfg = configuration(store)
+    if cfg:
+        runnable_strategy(cfg["strategy_id"])
     if p["state"] != "blocked" or "quote" not in p["message"].lower():
         raise ResearchError(
             "Only a quote-validation stop can retry this frozen plan. Other changes need a new review."
@@ -852,6 +892,7 @@ def resume(store):
     cfg = configuration(store)
     if not cfg:
         raise ResearchError("Save paper settings first.")
+    runnable_strategy(cfg["strategy_id"])
     store.set_preference("paper_config", {**cfg, "paused": False})
     return configuration(store)
 
@@ -881,6 +922,7 @@ def expected_positions(p, local_orders):
 
 def execute_plan(store, p, broker, at=None):
     at = at or datetime.now(UTC)
+    require_runnable_plan(p)
     from .staged import VERSION, execute as stage_orders
 
     if p.get("config", {}).get("execution_version") == VERSION:
@@ -891,7 +933,7 @@ def execute_plan(store, p, broker, at=None):
         raise ResearchError(
             "Paper approval/settings changed or execution is paused. Stop and prepare a new review."
         )
-    if strategy(cfg["strategy_id"])["version"] != cfg["strategy_version"]:
+    if runnable_strategy(cfg["strategy_id"])["version"] != cfg["strategy_version"]:
         raise ResearchError(
             "The approved strategy version changed. New paper approval is required."
         )
@@ -1147,8 +1189,11 @@ def tick(store, at=None, broker=None):
         None,
     )
     if active:
-        b = broker or Broker()
+        b = broker
         try:
+            require_runnable_plan(active)
+            runnable_strategy(cfg["strategy_id"])
+            b = b or Broker()
             execute_plan(store, active, b, at)
         except ReconciliationPending as e:
             set_state(store, active["id"], "waiting_reconciliation", str(e))
@@ -1156,7 +1201,7 @@ def tick(store, at=None, broker=None):
             store.set_preference("paper_error", str(e))
             set_state(store, active["id"], "blocked", str(e))
         finally:
-            if broker is None:
+            if broker is None and b is not None:
                 b.close()
         return
     if any(o["state"] not in TERMINAL for o in orders(store)):
@@ -1169,7 +1214,11 @@ def tick(store, at=None, broker=None):
             if broker is None:
                 b.close()
         return
-    if cfg["mode"] != "automatic" or cfg["paused"]:
+    if (
+        cfg["strategy_id"] in ARCHIVED_STRATEGIES
+        or cfg["mode"] != "automatic"
+        or cfg["paused"]
+    ):
         return
     a = approval(store)
     if not a or not a["allow_automatic"]:

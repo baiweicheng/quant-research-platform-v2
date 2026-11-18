@@ -126,6 +126,7 @@ type Performance = {
 };
 type PaperState = {
   config?: Config | null;
+  archived_strategy?: string | null;
   snapshot?: PaperSnapshot | null;
   approval?: {
     id: string;
@@ -282,7 +283,11 @@ export function PaperWeekly({ onPortfolio }: { onPortfolio: () => void }) {
       <div className="weekly-overline">
         <span className="eyebrow">YOUR PAPER WEEK</span>
         <Badge tone="light">
-          {cfg?.paused ? "Paused" : (cfg?.mode ?? "Set up")}
+          {data?.archived_strategy
+            ? "Archived strategy"
+            : cfg?.paused
+              ? "Paused"
+              : (cfg?.mode ?? "Set up")}
         </Badge>
       </div>
       <h2>Prepare once. Review with context.</h2>
@@ -307,16 +312,18 @@ export function PaperWeekly({ onPortfolio }: { onPortfolio: () => void }) {
           className="button light"
           disabled={act.isPending}
           onClick={() =>
-            cfg && !reviewExisting
+            cfg && !data?.archived_strategy && !reviewExisting
               ? act.mutate({ path: "/actions/prepare" })
               : onPortfolio()
           }
         >
           {reviewExisting
             ? "Review current paper plan"
-            : cfg
-              ? "Prepare weekly paper review"
-              : "Set up paper trading"}
+            : data?.archived_strategy
+              ? "Choose a paper strategy"
+              : cfg
+                ? "Prepare weekly paper review"
+                : "Set up paper trading"}
           <ArrowRight size={16} />
         </button>
         <button className="text-link" onClick={onPortfolio}>
@@ -339,6 +346,8 @@ export default function PaperWorkspace({ state }: { state: State }) {
   const action = useAction();
   const data = query.data;
   const cfg = data?.config;
+  const archivedStrategy = data?.archived_strategy;
+  const canResume = cfg?.paused && !archivedStrategy;
   const snap = data?.snapshot;
   const providers = useQuery({
     queryKey: ["providers"],
@@ -366,6 +375,9 @@ export default function PaperWorkspace({ state }: { state: State }) {
   const [selected, setSelected] = useState("");
   const [ack, setAck] = useState(false);
   const p = data?.plans?.find((p) => p.id === selected) ?? data?.plans?.[0];
+  const planArchived =
+    p && !state.strategies.some((s) => s.id === p.strategy.id);
+  const canUsePlan = !archivedStrategy && !planArchived;
   const latest = data?.plans?.[0];
   const unfinished = data?.orders.filter(
     (o) =>
@@ -493,6 +505,7 @@ export default function PaperWorkspace({ state }: { state: State }) {
           <button
             className="button secondary"
             disabled={
+              !!archivedStrategy ||
               action.isPending ||
               (!!data.membership_update.added.length &&
                 !data.membership_update.backfill_dataset_id)
@@ -503,7 +516,7 @@ export default function PaperWorkspace({ state }: { state: State }) {
           </button>
         </Notice>
       )}
-      {!!unfinished?.length && (
+      {!archivedStrategy && !!unfinished?.length && (
         <Notice>
           Some orders finished without filling completely. Confirmed fills are
           retained. Reconcile any open or uncertain orders first, then prepare a
@@ -527,17 +540,21 @@ export default function PaperWorkspace({ state }: { state: State }) {
           {workerFresh ? "Worker online" : "Worker unavailable or delayed"}
         </Badge>
         <span>
-          {cfg?.paused
-            ? "Execution paused"
-            : cfg
-              ? `${cfg.mode} mode`
-              : "Paper setup needed"}
+          {archivedStrategy
+            ? "Strategy archived"
+            : cfg?.paused
+              ? "Execution paused"
+              : cfg
+                ? `${cfg.mode} mode`
+                : "Paper setup needed"}
         </span>
-        <span>
-          {data?.approval
-            ? "Strategy approved for paper"
-            : "Strategy approval needed"}
-        </span>
+        {!archivedStrategy && (
+          <span>
+            {data?.approval
+              ? "Strategy approved for paper"
+              : "Strategy approval needed"}
+          </span>
+        )}
       </div>
       {snap ? (
         <>
@@ -638,14 +655,26 @@ export default function PaperWorkspace({ state }: { state: State }) {
           )}
         </div>
         <div className="card-body">
+          {archivedStrategy && (
+            <Notice>
+              {archivedStrategy} is archived. Choose an available strategy in
+              settings to prepare new paper reviews or orders.
+            </Notice>
+          )}
           {!cfg || editing ? (
             <form className="form" onSubmit={save} key={cfg?.hash ?? "new"}>
               <label>
                 Paper strategy
                 <select
                   name="strategy_id"
-                  defaultValue={cfg?.strategy_id ?? "momentum"}
+                  required
+                  defaultValue={
+                    archivedStrategy ? "" : (cfg?.strategy_id ?? "momentum")
+                  }
                 >
+                  {archivedStrategy && (
+                    <option value="">Choose a strategy</option>
+                  )}
                   {state.strategies.map((s) => (
                     <option key={s.id} value={s.id}>
                       {s.name} · v{s.version}
@@ -790,7 +819,9 @@ export default function PaperWorkspace({ state }: { state: State }) {
               </p>
               <p>
                 <strong>
-                  {state.strategies.find((s) => s.id === cfg.strategy_id)?.name}{" "}
+                  {archivedStrategy ??
+                    state.strategies.find((s) => s.id === cfg.strategy_id)
+                      ?.name}{" "}
                   · v{cfg.strategy_version}
                 </strong>
               </p>
@@ -803,13 +834,15 @@ export default function PaperWorkspace({ state }: { state: State }) {
                   ? "Broker-staged Market DAY"
                   : `${percent(Number(cfg.max_drift))} legacy limit price band`}
               </p>
-              <p>
-                {cfg.execution_version === "paper-broker-market-day-v1"
-                  ? "Prepare and approve outside market hours. Keep Aperture open until every instruction is confirmed accepted at Alpaca, then you may close the app. Closing does not cancel broker-held orders. The next launch checks actual fills before another rebalance."
-                  : cfg.mode === "automatic"
-                    ? "Automatic weekly preparation runs after the week’s final market close and submits in the next regular session, only under explicit automatic paper approval. Keep the worker running through execution and any settlement wait."
-                    : "Manual mode: prepare after a completed close, inspect the plan and separately approve the following session’s paper orders. Keep Aperture running through fills and settlement."}
-              </p>
+              {!archivedStrategy && (
+                <p>
+                  {cfg.execution_version === "paper-broker-market-day-v1"
+                    ? "Prepare and approve outside market hours. Keep Aperture open until every instruction is confirmed accepted at Alpaca, then you may close the app. Closing does not cancel broker-held orders. The next launch checks actual fills before another rebalance."
+                    : cfg.mode === "automatic"
+                      ? "Automatic weekly preparation runs after the week’s final market close and submits in the next regular session, only under explicit automatic paper approval. Keep the worker running through execution and any settlement wait."
+                      : "Manual mode: prepare after a completed close, inspect the plan and separately approve the following session’s paper orders. Keep Aperture running through fills and settlement."}
+                </p>
+              )}
               {!!cfg.exit_symbols?.length && (
                 <p>
                   Exit-only holdings: {cfg.exit_symbols.join(", ")}. They can be
@@ -824,11 +857,11 @@ export default function PaperWorkspace({ state }: { state: State }) {
                 className="button secondary"
                 onClick={() =>
                   action.mutate({
-                    path: cfg.paused ? "/actions/resume" : "/actions/stop",
+                    path: canResume ? "/actions/resume" : "/actions/stop",
                   })
                 }
               >
-                {cfg.paused
+                {canResume
                   ? "Resume approved execution"
                   : "Stop future submissions"}
               </button>
@@ -855,7 +888,7 @@ export default function PaperWorkspace({ state }: { state: State }) {
           </p>
         </div>
       </section>
-      {cfg && !data?.approval && (
+      {cfg && !archivedStrategy && !data?.approval && (
         <Approval
           key={cfg.hash}
           cfg={cfg}
@@ -867,10 +900,12 @@ export default function PaperWorkspace({ state }: { state: State }) {
       {data?.approval && (
         <Notice>
           <ShieldCheck size={16} />
-          Paper approval recorded{" "}
-          {new Date(data.approval.created_at).toLocaleString()}. Automatic
-          execution:{" "}
-          {data.approval.allow_automatic ? "permitted" : "not permitted"}.{" "}
+          {archivedStrategy
+            ? "Historical paper approval recorded"
+            : "Paper approval recorded"}{" "}
+          {new Date(data.approval.created_at).toLocaleString()}.{" "}
+          {!archivedStrategy &&
+            `Automatic execution: ${data.approval.allow_automatic ? "permitted" : "not permitted"}. `}
           {data.approval.rationale}
         </Notice>
       )}
@@ -886,16 +921,18 @@ export default function PaperWorkspace({ state }: { state: State }) {
                 Aperture is closed.
               </p>
             </div>
-            <button
-              className="button"
-              disabled={
-                action.isPending || data?.fill_check?.status === "checking"
-              }
-              onClick={() => action.mutate({ path: "/actions/prepare" })}
-            >
-              Prepare weekly paper review
-              <ArrowRight size={16} />
-            </button>
+            {!archivedStrategy && (
+              <button
+                className="button"
+                disabled={
+                  action.isPending || data?.fill_check?.status === "checking"
+                }
+                onClick={() => action.mutate({ path: "/actions/prepare" })}
+              >
+                Prepare weekly paper review
+                <ArrowRight size={16} />
+              </button>
+            )}
           </div>
           <div className="card-body">
             <p>{data?.automatic_status}</p>
@@ -931,6 +968,12 @@ export default function PaperWorkspace({ state }: { state: State }) {
                   </Badge>
                   <p>{p.message}</p>
                 </div>
+                {planArchived && (
+                  <Notice>
+                    {p.strategy.name} is archived. This saved plan remains
+                    available for review.
+                  </Notice>
+                )}
                 <p>
                   Signals after {p.decision_session} close · regular-session
                   execution {p.execute_session}. Target cash{" "}
@@ -1016,7 +1059,7 @@ export default function PaperWorkspace({ state }: { state: State }) {
                     ? "Market buys use the displayed dollar budgets; actual shares and portfolio weights depend on fills. Closing Aperture does not cancel accepted orders. Deferred amounts require a fresh review."
                     : "Buy quantities may shrink within the reviewed dollar/target/cash bounds; material changes require a fresh review."}
                 </Notice>
-                {p.state === "prepared" && (
+                {canUsePlan && p.state === "prepared" && (
                   <div className="validation-actions">
                     <label className="check-label">
                       <input
@@ -1051,7 +1094,8 @@ export default function PaperWorkspace({ state }: { state: State }) {
                     </button>
                   </div>
                 )}
-                {p.state === "blocked" &&
+                {canUsePlan &&
+                  p.state === "blocked" &&
                   p.message.toLowerCase().includes("quote") && (
                     <div className="validation-actions">
                       <label className="check-label">

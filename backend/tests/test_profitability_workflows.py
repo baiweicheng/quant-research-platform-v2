@@ -16,6 +16,8 @@ FIXTURES = Path(__file__).parent / "fixtures" / "profitability"
 
 
 def test_readonly_paper_prepare_acquires_corrected_profitability(tmp_path, monkeypatch):
+    # Exercise the historical acquisition pipeline independently of recipe availability.
+    monkeypatch.setattr("aperture.domain.ARCHIVED_STRATEGIES", frozenset())
     decision = date(2017, 3, 1)
     monkeypatch.setattr(calendar, "latest_complete", lambda *args, **kwargs: decision)
     store = Store(tmp_path / "prepare.sqlite3")

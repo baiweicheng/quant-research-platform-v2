@@ -28,6 +28,7 @@ from aperture.paper import (
     tick,
 )
 from aperture.store import Store
+from aperture.worker import process_one
 from fastapi.testclient import TestClient
 
 AT = datetime(2026, 11, 3, 15, tzinfo=UTC)
@@ -204,7 +205,7 @@ def paper(tmp_path, monkeypatch):
     monkeypatch.setattr("aperture.bundles.download", lambda *args, **kw: summary)
     monkeypatch.setattr(
         "aperture.paper.rank",
-        lambda *args: (
+        lambda *args, **kwargs: (
             [
                 RankedStock("AAPL", 1, "Technology"),
                 RankedStock("MSFT", 0.5, "Technology"),
@@ -438,6 +439,73 @@ def test_auto_only_week_end_once_and_explicit_automatic_approval(paper):
     tick(store, friday, broker)
     tick(store, friday, broker)
     assert len(store.jobs()) == 1 and store.jobs()[0]["kind"] == "paper_prepare"
+
+
+def test_archived_paper_config_blocks_new_work_and_reconciles_accepted_order(
+    paper, monkeypatch
+):
+    store, broker, cfg = paper
+    data = {
+        "strategy_id": "quality",
+        "mode": "automatic",
+        "execution": "local_limit",
+        "universe": "custom",
+        "symbols": cfg["symbols"],
+        "data_start": cfg["data_start"],
+        "max_drift": cfg["max_drift"],
+        **cfg["policy"],
+    }
+    with monkeypatch.context() as legacy:
+        legacy.setattr("aperture.domain.ARCHIVED_STRATEGIES", frozenset())
+        cfg = save_configuration(store, data)
+        recorded_approval = allow(store, True)
+        p = prepared((store, broker, cfg))
+        schedule(store, p["id"])
+        broker.mode = "pending"
+        tick(store, AT, broker)
+    assert len(broker.submissions) == 1
+    accepted = next(iter(broker.book.values()))
+
+    def unexpected_broker():
+        pytest.fail("Archived preparation initialized the broker")
+
+    monkeypatch.setattr("aperture.paper.Broker", unexpected_broker)
+    with TestClient(
+        create_app(store.path, None), headers={"X-Aperture-Client": "1"}
+    ) as client:
+        assert client.get("/api/paper").json()["approval"] == recorded_approval
+        for path, body in (
+            ("/api/paper/config", data),
+            ("/api/paper/actions/prepare", {}),
+            ("/api/paper/actions/resume", {}),
+            (
+                "/api/paper/approval",
+                {
+                    "config_hash": cfg["hash"],
+                    "confirmation": "",
+                    "rationale": "Existing approval remains in the audit.",
+                    "acknowledge_limits": True,
+                },
+            ),
+            (f"/api/paper/plans/{p['id']}/approve", {"acknowledge": True}),
+            (f"/api/paper/plans/{p['id']}/retry-quote", {"acknowledge": True}),
+        ):
+            r = client.post(path, json=body)
+            assert r.status_code == 422 and "is archived" in r.json()["detail"]
+    assert not store.jobs()
+    store.enqueue("paper_prepare", {"config_hash": cfg["hash"], "automatic": True})
+    assert process_one(store)
+    assert store.jobs()[0]["state"] == "failed"
+    assert "is archived" in store.jobs()[0]["message"]
+    tick(store, AT, broker)
+    assert plan(store, p["id"])["state"] == "blocked"
+
+    broker.fill(accepted, D(accepted["qty"]), D(100))
+    tick(store, AT, broker)
+    assert orders(store, p["id"])[0]["state"] == "filled"
+    tick(store, datetime(2026, 11, 6, 21, 16, tzinfo=UTC), broker)
+    assert configuration(store) == cfg
+    assert len(store.jobs()) == len(broker.submissions) == 1
 
 
 def test_api_header_approval_and_no_live_routes(paper):

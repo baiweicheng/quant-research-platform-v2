@@ -9,7 +9,7 @@ from pathlib import Path
 
 from . import __version__, calendar
 from .backtest import run
-from .domain import Policy, ResearchError, decimal, strategy
+from .domain import Policy, ResearchError, decimal, runnable_strategy
 from .ingest import practice_dataset
 from .portfolio import target_weights
 from .signals import rank
@@ -56,6 +56,8 @@ def execute(store: Store, job: dict):
             approval,
         )
 
+        if job["kind"] == "paper_prepare" and (cfg := configuration(store)):
+            runnable_strategy(cfg["strategy_id"])
         broker = Broker()
         try:
             if job["kind"] == "paper_sync":
@@ -231,10 +233,10 @@ def execute(store: Store, job: dict):
             },
         )
         return
+    identifier = payload["strategy_id"]
+    recipe = runnable_strategy(identifier)
     dataset = store.dataset(payload["dataset_id"])
     update(5, "Validating immutable inputs")
-    identifier = payload["strategy_id"]
-    recipe = strategy(identifier)
     policy = Policy()
     if job["kind"] == "backtest":
         body = run(

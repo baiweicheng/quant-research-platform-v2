@@ -8,7 +8,13 @@ from uuid import uuid4
 
 from . import __version__, calendar
 from .backtest import run
-from .domain import Policy, ResearchError, decimal, strategy
+from .domain import (
+    ARCHIVED_STRATEGIES,
+    Policy,
+    ResearchError,
+    decimal,
+    runnable_strategy,
+)
 from .store import Store, decode, encode, now
 
 
@@ -32,6 +38,10 @@ def guard(db, start: str, end: str):
     for row in db.execute("SELECT body FROM protocols WHERE holdout_state='locked'"):
         p = json.loads(row[0])
         if start <= p["end"] and end >= p["holdout_start"]:
+            if p["strategy_id"] in ARCHIVED_STRATEGIES:
+                raise ResearchError(
+                    f"This period overlaps the locked holdout for {p['name']}. Use its development dates or retire the archived protocol to lift the reservation."
+                )
             raise ResearchError(
                 f"This period overlaps the locked holdout for {p['name']}. Use its development dates or release its final test once."
             )
@@ -76,8 +86,8 @@ def create(store: Store, data: dict) -> dict:
         raise ResearchError(
             "Give the protocol a name and a meaningful hypothesis of at least ten characters."
         )
+    recipe = runnable_strategy(data["strategy_id"])
     ds = store.dataset(data["dataset_id"])
-    recipe = strategy(data["strategy_id"])
     start, split, end = (
         date.fromisoformat(data[k]) for k in ("start", "holdout_start", "end")
     )
@@ -187,7 +197,6 @@ def create(store: Store, data: dict) -> dict:
 def enqueue(
     store: Store, identifier: str, phase: str, acknowledge: bool = False
 ) -> dict:
-    p = protocol(store, identifier)
     if phase == "holdout" and not acknowledge:
         raise ResearchError(
             "Acknowledge that releasing the final test consumes it, even if the task fails."
@@ -202,6 +211,7 @@ def enqueue(
                 "That protocol was deleted. Choose an available protocol."
             )
         p = {**json.loads(current["body"]), "holdout_state": current["holdout_state"]}
+        runnable_strategy(p["strategy_id"])
         busy = db.execute(
             "SELECT id FROM jobs WHERE kind='validation' AND state IN ('running','queued') AND json_extract(payload,'$.protocol_id')=?",
             (identifier,),
@@ -273,10 +283,11 @@ def retire(store: Store, identifier: str) -> dict:
 
 def execute(store: Store, job: dict, progress) -> dict:
     p = protocol(store, job["payload"]["protocol_id"])
+    recipe = runnable_strategy(p["strategy_id"])
     ds = store.dataset(p["dataset_id"])
     if (
         ds.digest != p["source_digest"]
-        or p["strategy"] != strategy(p["strategy_id"])
+        or p["strategy"] != recipe
         or p["engine_version"] != __version__
     ):
         raise ResearchError(

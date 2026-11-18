@@ -7,7 +7,7 @@ from pathlib import Path
 
 from . import calendar
 from .broker import TERMINAL, ReconciliationPending
-from .domain import CENT, ONE, ZERO, ResearchError, decimal
+from .domain import CENT, ONE, ZERO, ResearchError, decimal, runnable_strategy
 from .store import now
 
 VERSION = "paper-broker-market-day-v1"
@@ -258,9 +258,11 @@ def _execute(store, p, broker, at):
         approval,
         orders,
         expected_positions,
+        require_runnable_plan,
         set_state,
     )
 
+    require_runnable_plan(p)
     snap = fill_check(store, broker, performance=False)
     cfg = configuration(store)
     allowed = approval(store, cfg, snap)
@@ -268,9 +270,7 @@ def _execute(store, p, broker, at):
         raise ResearchError(
             "Matching paper approval is absent or paused. Already accepted broker orders remain active until filled or canceled."
         )
-    from .domain import strategy
-
-    if strategy(cfg["strategy_id"])["version"] != cfg["strategy_version"]:
+    if runnable_strategy(cfg["strategy_id"])["version"] != cfg["strategy_version"]:
         raise ResearchError(
             "The strategy version changed. Obtain fresh paper approval before staging."
         )

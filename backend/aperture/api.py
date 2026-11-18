@@ -13,7 +13,13 @@ from starlette.middleware.trustedhost import TrustedHostMiddleware
 
 from . import __version__
 
-from .domain import STRATEGIES, ResearchError, decimal, strategy
+from .domain import (
+    ARCHIVED_STRATEGIES,
+    STRATEGIES,
+    ResearchError,
+    decimal,
+    runnable_strategy,
+)
 from .ingest import MAX_BYTES, TEMPLATE, parse_csv
 from .store import Store
 from .config import settings
@@ -163,7 +169,7 @@ def create_app(
         return {
             "version": __version__,
             "datasets": [dataset_view(d) for d in store.datasets()],
-            "strategies": STRATEGIES,
+            "strategies": [s for s in STRATEGIES if s["id"] not in ARCHIVED_STRATEGIES],
             "jobs": store.jobs(),
             "runs": store.results("backtest"),
             "reviews": store.results("review"),
@@ -342,14 +348,16 @@ def create_app(
             return {"stopped": True}
         if kind == "resume":
             return resume(store)
+        cfg = configuration(store)
+        if kind == "prepare":
+            if not cfg:
+                raise ResearchError(
+                    "Save your paper strategy, universe and risk settings first."
+                )
+            runnable_strategy(cfg["strategy_id"])
         settings().headers()
         if kind == "cancel":
             stop(store)
-        cfg = configuration(store)
-        if kind == "prepare" and not cfg:
-            raise ResearchError(
-                "Save your paper strategy, universe and risk settings first."
-            )
         return store.enqueue(
             "paper_" + kind, {"config_hash": cfg["hash"] if cfg else None}
         )
@@ -502,7 +510,7 @@ def create_app(
         return store.enqueue("dataset_update", {"dataset_id": source["id"]})
 
     def validated_task(kind: str, payload: TaskRequest):
-        strategy(payload.strategy_id)
+        runnable_strategy(payload.strategy_id)
         summary = next(
             (row for row in store.datasets() if row["id"] == payload.dataset_id), None
         )

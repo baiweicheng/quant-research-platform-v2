@@ -6,7 +6,7 @@ from decimal import Decimal as D
 
 import pytest
 
-from aperture.domain import RankedStock
+from aperture.domain import RankedStock, ResearchError
 from aperture.paper import (
     save_configuration,
     configuration,
@@ -17,7 +17,7 @@ from aperture.paper import (
     stop,
     revoke,
 )
-from aperture.staged import VERSION, fill_check
+from aperture.staged import VERSION, execute, fill_check
 from aperture.store import Store
 from aperture.worker import reconcile_on_startup
 from aperture.api import create_app
@@ -121,6 +121,33 @@ def approve_and_stage(staged):
     for _ in range(4):
         tick(store, broker.at, broker)
     return plan(store, p["id"])
+
+
+def test_archived_broker_market_plan_cannot_stage_orders(staged, monkeypatch):
+    store, broker, cfg = staged
+    with monkeypatch.context() as legacy:
+        legacy.setattr("aperture.domain.ARCHIVED_STRATEGIES", frozenset())
+        cfg = save_configuration(
+            store,
+            {
+                "strategy_id": "quality_value",
+                "mode": "manual",
+                "execution": "broker_market",
+                "universe": "custom",
+                "symbols": cfg["symbols"],
+                "data_start": cfg["data_start"],
+                "max_drift": cfg["max_drift"],
+                **cfg["policy"],
+            },
+        )
+        p = prepared((store, broker, cfg))
+        allow(store)
+        schedule(store, p["id"])
+    with pytest.raises(ResearchError, match="Quality Value is archived"):
+        execute(store, p, broker, broker.at)
+    tick(store, broker.at, broker)
+    assert plan(store, p["id"])["state"] == "blocked"
+    assert not orders(store, p["id"]) and not broker.submissions
 
 
 def test_weekend_batch_is_accepted_without_waiting_for_fills_or_quotes(staged):

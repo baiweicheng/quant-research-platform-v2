@@ -1,3 +1,4 @@
+import json
 from dataclasses import replace
 from datetime import date
 from decimal import Decimal as D
@@ -6,7 +7,7 @@ import pytest
 from aperture import calendar
 from aperture.api import create_app
 from aperture.backtest import run
-from aperture.domain import Bar, Dataset, Policy, ResearchError
+from aperture.domain import Bar, Dataset, Policy, ResearchError, strategy
 from aperture.experiments import create, enqueue, history, protocol, trial
 from aperture.store import Store
 from aperture.worker import process_one
@@ -51,6 +52,63 @@ def experiment(tmp_path):
         "capital": "100000",
     }
     return store, ds, payload
+
+
+@pytest.mark.parametrize("identifier", ["quality", "quality_value"])
+def test_archived_strategy_is_unavailable_to_research_and_queued_jobs(
+    experiment, identifier
+):
+    store, _, data = experiment
+    p = create(store, data)
+    archived = {**p, "strategy_id": identifier, "strategy": strategy(identifier)}
+    with store.connect() as db:
+        db.execute(
+            "UPDATE protocols SET body=? WHERE id=?", (json.dumps(archived), p["id"])
+        )
+
+    task = {
+        **{k: data[k] for k in ("dataset_id", "start", "end")},
+        "strategy_id": identifier,
+    }
+    with TestClient(create_app(store.path, None), headers=HEADER) as client:
+        state = client.get("/api/state").json()
+        assert {s["id"] for s in state["strategies"]} == {
+            "momentum",
+            "low_volatility",
+            "value_momentum",
+        }
+        registry = client.get("/api/research/protocols").json()
+        assert registry["protocols"][0]["strategy"]["id"] == identifier
+        for path, body in (
+            ("/api/tasks/backtest", task),
+            ("/api/tasks/review", task),
+            (
+                "/api/tasks/backtests",
+                {**task, "strategy_ids": ["momentum", identifier]},
+            ),
+            ("/api/research/protocols", {**data, "strategy_id": identifier}),
+            (f"/api/research/protocols/{p['id']}/evaluate", {"phase": "development"}),
+            (
+                f"/api/research/protocols/{p['id']}/evaluate",
+                {"phase": "holdout", "acknowledge": True},
+            ),
+        ):
+            r = client.post(path, json=body)
+            assert r.status_code == 422 and "is archived" in r.json()["detail"]
+    assert not store.jobs()
+    assert protocol(store, p["id"])["holdout_state"] == "locked"
+
+    store.enqueue("backtest", {**task, "end": p["development_end"]})
+    store.enqueue("review", task)
+    store.enqueue("validation", {"protocol_id": p["id"], "phase": "development"})
+    for _ in range(3):
+        assert process_one(store)
+    assert len(store.jobs()) == 3
+    assert all(
+        j["state"] == "failed" and "is archived" in j["message"] for j in store.jobs()
+    )
+    assert not store.results("backtest") and not store.results("review")
+    assert protocol(store, p["id"])["holdout_state"] == "locked"
 
 
 def test_protocol_dates_frozen_disjoint_folds_and_fingerprint(experiment):

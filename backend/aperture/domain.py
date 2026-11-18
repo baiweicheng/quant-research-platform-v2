@@ -247,6 +247,9 @@ STRATEGIES = [
 ]
 
 
+ARCHIVED_STRATEGIES = frozenset({"quality", "quality_value"})
+
+
 def strategy(identifier: str) -> dict:
     match = next((item for item in STRATEGIES if item["id"] == identifier), None)
     if match is None:
@@ -256,3 +259,12 @@ def strategy(identifier: str) -> dict:
             "This strategy requires the point-in-time fundamentals milestone. It cannot be run with price-only inputs."
         )
     return match
+
+
+def runnable_strategy(identifier: str) -> dict:
+    recipe = strategy(identifier)
+    if identifier in ARCHIVED_STRATEGIES:
+        raise ResearchError(
+            f"{recipe['name']} is archived. Choose an available strategy for new research or paper trading."
+        )
+    return recipe

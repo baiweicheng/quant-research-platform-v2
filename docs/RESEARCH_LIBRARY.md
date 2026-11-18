@@ -30,6 +30,12 @@ New downloads and ordinary updates verify EPS share units against the source fil
 
 ## Run several strategies together
 
+Momentum, Low Volatility and Value + Momentum are available for new research.
+Profitability / Quality and Quality Value are archived because historical
+profitability coverage remains limited. Saved backtests, allocation reviews,
+validation trials and paper records remain available. Archived strategies
+cannot start new research evaluations or paper orders.
+
 In **Research → New backtest**, select one or more strategies, choose the shared dataset, dates, starting capital and accounting options, then choose **Run N backtests**. **Select all** includes every available strategy; larger catalogs also have search. Selection is preserved when search hides an item.
 
 Activity names each strategy and shows its progress separately. Each run produces its own ordinary saved result for the existing comparison view. The local worker processes the queue in order to bound memory use. Repeated submissions reuse identical queued/running tasks. All selected inputs are checked together before anything is queued; final-test date reservations and other existing research safeguards still apply. Allocation reviews continue to use one strategy.

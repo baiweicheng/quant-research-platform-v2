@@ -172,7 +172,9 @@ def test_current_research_review_discloses_assumption_without_paper_activation(
     )
     saved = store.save_dataset(ds, b"Fixture", [])
     monkeypatch.setattr("aperture.calendar.latest_complete", lambda: date(2024, 8, 30))
-    store.enqueue("review", {"dataset_id": saved["id"], "strategy_id": "quality_value"})
+    store.enqueue(
+        "review", {"dataset_id": saved["id"], "strategy_id": "value_momentum"}
+    )
     assert process_one(store)
     results = store.results("review")
     assert len(results) == 1

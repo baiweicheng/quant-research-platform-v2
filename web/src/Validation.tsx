@@ -17,7 +17,7 @@ type Protocol = {
   name: string;
   hypothesis: string;
   dataset_name: string;
-  strategy: { name: string; version: string };
+  strategy: { id: string; name: string; version: string };
   start: string;
   development_end: string;
   holdout_start: string;
@@ -78,6 +78,8 @@ export default function Validation({ state }: { state: State }) {
   const protocol =
     registry.data?.protocols.find((p) => p.id === selected) ??
     registry.data?.protocols[0];
+  const archived =
+    protocol && !state.strategies.some((s) => s.id === protocol.strategy.id);
   const trials =
     registry.data?.trials.filter((t) => t.protocol_id === protocol?.id) ?? [];
   const result = useQuery({
@@ -308,44 +310,54 @@ export default function Validation({ state }: { state: State }) {
               overlapping attempts recorded. Final test:{" "}
               {protocol.holdout_state}.
             </Notice>
-            <p>
-              Development includes the baseline, three nonoverlapping forward
-              windows, higher trading costs, a 3% stock cap, 15 positions and
-              monthly rebalancing. Each window starts with cash; prior
-              observations supply signal warm-up. The recipe stays fixed; there
-              is no fitted optimizer or combined out-of-sample return.
-            </p>
-            <div className="validation-actions">
-              <button
-                className="button secondary"
-                disabled={
-                  evaluate.isPending || protocol.holdout_state !== "locked"
-                }
-                onClick={() => evaluate.mutate("development")}
-              >
-                Run development validation
-              </button>
-              {protocol.holdout_state === "locked" && (
-                <>
-                  <label className="check-label">
-                    <input
-                      type="checkbox"
-                      checked={acknowledge}
-                      onChange={(e) => setAcknowledge(e.target.checked)}
-                    />
-                    I have finished development. Release consumes the final
-                    test, including a failed attempt.
-                  </label>
+            {archived ? (
+              <Notice>
+                {protocol.strategy.name} is archived. Saved trials remain
+                available for review.
+              </Notice>
+            ) : (
+              <>
+                <p>
+                  Development includes the baseline, three nonoverlapping
+                  forward windows, higher trading costs, a 3% stock cap, 15
+                  positions and monthly rebalancing. Each window starts with
+                  cash; prior observations supply signal warm-up. The recipe
+                  stays fixed; there is no fitted optimizer or combined
+                  out-of-sample return.
+                </p>
+                <div className="validation-actions">
                   <button
-                    className="button"
-                    disabled={!acknowledge || evaluate.isPending}
-                    onClick={() => evaluate.mutate("holdout")}
+                    className="button secondary"
+                    disabled={
+                      evaluate.isPending || protocol.holdout_state !== "locked"
+                    }
+                    onClick={() => evaluate.mutate("development")}
                   >
-                    Release final test once
+                    Run development validation
                   </button>
-                </>
-              )}
-            </div>
+                  {protocol.holdout_state === "locked" && (
+                    <>
+                      <label className="check-label">
+                        <input
+                          type="checkbox"
+                          checked={acknowledge}
+                          onChange={(e) => setAcknowledge(e.target.checked)}
+                        />
+                        I have finished development. Release consumes the final
+                        test, including a failed attempt.
+                      </label>
+                      <button
+                        className="button"
+                        disabled={!acknowledge || evaluate.isPending}
+                        onClick={() => evaluate.mutate("holdout")}
+                      >
+                        Release final test once
+                      </button>
+                    </>
+                  )}
+                </div>
+              </>
+            )}
             {evaluate.error && <Notice error>{evaluate.error.message}</Notice>}
             {evaluate.isSuccess && (
               <Notice>
