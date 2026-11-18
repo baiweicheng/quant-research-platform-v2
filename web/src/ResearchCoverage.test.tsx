@@ -85,6 +85,67 @@ it("keeps every coverage exclusion and the selected dividend convention visible"
   ).toBeInTheDocument();
 });
 
+it("shows weighted fundamental availability even with complete price coverage", () => {
+  const saved = {
+    ...run,
+    strategy: { ...run.strategy, id: "quality" },
+    coverage: { ...run.coverage, mode: "strict", excluded_count: 0 },
+    decisions: [
+      {
+        session: "2025-01-02",
+        execute_session: "2025-01-03",
+        eligible: 4,
+        factor_coverage: {
+          members: 10,
+          assessed: 10,
+          factors: {
+            profitability: { positive: 4, nonpositive: 1, unavailable: 5 },
+          },
+        },
+      },
+      {
+        session: "2025-01-09",
+        execute_session: "2025-01-10",
+        eligible: 2,
+        factor_coverage: {
+          members: 10,
+          assessed: 2,
+          factors: {
+            profitability: { positive: 2, nonpositive: 0, unavailable: 0 },
+          },
+        },
+      },
+    ],
+  };
+  render(<RunDetail run={saved} period="All" setPeriod={() => {}} />);
+  expect(
+    screen.getByText("Factor data coverage · selected period"),
+  ).toBeVisible();
+  expect(
+    screen.getByText(
+      /50.00% positive · 8.33% nonpositive · 41.67% unavailable/,
+    ),
+  ).toBeVisible();
+  expect(
+    screen.getByText(/Missing fundamentals reduce the ranking universe/),
+  ).toBeVisible();
+});
+
+it("does not interpret an old fundamental result as complete coverage", () => {
+  render(
+    <RunDetail
+      run={{ ...run, strategy: { ...run.strategy, id: "quality" } }}
+      period="All"
+      setPeriod={() => {}}
+    />,
+  );
+  expect(
+    screen.getByText(
+      "Factor data coverage is unavailable for this saved period.",
+    ),
+  ).toBeVisible();
+});
+
 it("makes the low equity exposure of a legacy result prominent without changing returns", () => {
   const saved = {
     ...run,

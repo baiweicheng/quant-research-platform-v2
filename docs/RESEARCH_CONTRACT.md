@@ -44,9 +44,11 @@ These static classifications can use information after a historical decision and
 
 ## SEC fundamental snapshots
 
-Data → Add SEC fundamentals reads the official issuer directory, submissions metadata and companyfacts API, then saves a separate immutable price + SEC snapshot. Issuer CIKs are cross-checked; raw responses and content fingerprints are retained locally. Refreshing an enriched dataset starts from its original price parent. Identical inputs and policy deduplicate.
+Ordinary Data → Download & validate, Update dataset and paper Prepare read the official issuer directory, submissions metadata and companyfacts API, with bounded primary profitability evidence, then save an immutable price + SEC snapshot. The optional SEC-stage action also supports imported data and interrupted downloads. Issuer CIKs are cross-checked; raw responses and content fingerprints are retained locally. Refreshing an enriched dataset starts from its original price parent. Identical inputs and policy deduplicate.
 
 Supported inputs are annual standard US-GAAP whole-entity facts in 10-K and 10-K/A filings, with 330–400-day flow durations (including 52/53-week years), exact USD amounts and USD/shares EPS. Quarterly/YTD, IFRS, custom taxonomy, foreign-currency and mismatched periods are not prorated or substituted. Conflicting values for the same tag/accession/period disable that component.
+
+Profitability follows the [complete matched revenue/cost policy](PROFITABILITY.md). Unambiguous reported gross profit is preferred; every derived candidate receives compact filing verification. An aggregate XBRL cost tag or a sector label alone cannot establish complete costs or economic non-applicability. Custom production costs need source-reviewed treatment. Unsupported expense presentations and unallocated production depreciation stay excluded, with their specific diagnosis retained. Data and decision audits separate positive, nonpositive and unavailable factor inputs from price/action coverage.
 
 Engine 0.7.0 uses `structured-eps-v1`: ordinary listed-share comparability is an explicitly disclosed research assumption. It does not retrieve every historical report body to map classes. Issuer, annual-period, currency/unit, conflicting-value, filing-availability, staleness and split checks remain. Reviewed unequal-share issuers such as Berkshire are excluded from EPS without guessed class conversions; entity-level profitability is independent. Unknown class differences can remain. See [the lightweight policy, validation and refresh tradeoff](LIGHTWEIGHT_EPS.md).
 

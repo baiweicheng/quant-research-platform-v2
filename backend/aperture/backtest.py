@@ -251,7 +251,12 @@ def run(
             }
         )
         if day in decisions and day != days[-1]:
-            ranked, excluded = rank(dataset, identifier, day)
+            factor_audit = {}
+            ranked, excluded = (
+                rank(dataset, identifier, day, factor_audit=factor_audit)
+                if identifier in {"quality", "quality_value", "value_momentum"}
+                else rank(dataset, identifier, day)
+            )
             targets, allocation_notes = target_weights(ranked, policy)
             notes.update(
                 note for note in allocation_notes if "stays in cash because" not in note
@@ -263,6 +268,7 @@ def run(
                     "session": str(day),
                     "execute_session": str(pending[0]),
                     "eligible": len(ranked),
+                    **({"factor_coverage": factor_audit} if factor_audit else {}),
                     "excluded": len(excluded),
                     "targets": {
                         symbol: str(weight) for symbol, weight in targets.items()

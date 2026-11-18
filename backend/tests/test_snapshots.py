@@ -25,6 +25,7 @@ from aperture.store import Store, decode, encode
 from aperture.storage_maintenance import compact
 from aperture.worker import process_one
 from test_fundamentals import source, ACC
+from filing_fixtures import INCOME_SUMMARY, income_report
 from test_membership import html
 
 
@@ -139,6 +140,11 @@ def vendor(tmp_path, monkeypatch):
             return httpx.Response(
                 200, json={"cik": 1, "tickers": ["ABC"], "entityType": "operating"}
             )
+        if path.endswith("FilingSummary.xml"):
+            return httpx.Response(200, content=INCOME_SUMMARY)
+        if path.endswith("R2.htm"):
+            factor = 2 if "000000000124000002" in path else 1
+            return httpx.Response(200, content=income_report(100 * factor, 60 * factor))
         if "/companyfacts/" in path:
             company = source()
             if state["amended"]:

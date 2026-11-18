@@ -1,5 +1,30 @@
 # Research milestone validation
 
+## B-039 annual profitability
+
+The v7 normalizer and v28 filing reader preserve the $8.3691bn TMO FY2016 correction and exclude incomplete cost candidates for CNC, ORCL and AMT. The rendered-statement reader checks all verified production and residual expenses in the annual filing. Regressions cover miscategorized income reports, displayed rounding, reviewed product/service dimensions and separately allocated depreciation. The source audit verified 1,862 adopted annual rows from 649 accessions, with zero source, hash or reconciliation failures.
+
+The fixed S&P 500 comparison spans January 3, 2017 through November 6, 2026. Of 259,691 stock/date evaluations, 121,921 (46.95%) have a usable annual value, including 208 nonpositive amounts. Against the partial v6 repair, 3,916 previously missing observations gained a value, 2,260 populated observations changed and 40,055 became unavailable. The last group includes genuinely incomplete earlier costs as well as exclusions where the available evidence could not establish complete costs. Coverage remains a material source of bias. [Profitability method and limitations](PROFITABILITY.md)
+
+The v27 bounded policy preserved every evaluation result relative to exhaustive v26 while omitting 1,294 of 3,915 candidate accession checks. The v28 Target correction kept the same accession budget and restored 400 stock/date evaluations. It changed 147 Quality and 323 Quality Value target portfolios, with the other three recipes' curves, fills and holdings identical to v27.
+
+Five actual browser backtests used frozen snapshot `ff33839bb3e6722758efe093`, with 704 universe members and zero price or corporate-action exclusions in every recipe. Independent Decimal replay matched 12,380 daily valuations for accounts and SPY, 388,267 filing components and 386,638 EPS/share-basis checks. Cash, NAV and benchmark discrepancies were zero. The result coverage notice and saved decision audit passed at desktop, 390 px and 320 px. SQLite integrity passed and the isolated stores contained zero paper orders, plans or approvals.
+
+| Recipe | Fixed-window return |
+| --- | ---: |
+| 12–1 Momentum | +214.59% |
+| Defensive Low Volatility | +135.91% |
+| Profitability / Quality | +146.21% |
+| Quality Value | +192.09% |
+| Value + Momentum | +278.24% |
+| SPY | +277.70% |
+
+The tests include 727 backend and 68 UI cases, TypeScript and production build, formatter checks, Ruff undefined-name and import checks, and whitespace validation. The paper Prepare workflow was tested with simulated provider and broker interfaces. The measured returns validate the data and accounting changes under the fixed research assumptions.
+
+An empty-workspace browser Download completed in 26m11s through November 17, 2026, with 1,827,217 daily bars for 782 requested symbols. All 66 or 64 historically repaired stocks remain covered for their respective recipes in the fixed comparison window. Ordinary Update and repeat Update took 3m03s and 2m50s and retained identical annual blocks. The first Update refreshed volume for 507 November 17 bars and prior-observation data for 28 corporate-action records. The repeat retained identical price blocks and corporate-action records. [Performance](PERFORMANCE.md)
+
+An isolated Update was interrupted at the start of its SEC phase. Startup marked the unfinished job failed and retained the digests of all 11 saved snapshots and 2,621 parsed filing proofs. The ordinary browser Update retry completed in 2m38s with identical price and annual blocks and corporate-action records.
+
 ## 2026-11-10 — reviewed security events: the 66/64 exclusions included
 
 Input contract `dated-research-inputs-v9-reviewed-security-events` and annual

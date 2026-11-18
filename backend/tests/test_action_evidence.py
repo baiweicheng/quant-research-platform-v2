@@ -223,3 +223,45 @@ def test_uppercase_html_and_sgml_closings_keep_the_same_sec_script_boundary():
     assert primary_fingerprint(body + one + closing) != primary_fingerprint(
         body + two.replace(b"/edge/", b"//external/") + closing
     )
+
+
+def test_captured_arnc_script_variants_preserve_all_filing_and_footer_bytes():
+    import json
+    from pathlib import Path
+    from aperture.action_evidence import primary_fingerprint, primary_matches
+    from aperture.historical_issuers import ISSUERS
+
+    folder = Path(__file__).parent / "fixtures" / "primary"
+    original = (folder / "ARNC-original.htm").read_bytes()
+    fresh = (folder / "ARNC-fresh.htm").read_bytes()
+    proof = ISSUERS["ARNC"]
+    manifest = json.loads((folder / "ARNC-sources.json").read_text())
+    assert original != fresh
+    assert (
+        primary_fingerprint(original)
+        == primary_fingerprint(fresh)
+        == manifest["canonical_sha256"]
+    )
+    assert primary_matches(original, proof) and primary_matches(fresh, proof)
+    assert not primary_matches(fresh.replace(b"Howmet", b"Wrong issuer", 1), proof)
+    assert not primary_matches(
+        fresh.replace(b"xdx_08B_extensions", b"changed_footer"), proof
+    )
+
+
+def test_other_captured_comment_footers_keep_terms_and_metadata_in_fingerprint():
+    import json, re
+    from pathlib import Path
+    from aperture.action_evidence import primary_fingerprint, primary_matches
+
+    folder = Path(__file__).parent / "fixtures" / "primary"
+    for source in json.loads((folder / "comment-footer-sources.json").read_text()):
+        raw = (folder / source["file"]).read_bytes()
+        changed = re.sub(
+            rb'(?<=src=")/[A-Za-z0-9/_-]+(?="></script></body>)', b"/edge/rotated", raw
+        )
+        assert raw != changed
+        proof = {"sha256": source["original"], "content_sha256": source["canonical"]}
+        assert primary_matches(raw, proof) and primary_matches(changed, proof)
+        assert primary_fingerprint(changed) == source["canonical"]
+        assert not primary_matches(changed + b"<!--changed retained metadata-->", proof)

@@ -14,7 +14,7 @@ from aperture.fundamentals import as_of, attach, filing_available, inputs, norma
 from aperture.signals import rank
 from aperture.store import Store
 from aperture.worker import process_one
-from filing_fixtures import cover, evidence
+from filing_fixtures import cover, evidence, INCOME_SUMMARY, income_report
 
 CIK = "0000000001"
 ACC = "0000000001-23-000001"
@@ -255,6 +255,10 @@ class FixtureProvider:
         return deepcopy(source())
 
     def document(self, url):
+        if url.endswith("FilingSummary.xml"):
+            return INCOME_SUMMARY
+        if url.endswith("R2.htm"):
+            return income_report()
         return cover()
 
 
@@ -558,6 +562,8 @@ def test_combined_goods_and_service_costs_b039a():
             "us-gaap": {
                 "Assets": {"units": {"USD": [fact(45907, instant=True)]}},
                 "Revenues": {"units": {"USD": [fact(18274)]}},
+                "SalesRevenueGoodsNet": {"units": {"USD": [fact(15000)]}},
+                "SalesRevenueServicesNet": {"units": {"USD": [fact(3274)]}},
                 "CostOfGoodsSold": {"units": {"USD": [fact(8214)]}},
                 "CostOfServices": {"units": {"USD": [fact(1691)]}},
                 "EarningsPerShareDiluted": {"units": {"USD/shares": [fact(4)]}},
@@ -569,7 +575,7 @@ def test_combined_goods_and_service_costs_b039a():
     assert rows[0].gross_profit == 18274 - 8214 - 1691 == 8369
     assert (
         rows[0].sources["gross_profit"]
-        == "Revenues - CostOfGoodsSold + CostOfServices"
+        == "Revenues - (CostOfGoodsSold + CostOfServices)"
     )
 
 
@@ -625,6 +631,7 @@ def test_pure_service_cost_recovery():
                 "RevenueFromContractWithCustomerExcludingAssessedTax": {
                     "units": {"USD": [fact(6000)]}
                 },
+                "SalesRevenueServicesNet": {"units": {"USD": [fact(6000)]}},
                 "CostOfServices": {"units": {"USD": [fact(2500)]}},
                 "EarningsPerShareDiluted": {"units": {"USD/shares": [fact(3)]}},
             }
@@ -636,29 +643,47 @@ def test_pure_service_cost_recovery():
     assert "CostOfServices" in rows[0].sources["gross_profit"]
 
 
-def test_profitability_diagnostic_distinguishes_noncomparable_sectors(dataset):
+def test_missing_profitability_never_infers_applicability_from_sector(dataset):
     stmt = replace(statements()[0], gross_profit=None)
-    ds_fin = replace(
-        dataset, sectors={"ABC": "Financials"}, fundamentals={"ABC": (stmt,)}
-    )
-    vals_fin, _ = inputs(ds_fin, "ABC", date(2023, 8, 31))
-    assert (
-        vals_fin.get("profitability_issue")
-        == "Gross profit is not applicable for Financials under US-GAAP."
-    )
+    reasons = []
+    for sector in ("Financials", "Utilities", "Real Estate", "Information Technology"):
+        ds = replace(dataset, sectors={"ABC": sector}, fundamentals={"ABC": (stmt,)})
+        values, _ = inputs(ds, "ABC", date(2023, 8, 31))
+        ranked, excluded = rank(ds, "quality", date(2023, 8, 31))
+        assert not ranked
+        assert "unavailable" in values["profitability_issue"]
+        assert "not applicable" not in values["profitability_issue"]
+        assert excluded[0]["reason"] == values["profitability_issue"]
+        reasons.append(values["profitability_issue"])
+    assert len(set(reasons)) == 1
 
-    ds_tech = replace(
+
+def test_factor_coverage_distinguishes_missing_from_negative_without_changing_ranks(
+    dataset,
+):
+    stmt = statements()[0]
+    ds = replace(
         dataset,
-        sectors={"ABC": "Information Technology"},
-        fundamentals={"ABC": (stmt,)},
+        bars={
+            sym: tuple(replace(b, symbol=sym) for b in dataset.bars["ABC"])
+            for sym in ("ABC", "NEG", "MISSING")
+        },
+        fundamentals={
+            "ABC": (stmt,),
+            "NEG": (replace(stmt, symbol="NEG", gross_profit=D(-5)),),
+            "MISSING": (replace(stmt, symbol="MISSING", gross_profit=None),),
+        },
     )
-    vals_tech, _ = inputs(ds_tech, "ABC", date(2023, 8, 31))
-    assert "unavailable" in vals_tech.get("profitability_issue", "")
-
-    ranked, excluded = rank(ds_fin, "quality", date(2023, 8, 31))
-    assert not ranked
-    assert (
-        excluded[0]["reason"]
-        == "Gross profit is not applicable for Financials under US-GAAP."
-    )
-
+    audited = {}
+    ranked, excluded = rank(ds, "quality", date(2023, 8, 31), factor_audit=audited)
+    assert (ranked, excluded) == rank(ds, "quality", date(2023, 8, 31))
+    assert [r.symbol for r in ranked] == ["ABC"]
+    assert audited == {
+        "members": 3,
+        "assessed": 3,
+        "factors": {
+            "profitability": {"positive": 1, "nonpositive": 1, "unavailable": 1}
+        },
+    }
+    result = run(ds, "quality", date(2023, 8, 1), date(2023, 9, 29), D(10000), Policy())
+    assert result["decisions"][0]["factor_coverage"] == audited

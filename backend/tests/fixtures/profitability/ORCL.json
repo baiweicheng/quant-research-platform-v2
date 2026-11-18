@@ -1,0 +1,84 @@
+{
+  "source": "https://data.sec.gov/api/xbrl/companyfacts/CIK0001341439.json",
+  "companyfacts_sha256": "6aaa993a3c5bbdfa8cd5f94237dbba2bcbf47e51b8d36b7855fe73f8d4189372",
+  "filing": "https://www.sec.gov/Archives/edgar/data/1341439/000119312516628942/",
+  "accession": "0001193125-16-628942",
+  "company": {
+    "cik": 1341439,
+    "facts": {
+      "us-gaap": {
+        "Revenues": {
+          "label": "Revenues",
+          "description": "Amount of revenue recognized from goods sold, services rendered, insurance premiums, or other activities that constitute an earning process. Includes, but is not limited to, investment and interest income before deduction of interest expense when recognized as a component of revenue, and sales and trading gain (loss).",
+          "units": {
+            "USD": [
+              {
+                "start": "2015-06-01",
+                "end": "2016-05-31",
+                "val": 37047000000,
+                "accn": "0001193125-16-628942",
+                "fy": 2016,
+                "fp": "FY",
+                "form": "10-K",
+                "filed": "2016-06-22"
+              }
+            ]
+          }
+        },
+        "SalesRevenueServicesNet": {
+          "label": "Sales Revenue, Services, Net (Deprecated 2018-01-31)",
+          "description": "Aggregate revenue during the period from services rendered in the normal course of business, after deducting allowances and discounts.",
+          "units": {
+            "USD": [
+              {
+                "start": "2015-06-01",
+                "end": "2016-05-31",
+                "val": 3389000000,
+                "accn": "0001193125-16-628942",
+                "fy": 2016,
+                "fp": "FY",
+                "form": "10-K",
+                "filed": "2016-06-22"
+              }
+            ]
+          }
+        },
+        "CostOfServices": {
+          "label": "Cost of Services (Deprecated 2018-01-31)",
+          "description": "Total costs related to services rendered by an entity during the reporting period.",
+          "units": {
+            "USD": [
+              {
+                "start": "2015-06-01",
+                "end": "2016-05-31",
+                "val": 2751000000,
+                "accn": "0001193125-16-628942",
+                "fy": 2016,
+                "fp": "FY",
+                "form": "10-K",
+                "filed": "2016-06-22"
+              }
+            ]
+          }
+        },
+        "Assets": {
+          "label": "Assets",
+          "description": "Sum of the carrying amounts as of the balance sheet date of all assets that are recognized. Assets are probable future economic benefits obtained or controlled by an entity as a result of past transactions or events.",
+          "units": {
+            "USD": [
+              {
+                "end": "2016-05-31",
+                "val": 112180000000,
+                "accn": "0001193125-16-628942",
+                "fy": 2016,
+                "fp": "FY",
+                "form": "10-K",
+                "filed": "2016-06-22"
+              }
+            ]
+          }
+        }
+      }
+    }
+  }
+}

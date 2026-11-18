@@ -1,0 +1,94 @@
+{
+  "source": "https://data.sec.gov/api/xbrl/companyfacts/CIK0001071739.json",
+  "companyfacts_sha256": "e6e8839cd0df1c3f195ac200b86a416a1215d444462c35664b9a52ecb45d141d",
+  "filing": "https://www.sec.gov/Archives/edgar/data/1071739/000107173916000192/",
+  "accession": "0001071739-16-000192",
+  "company": {
+    "cik": 1071739,
+    "facts": {
+      "us-gaap": {
+        "Revenues": {
+          "label": "Revenues",
+          "description": "Amount of revenue recognized from goods sold, services rendered, insurance premiums, or other activities that constitute an earning process. Includes, but is not limited to, investment and interest income before deduction of interest expense when recognized as a component of revenue, and sales and trading gain (loss).",
+          "units": {
+            "USD": [
+              {
+                "start": "2015-01-01",
+                "end": "2015-12-31",
+                "val": 22760000000,
+                "accn": "0001071739-16-000192",
+                "fy": 2015,
+                "fp": "FY",
+                "form": "10-K",
+                "filed": "2016-02-22"
+              },
+              {
+                "start": "2015-10-01",
+                "end": "2015-12-31",
+                "val": 6302000000,
+                "accn": "0001071739-16-000192",
+                "fy": 2015,
+                "fp": "FY",
+                "form": "10-K",
+                "filed": "2016-02-22"
+              }
+            ]
+          }
+        },
+        "SalesRevenueServicesNet": {
+          "label": "Sales Revenue, Services, Net (Deprecated 2018-01-31)",
+          "description": "Aggregate revenue during the period from services rendered in the normal course of business, after deducting allowances and discounts.",
+          "units": {
+            "USD": [
+              {
+                "start": "2015-01-01",
+                "end": "2015-12-31",
+                "val": 1876000000,
+                "accn": "0001071739-16-000192",
+                "fy": 2015,
+                "fp": "FY",
+                "form": "10-K",
+                "filed": "2016-02-22"
+              }
+            ]
+          }
+        },
+        "CostOfServices": {
+          "label": "Cost of Services (Deprecated 2018-01-31)",
+          "description": "Total costs related to services rendered by an entity during the reporting period.",
+          "units": {
+            "USD": [
+              {
+                "start": "2015-01-01",
+                "end": "2015-12-31",
+                "val": 1621000000,
+                "accn": "0001071739-16-000192",
+                "fy": 2015,
+                "fp": "FY",
+                "form": "10-K",
+                "filed": "2016-02-22"
+              }
+            ]
+          }
+        },
+        "Assets": {
+          "label": "Assets",
+          "description": "Sum of the carrying amounts as of the balance sheet date of all assets that are recognized. Assets are probable future economic benefits obtained or controlled by an entity as a result of past transactions or events.",
+          "units": {
+            "USD": [
+              {
+                "end": "2015-12-31",
+                "val": 7339000000,
+                "accn": "0001071739-16-000192",
+                "fy": 2015,
+                "fp": "FY",
+                "form": "10-K",
+                "filed": "2016-02-22"
+              }
+            ]
+          }
+        }
+      }
+    }
+  }
+}

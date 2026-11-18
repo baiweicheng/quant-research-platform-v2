@@ -79,6 +79,7 @@ type Plan = {
   notes: string[];
   signals: Decision["signals"];
   excluded: { symbol: string; reason: string }[];
+  factor_coverage?: Decision["factor_coverage"];
   config?: Config;
   staged_orders?: {
     symbol: string;
@@ -1094,6 +1095,7 @@ export default function PaperWorkspace({ state }: { state: State }) {
                         session: p.decision_session,
                         execute_session: p.execute_session,
                         eligible: p.signals?.length ?? 0,
+                        factor_coverage: p.factor_coverage,
                         signals: p.signals,
                         exclusions: p.excluded,
                       },

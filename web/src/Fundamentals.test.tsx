@@ -1,7 +1,8 @@
 import { render, screen } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import { expect, it } from "vitest";
-import { FundamentalDetails } from "./Fundamentals";
+import { FundamentalDetails, SignalAudit } from "./Fundamentals";
+import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
 
 it("labels structured EPS as usable assumptions rather than verified classes", async () => {
   render(
@@ -45,4 +46,44 @@ it("labels structured EPS as usable assumptions rather than verified classes", a
   expect(
     screen.queryByText(/supported filings|verified classes/),
   ).not.toBeInTheDocument();
+});
+
+it("separates factor availability from price coverage and negative inputs", () => {
+  render(
+    <QueryClientProvider client={new QueryClient()}>
+      <SignalAudit
+        fundamental
+        decisions={[
+          {
+            session: "2023-08-31",
+            execute_session: "2023-09-01",
+            eligible: 1,
+            factor_coverage: {
+              members: 3,
+              assessed: 3,
+              factors: {
+                profitability: { positive: 1, nonpositive: 1, unavailable: 1 },
+              },
+            },
+            signals: [],
+            exclusions: [
+              { symbol: "NEG", reason: "Nonpositive profitability" },
+              { symbol: "MISSING", reason: "Missing gross profit" },
+            ],
+          },
+        ]}
+      />
+    </QueryClientProvider>,
+  );
+  expect(
+    screen.getByText(/1 positive · 1 nonpositive · 1 unavailable/),
+  ).toBeVisible();
+  expect(
+    screen.getByText(
+      /Price\/action coverage and factor eligibility are separate/,
+    ),
+  ).toBeVisible();
+  expect(
+    screen.getByText(/Factor eligibility · 1 ranked stocks/),
+  ).toBeVisible();
 });

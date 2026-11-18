@@ -1,8 +1,23 @@
 # Performance and reproducibility
 
+The profitability repair adds bounded compact statement verification for derived inputs; the historical timings below do not measure that later workload. Current acceptance timings are recorded in [validation](VALIDATION.md).
+
+The B-039 filing reader checked 2,621 accessions in the dated historical comparison, 33.1% fewer than the 3,915 in the exhaustive candidate. The v27 comparison matched availability and amounts for all 259,691 decision inputs. The v28 Target correction kept that accession budget. The captured-source v28 replay took 73.78 seconds, including writing the combined snapshot. This replay reused prior provider captures.
+
+Four issuer pipelines overlap up to two bounded filing reads per issuer under the existing eight-request-starts-per-second SEC limit. Ordinary updates reuse successful and unavailable filing verifications while their source dependencies match.
+
+| B-039 browser workflow | Elapsed |
+| --- | ---: |
+| Full S&P 500 Download from an empty workspace, January 2016–November 17, 2026 | 26m11s |
+| First ordinary Update | 3m03s |
+| Repeat ordinary Update through the same session | 2m50s |
+| Ordinary Update retry after a worker interruption | 2m38s |
+
+These local timings include market-provider and SEC requests, database writes, and the browser's polling interval. The first refresh preserved annual values and incorporated the provider's November 17 volume changes. The repeat preserved prior price, annual and corporate-action data. Initial filing evidence takes longer to acquire than a repeat Update. [Validation](VALIDATION.md)
+
 Measured locally on November 8–9, 2026. Measurements below distinguish engine 0.7.0 policy changes from earlier paired computation optimizations. These are observations on one Mac, not hardware-independent guarantees. Downloads and ordinary updates still prepare prices, sectors and SEC inputs together; there is no additional required refresh step.
 
-## Current lightweight acquisition — engine 0.7.0
+## Historical lightweight acquisition — engine 0.7.0 before profitability verification
 
 | Workload | Observed duration / size | Scope |
 | --- | ---: | --- |
@@ -56,7 +71,7 @@ The release configuration is approximately **23% faster** than the prior configu
 
 A real empty-workspace full acquisition also completed, with interrupted attempts retaining 1,540 and then 3,354 parsed checks before the ordinary Update workflow finished the combined snapshot. SEC transport stalls and monitoring interruptions prevent a valid uninterrupted end-to-end timing comparison with the older 72-minute run. No general full-download duration is promised. Its 85,762 price blocks, 22,330 normalized annual statements and 6,467 filing checks match the previous accepted financial inputs. Original source-capture hashes differ where SEC response bytes changed; those hashes remain preserved, and comparison excludes only the corresponding capture-hash fields.
 
-Filing reads allow 60 seconds between response chunks, with ten-second connection/pool limits, three attempts and a fresh owned connection on retry. Supplied external/test transports are preserved. A changed source body still requires review. For reviewed primary action documents, a narrow content fingerprint ignores only the SEC-injected empty script immediately before the closing HTML body, including uppercase HTML/SGML wrappers; original bytes and raw hashes remain available. Economic text or other markup changes fail the review check.
+Filing reads allow 60 seconds between response chunks, with ten-second connection/pool limits, three attempts and a fresh owned connection on retry. Supplied external/test transports are preserved. A changed source body still requires review. For reviewed primary action documents, a narrow content fingerprint ignores only the SEC-injected empty script immediately before the closing HTML body, including uppercase HTML/SGML wrappers and retained comments after the closing HTML; the comments themselves remain fingerprinted. Original bytes and raw hashes remain available. Economic text or other markup changes fail the review check.
 
 A real normal-workspace Update with engine 0.6.0 completed in **5 minutes 56 seconds**, retaining identical price/annual blocks and filing checks. This is one observed warm run, separate from the controlled cold-filing comparison.
 

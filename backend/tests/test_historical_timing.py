@@ -118,6 +118,39 @@ def test_halted_flat_zero_volume_mark_is_not_a_generic_last_quote_rule(monkeypat
     )
 
 
+def test_exact_pre_normalization_atvi_proof_preserves_frozen_conversion(monkeypatch):
+    event, ids, bars, api = sample("ATVI", monkeypatch)
+    fixed = apply_timing([event], ids, bars, api, lambda *v: None)[0]
+    old = copy.deepcopy(fixed)
+    old["reviewed_market_timing"]["content_sha256"] = (
+        "88fdea02f0ec4f1306a0b47e83ffb85eae36906d02e961ea3b5ffb331808e5f3"
+    )
+    rows = list(bars["ATVI"].values())
+    assert verified_nontrading_tail(old, rows)
+    ds = replace(
+        dataset(),
+        bars={"ATVI": tuple(rows)},
+        metadata={"corporate_actions": [old]},
+    )
+    assert terminal_events(ds)["ATVI"] == old
+    for key, value in [
+        ("content_sha256", "unreviewed"),
+        ("cash", "96"),
+        ("url", "https://example.com/unreviewed"),
+    ]:
+        changed = copy.deepcopy(old)
+        changed["reviewed_market_timing"][key] = value
+        assert not verified_nontrading_tail(changed, rows)
+    for key, value in [
+        ("cash", "96"),
+        ("ratio", "1"),
+        ("target", "MSFT"),
+        ("effective", "2023-10-16"),
+    ]:
+        assert not verified_nontrading_tail({**old, key: value}, rows)
+    assert not verified_nontrading_tail(old, [rows[0], replace(rows[1], volume=1)])
+
+
 def stale_hess(event):
     stale_id, signature = next(iter(TIMING["HES"]["rejected_events"].items()))
     return {

@@ -135,7 +135,9 @@ export function FundamentalDetails({ data }: { data: FundamentalCoverage }) {
   return (
     <details className="details">
       <summary>
-        SEC filing coverage · {data.record_count.toLocaleString()} records
+        SEC filing coverage ·{" "}
+        {data.coverage.filter((r) => r.quality_ready).length} /{" "}
+        {data.coverage.length} positive profitability inputs
       </summary>
       <p>
         {data.coverage.filter((r) => r.quality_ready).length} stocks with
@@ -143,6 +145,11 @@ export function FundamentalDetails({ data }: { data: FundamentalCoverage }) {
         {data.coverage.filter((r) => r.value_ready).length} with positive
         compatible EPS at the dataset end. Historical eligibility varies by
         decision.
+      </p>
+      <p>
+        {data.record_count.toLocaleString()} annual records. These counts apply
+        at the dataset end; historical eligibility varies by decision.
+        Price/action coverage does not establish factor availability.
       </p>
       <p>{data.availability}</p>
       {data.eps_policy && <p>{data.share_basis}</p>}
@@ -193,6 +200,84 @@ export function FundamentalDetails({ data }: { data: FundamentalCoverage }) {
         </table>
       </div>
     </details>
+  );
+}
+
+export function FactorAvailability({
+  decisions,
+  start,
+  end,
+  expected,
+}: {
+  decisions: Decision[];
+  start: string;
+  end: string;
+  expected: boolean;
+}) {
+  const selected = decisions.filter(
+    (d) => d.session >= start && d.session <= end,
+  );
+  const audited = selected.filter((d) => d.factor_coverage);
+  if (!audited.length)
+    return expected ? (
+      <Notice>
+        <strong>
+          Factor data coverage is unavailable for this saved period.
+        </strong>{" "}
+        Price/action coverage does not establish usable fundamentals.
+      </Notice>
+    ) : null;
+  const totals: Record<
+    string,
+    { positive: number; nonpositive: number; unavailable: number }
+  > = {};
+  for (const decision of audited) {
+    for (const [key, counts] of Object.entries(
+      decision.factor_coverage!.factors,
+    )) {
+      const sum = (totals[key] ??= {
+        positive: 0,
+        nonpositive: 0,
+        unavailable: 0,
+      });
+      sum.positive += counts.positive;
+      sum.nonpositive += counts.nonpositive;
+      sum.unavailable += counts.unavailable;
+    }
+  }
+  const missing = Object.values(totals).some((t) => t.unavailable > 0);
+  return (
+    <Notice>
+      <strong>Factor data coverage · selected period</strong>
+      {Object.entries(totals).map(([key, counts]) => {
+        const total = counts.positive + counts.nonpositive + counts.unavailable;
+        return (
+          <p key={key}>
+            {key === "profitability"
+              ? "Gross profit / assets"
+              : key === "earnings_yield"
+                ? "Earnings yield"
+                : key}
+            :{" "}
+            {total
+              ? `${percent(counts.positive / total)} positive · ${percent(counts.nonpositive / total)} nonpositive · ${percent(counts.unavailable / total)} unavailable`
+              : "No stocks assessed"}
+            .
+          </p>
+        );
+      })}
+      <p>
+        These are stock/date checks after price-history and liquidity filters,
+        across {audited.length} of {selected.length} decision dates. Positive
+        inputs are required; price/action coverage is separate.
+      </p>
+      {missing && (
+        <p>
+          Missing fundamentals reduce the ranking universe and can bias
+          comparisons with SPY.
+        </p>
+      )}
+    </Notice>
   );
 }
 
@@ -249,6 +334,33 @@ export function SignalAudit({
           stocks; ties share a rank.
         </p>
       </div>
+      {decision.factor_coverage && (
+        <div className="card-body">
+          <p>
+            <strong>
+              Factor eligibility · {decision.eligible} ranked stocks
+            </strong>
+          </p>
+          {Object.entries(decision.factor_coverage.factors).map(
+            ([key, counts]) => (
+              <p key={key}>
+                {key === "profitability"
+                  ? "Gross profit / assets"
+                  : "Annual earnings yield"}
+                : {counts.positive} positive · {counts.nonpositive} nonpositive
+                · {counts.unavailable} unavailable.
+              </p>
+            ),
+          )}
+          <p className="field-hint">
+            Inputs assessed for {decision.factor_coverage.assessed} of{" "}
+            {decision.factor_coverage.members} covered members after
+            price-history and liquidity checks. Final rankings also apply the
+            strategy’s other requirements. Price/action coverage and factor
+            eligibility are separate.
+          </p>
+        </div>
+      )}
       {details.error && <Notice error>{details.error.message}</Notice>}
       {details.isFetching && (
         <p className="card-body">Loading saved decision inputs…</p>

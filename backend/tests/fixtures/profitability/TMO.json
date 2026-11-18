@@ -1,0 +1,148 @@
+{
+  "source": "https://data.sec.gov/api/xbrl/companyfacts/CIK0000097745.json",
+  "companyfacts_sha256": "68b856c01e2df796562a677852b2d96dbb7168c38bcbb732e742b4f4b6a1ba9a",
+  "filing": "https://www.sec.gov/Archives/edgar/data/97745/000009774517000007/",
+  "accession": "0000097745-17-000007",
+  "company": {
+    "cik": 97745,
+    "facts": {
+      "us-gaap": {
+        "GrossProfit": {
+          "label": "Gross Profit",
+          "description": "Aggregate revenue less cost of goods and services sold or operating expenses directly attributable to the revenue generation activity.",
+          "units": {
+            "USD": [
+              {
+                "start": "2016-10-02",
+                "end": "2016-12-31",
+                "val": 2278800000,
+                "accn": "0000097745-17-000007",
+                "fy": 2016,
+                "fp": "FY",
+                "form": "10-K",
+                "filed": "2017-02-28"
+              }
+            ]
+          }
+        },
+        "Revenues": {
+          "label": "Revenues",
+          "description": "Amount of revenue recognized from goods sold, services rendered, insurance premiums, or other activities that constitute an earning process. Includes, but is not limited to, investment and interest income before deduction of interest expense when recognized as a component of revenue, and sales and trading gain (loss).",
+          "units": {
+            "USD": [
+              {
+                "start": "2016-01-01",
+                "end": "2016-12-31",
+                "val": 18274100000,
+                "accn": "0000097745-17-000007",
+                "fy": 2016,
+                "fp": "FY",
+                "form": "10-K",
+                "filed": "2017-02-28"
+              },
+              {
+                "start": "2016-10-02",
+                "end": "2016-12-31",
+                "val": 4953200000,
+                "accn": "0000097745-17-000007",
+                "fy": 2016,
+                "fp": "FY",
+                "form": "10-K",
+                "filed": "2017-02-28"
+              }
+            ]
+          }
+        },
+        "SalesRevenueGoodsNet": {
+          "label": "Sales Revenue, Goods, Net (Deprecated 2018-01-31)",
+          "description": "Aggregate revenue during the period from the sale of goods in the normal course of business, after deducting returns, allowances and discounts.",
+          "units": {
+            "USD": [
+              {
+                "start": "2016-01-01",
+                "end": "2016-12-31",
+                "val": 15712300000,
+                "accn": "0000097745-17-000007",
+                "fy": 2016,
+                "fp": "FY",
+                "form": "10-K",
+                "filed": "2017-02-28"
+              }
+            ]
+          }
+        },
+        "SalesRevenueServicesNet": {
+          "label": "Sales Revenue, Services, Net (Deprecated 2018-01-31)",
+          "description": "Aggregate revenue during the period from services rendered in the normal course of business, after deducting allowances and discounts.",
+          "units": {
+            "USD": [
+              {
+                "start": "2016-01-01",
+                "end": "2016-12-31",
+                "val": 2561800000,
+                "accn": "0000097745-17-000007",
+                "fy": 2016,
+                "fp": "FY",
+                "form": "10-K",
+                "filed": "2017-02-28"
+              }
+            ]
+          }
+        },
+        "CostOfGoodsSold": {
+          "label": "Cost of Goods Sold (Deprecated 2018-01-31)",
+          "description": "Total costs related to goods produced and sold during the reporting period.",
+          "units": {
+            "USD": [
+              {
+                "start": "2016-01-01",
+                "end": "2016-12-31",
+                "val": 8213900000,
+                "accn": "0000097745-17-000007",
+                "fy": 2016,
+                "fp": "FY",
+                "form": "10-K",
+                "filed": "2017-02-28"
+              }
+            ]
+          }
+        },
+        "CostOfServices": {
+          "label": "Cost of Services (Deprecated 2018-01-31)",
+          "description": "Total costs related to services rendered by an entity during the reporting period.",
+          "units": {
+            "USD": [
+              {
+                "start": "2016-01-01",
+                "end": "2016-12-31",
+                "val": 1691100000,
+                "accn": "0000097745-17-000007",
+                "fy": 2016,
+                "fp": "FY",
+                "form": "10-K",
+                "filed": "2017-02-28"
+              }
+            ]
+          }
+        },
+        "Assets": {
+          "label": "Assets",
+          "description": "Sum of the carrying amounts as of the balance sheet date of all assets that are recognized. Assets are probable future economic benefits obtained or controlled by an entity as a result of past transactions or events.",
+          "units": {
+            "USD": [
+              {
+                "end": "2016-12-31",
+                "val": 45907500000,
+                "accn": "0000097745-17-000007",
+                "fy": 2016,
+                "fp": "FY",
+                "form": "10-K",
+                "filed": "2017-02-28"
+              }
+            ]
+          }
+        }
+      }
+    }
+  }
+}

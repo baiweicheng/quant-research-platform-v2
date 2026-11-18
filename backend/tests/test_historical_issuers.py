@@ -205,3 +205,20 @@ def test_dated_issuer_loads_historical_financials_without_current_ticker_guess(
         result.metadata["fundamentals"]["coverage"][0]["historical_issuer_evidence"]
         == evidence
     )
+
+
+def test_original_arnc_metadata_remains_valid_after_cosmetic_source_recheck():
+    proof = {
+        "symbol": "ARNC",
+        "version": VERSION,
+        **ISSUERS["ARNC"],
+        "content_sha256": "d6c40d8f10e6440ceda0b5139e551b903ed5e4174415a7063b386beca651ed99",
+    }
+    metadata = {
+        "historical_issuer_evidence": {"ARNC": proof},
+        "identity_resolution": {"ARNC": {"asof": proof["quote_asof"]}},
+        "normalizer_version": proof["required_price_contracts"][-1],
+    }
+    assert mapping_evidence(metadata, "ARNC") == proof
+    proof["cik"] = "0001790982"  # The separated child remains a different issuer.
+    assert mapping_evidence(metadata, "ARNC") is None

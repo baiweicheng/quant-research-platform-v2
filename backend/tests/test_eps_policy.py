@@ -5,6 +5,7 @@ from types import SimpleNamespace
 from aperture.eps_policy import assess, WARNING
 from aperture.fundamentals import normalize, attach
 from aperture.store import Store
+from filing_fixtures import INCOME_SUMMARY, income_report
 from test_fundamentals import source, CIK, ACC, dataset  # noqa: F401
 
 
@@ -116,7 +117,7 @@ def test_eps_above_the_share_price_is_rejected_as_a_scale_error(dataset):  # noq
     assert values["eps_asof"] == -400 and values["earnings_yield"] < 0
 
 
-def test_attach_never_downloads_full_filings_and_does_not_count_assumptions_as_verified(
+def test_eps_stays_lightweight_while_profitability_reads_only_compact_statements(
     tmp_path,
     dataset,  # noqa: F811
 ):
@@ -131,10 +132,14 @@ def test_attach_never_downloads_full_filings_and_does_not_count_assumptions_as_v
             return {"cik": 1, "entityType": "operating", "tickers": ["ABC", "ABC.B"]}
         return source()
 
+    documents = []
+
     def document(url):
-        raise AssertionError(
-            "Full report download is forbidden in the lightweight path"
-        )
+        documents.append(url)
+        if url.endswith("FilingSummary.xml"):
+            return INCOME_SUMMARY
+        assert url.endswith("R2.htm"), "No full EPS report or share-class scan"
+        return income_report()
 
     result = attach(
         store,
@@ -144,6 +149,7 @@ def test_attach_never_downloads_full_filings_and_does_not_count_assumptions_as_v
     )
     meta = result["metadata"]["fundamentals"]
     assert meta["eps_policy"] == "structured-eps-v1"
+    assert len(documents) == 2
     row = meta["coverage"][0]
     assert row["eps_checks"] == row["eps_accepted"] == 1
     assert "share_class_verified" not in row

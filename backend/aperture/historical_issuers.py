@@ -10,6 +10,12 @@ from .action_evidence import primary_matches
 from .domain import ResearchError
 
 VERSION = "reviewed-historical-issuer-v1"
+# Exact previously accepted metadata retained after a cosmetic edge-script
+# normalization correction. Raw source digests and all issuer/price gates match.
+LEGACY_CONTENT_DIGESTS = {
+    "ARNC": "d6c40d8f10e6440ceda0b5139e551b903ed5e4174415a7063b386beca651ed99",
+    "CELG": "9ba2ef9e90f791494166176f668016ebbde569745fa5f502df6d620b2c20183a",
+}
 # Entries with ``cik`` None establish a listing identity for an issuer that
 # filed with a bank regulator rather than the SEC; they map no financials.
 ISSUERS = {
@@ -44,7 +50,7 @@ ISSUERS = {
         "exchange": "NYSE",
         "url": "https://www.sec.gov/Archives/edgar/data/4281/000110465920043824/tm2015094d1_8k.htm",
         "sha256": "d6c40d8f10e6440ceda0b5139e551b903ed5e4174415a7063b386beca651ed99",
-        "content_sha256": "d6c40d8f10e6440ceda0b5139e551b903ed5e4174415a7063b386beca651ed99",
+        "content_sha256": "405a727148314735ddc4d0e74f0a22b183a830ad4efbc28256bdf03a9f6dbdbf",
         "basis": "The completed separation filing identifies the original Arconic Inc. parent, CIK 4281, continuing as "
         "Howmet. This financial mapping requires the v8 price-cohort repair; the new Arconic Corporation child (CIK "
         "1790982) is a different issuer.",
@@ -1073,7 +1079,7 @@ ISSUERS = {
         "exchange": "NASDAQ",
         "url": "https://www.sec.gov/Archives/edgar/data/816284/000110465919065939/tm1923405d1_8k.htm",
         "sha256": "9ba2ef9e90f791494166176f668016ebbde569745fa5f502df6d620b2c20183a",
-        "content_sha256": "9ba2ef9e90f791494166176f668016ebbde569745fa5f502df6d620b2c20183a",
+        "content_sha256": "8198f90d97775fe11328c8bd122d54bc40aa21822cd4f3475eb524127f026318",
         "basis": "The filed SEC document under CIK 816284 identifies Celgene Corporation and its NASDAQ-listed common shares; it is matched to the 2019-11-20 provider quote vintage. Annual financial values keep their own accession and filing dates; later filers reusing the ticker are not mapped.",
     },
     "ABMD": {
@@ -1376,7 +1382,7 @@ SUCCESSIONS = {
                 "effective": "2023-11-01",
                 "url": "https://www.sec.gov/Archives/edgar/data/1996862/000110465923113123/tm2329005d3_8k12g3.htm",
                 "sha256": "83c6435682e6fe8544119544b1cdcb365dafd022783c7489585fa67ef35d7b48",
-                "content_sha256": "83c6435682e6fe8544119544b1cdcb365dafd022783c7489585fa67ef35d7b48",
+                "content_sha256": "fa00f56316b426eb8edadea1c437372d012084bbe54cba4b7e030cdc67a1b675",
                 "basis": "Bunge Global issued one common share for each Bunge Bermuda common share in the redomestication and is the Rule 12g-3(a) successor.",
             }
         ],
@@ -1511,7 +1517,17 @@ def mapping_evidence(metadata, symbol):
     identity = metadata.get("identity_resolution", {}).get(symbol, {})
     if (
         expected
-        and supplied == {"symbol": symbol, "version": VERSION, **expected}
+        and (
+            supplied == {"symbol": symbol, "version": VERSION, **expected}
+            or symbol in LEGACY_CONTENT_DIGESTS
+            and supplied
+            == {
+                "symbol": symbol,
+                "version": VERSION,
+                **expected,
+                "content_sha256": LEGACY_CONTENT_DIGESTS[symbol],
+            }
+        )
         and _vintage_matches(
             expected, identity.get("asof", ""), identity.get("candidate_ids")
         )

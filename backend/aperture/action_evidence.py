@@ -79,7 +79,7 @@ def primary_fingerprint(raw):
     unmodified response and its raw digest remain in the captured source store.
     """
     content = re.sub(
-        rb'<script type="text/javascript"  src="/(?!/)[A-Za-z0-9/_-]+"></script>(?=</body>\s*</html>(?:\s*</TEXT>\s*</DOCUMENT>)?\s*$)',
+        rb'<script type="text/javascript"  src="/(?!/)[A-Za-z0-9/_-]+"></script>(?=</body>\s*</html>(?:\s*<!--(?:(?!-->)[\s\S])*-->)*(?:\s*</TEXT>\s*</DOCUMENT>)?\s*$)',
         b"",
         raw,
         flags=re.IGNORECASE,

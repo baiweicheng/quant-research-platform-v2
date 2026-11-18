@@ -1,0 +1,336 @@
+[
+  {
+    "symbol": "INTU",
+    "cik": "0000896878",
+    "accession": "0000896878-18-000171",
+    "file": "INTU-income.htm",
+    "url": "https://www.sec.gov/Archives/edgar/data/896878/000089687818000171/R2.htm",
+    "sha256": "9fa76dc7d9845fd0cd37f399ebf137b341d3b923831e5a3cedc7dfab049e6de2"
+  },
+  {
+    "symbol": "CNC",
+    "cik": "0001071739",
+    "accession": "0001071739-16-000192",
+    "file": "CNC-income.htm",
+    "url": "https://www.sec.gov/Archives/edgar/data/1071739/000107173916000192/R4.htm",
+    "sha256": "18a0bf79c97b0a0743b537d75d2b12484694bda1cad38907d9d38e7ddd0ed786"
+  },
+  {
+    "symbol": "TMO",
+    "cik": "0000097745",
+    "accession": "0000097745-17-000007",
+    "file": "TMO-income.htm",
+    "url": "https://www.sec.gov/Archives/edgar/data/97745/000009774517000007/R4.htm",
+    "sha256": "29aca6fb96da092ed4220286328668dad29b110121ecff35194c57133e3e8e49"
+  },
+  {
+    "symbol": "HAL",
+    "cik": "0000045012",
+    "accession": "0000045012-19-000044",
+    "file": "HAL-income.htm",
+    "url": "https://www.sec.gov/Archives/edgar/data/45012/000004501219000044/R2.htm",
+    "sha256": "fe6ef07a2a554a8d1759a9909d82f3e3c393044bef10e33a04a30415c87c471c"
+  },
+  {
+    "symbol": "NOC",
+    "cik": "0001133421",
+    "accession": "0001133421-19-000007",
+    "file": "NOC-income.htm",
+    "url": "https://www.sec.gov/Archives/edgar/data/1133421/000113342119000007/R2.htm",
+    "sha256": "681b6b5c09e94aa5104444a458367bb37af828876d4cc29edb7ef5d2a86c199a"
+  },
+  {
+    "symbol": "PG",
+    "cik": "0000080424",
+    "accession": "0000080424-16-000212",
+    "file": "PG-income.htm",
+    "url": "https://www.sec.gov/Archives/edgar/data/80424/000008042416000212/R2.htm",
+    "sha256": "44fd40cfefc5d4ed48e1cd02a55944affda02efc4be1b83e625fca7e2db0a34c"
+  },
+  {
+    "symbol": "ABBV",
+    "cik": "0001551152",
+    "accession": "0001047469-16-010239",
+    "file": "ABBV-income.htm",
+    "url": "https://www.sec.gov/Archives/edgar/data/1551152/000104746916010239/R2.htm",
+    "sha256": "0284e9327087ee5a3a90036b5f4ffdeb72808e3c2aff7d34a075f619d48830bc"
+  },
+  {
+    "symbol": "ADP",
+    "cik": "0000008670",
+    "accession": "0000008670-16-000053",
+    "file": "ADP-income.htm",
+    "url": "https://www.sec.gov/Archives/edgar/data/8670/000000867016000053/R2.htm",
+    "sha256": "84e88156f27d66496e45784ff2ce610537e472393b83acb0edeb4fb165fa51d4"
+  },
+  {
+    "symbol": "HPE",
+    "cik": "0001645590",
+    "accession": "0001628280-16-022051",
+    "file": "HPE-income.htm",
+    "url": "https://www.sec.gov/Archives/edgar/data/1645590/000162828016022051/R2.htm",
+    "sha256": "4571eea22f4756d6753be73f0f2df86a7cf0d6796e0f4dc817b24e0b1661a6ed"
+  },
+  {
+    "symbol": "CHRW",
+    "cik": "0001043277",
+    "accession": "0001043277-16-000020",
+    "file": "CHRW-income.htm",
+    "url": "https://www.sec.gov/Archives/edgar/data/1043277/000104327716000020/R4.htm",
+    "sha256": "1804632588fb8960b34daa2f9e59b1755678b03dc587f02b7360f69138885277"
+  },
+  {
+    "symbol": "ROST",
+    "cik": "0000745732",
+    "accession": "0000745732-16-000037",
+    "file": "ROST-income.htm",
+    "url": "https://www.sec.gov/Archives/edgar/data/745732/000074573216000037/R2.htm",
+    "sha256": "37ec6d08e5f9027e0f09085a5470e4d89573a6ea92f1b330a15e37a539eac34c"
+  },
+  {
+    "symbol": "SLB",
+    "cik": "0000087347",
+    "accession": "0001564590-17-000589",
+    "file": "SLB-income.htm",
+    "url": "https://www.sec.gov/Archives/edgar/data/87347/000156459017000589/R2.htm",
+    "sha256": "d53989ace1e8a415e26e06a923f253dfee0097afd7e70454cd985fde819821ab"
+  },
+  {
+    "symbol": "REGN",
+    "cik": "0000872589",
+    "accession": "0001532176-16-000045",
+    "file": "REGN-income.htm",
+    "url": "https://www.sec.gov/Archives/edgar/data/872589/000153217616000045/R4.htm",
+    "sha256": "ab048f9c72a751fc05a1d077a6ffb5bc721a2323d9a689a734a83faeab9ef688"
+  },
+  {
+    "symbol": "VRTX",
+    "cik": "0000875320",
+    "accession": "0000875320-16-000067",
+    "file": "VRTX-income.htm",
+    "url": "https://www.sec.gov/Archives/edgar/data/875320/000087532016000067/R2.htm",
+    "sha256": "35bb23ac74d26b37e9e6cc2a82180eeedbb1ff4f091b061a40c8ccd7e151a378"
+  },
+  {
+    "symbol": "COST",
+    "cik": "0000909832",
+    "accession": "0000909832-16-000032",
+    "file": "COST-income.htm",
+    "url": "https://www.sec.gov/Archives/edgar/data/909832/000090983216000032/R4.htm",
+    "sha256": "0012a72e6db64142e7265153a450614a134ef7e537a3cc6c32617c4b22f64c9e"
+  },
+  {
+    "symbol": "ABT",
+    "cik": "0000001800",
+    "accession": "0001047469-16-010246",
+    "file": "ABT-income.htm",
+    "url": "https://www.sec.gov/Archives/edgar/data/1800/000104746916010246/R2.htm",
+    "sha256": "28478b4de68baeb3f109f3a2ac3078d9f0fb831ff6eaabe3c892ae53d109ee8d"
+  },
+  {
+    "symbol": "XRX",
+    "cik": "0000108772",
+    "accession": "0000108772-16-000040",
+    "file": "XRX-income.htm",
+    "url": "https://www.sec.gov/Archives/edgar/data/108772/000010877216000040/R2.htm",
+    "sha256": "aba1b61ec805e80cf8261383ee038f995b9bcd0170b376bf6f2c80eaffc94f9e"
+  },
+  {
+    "symbol": "WELL",
+    "cik": "0000766704",
+    "accession": "0000766704-24-000008",
+    "file": "WELL-income.htm",
+    "url": "https://www.sec.gov/Archives/edgar/data/766704/000076670424000008/R4.htm",
+    "sha256": "cc68cbba030552946707dc0b663cba4cf7890e3e8e433e2be94884b02ffff64c"
+  },
+  {
+    "symbol": "ECL",
+    "cik": "0000031462",
+    "accession": "0001558370-16-003581",
+    "file": "ECL-income.htm",
+    "url": "https://www.sec.gov/Archives/edgar/data/31462/000155837016003581/R2.htm",
+    "sha256": "9b7af3e8989d70ef072e0f4ee68a0b5432adfeaffc5d1d59323cbfb042df03e2"
+  },
+  {
+    "symbol": "ETN",
+    "cik": "0001551182",
+    "accession": "0001551182-16-000041",
+    "file": "ETN-income.htm",
+    "url": "https://www.sec.gov/Archives/edgar/data/1551182/000155118216000041/R2.htm",
+    "sha256": "6e6448704b322665d5f5dffdbeb206d002064959be9d99ea103e1341b27d3d34"
+  },
+  {
+    "symbol": "NUE",
+    "cik": "0000073309",
+    "accession": "0001193125-16-481119",
+    "file": "NUE-income.htm",
+    "url": "https://www.sec.gov/Archives/edgar/data/73309/000119312516481119/R4.htm",
+    "sha256": "0143d4f8538e1f51b18174d146ef6c6cf5c37f5307cafde9cb23089eb8f5904f"
+  },
+  {
+    "symbol": "VLO",
+    "cik": "0001035002",
+    "accession": "0001035002-19-000008",
+    "file": "VLO-income.htm",
+    "url": "https://www.sec.gov/Archives/edgar/data/1035002/000103500219000008/R4.htm",
+    "sha256": "f1e6f6b7eb6810aac84b02aa3229ed1ef10c6808ba77b770a4f038e00aabcb47"
+  },
+  {
+    "symbol": "ELV",
+    "cik": "0001156039",
+    "accession": "0001156039-20-000003",
+    "file": "ELV-income.htm",
+    "url": "https://www.sec.gov/Archives/edgar/data/1156039/000115603920000003/R4.htm",
+    "sha256": "b23cb93f0d23af3b6cf6542bfbfd8a2ea55efc964b02375f10689c49cc05025c"
+  },
+  {
+    "symbol": "LYB",
+    "cik": "0001489393",
+    "accession": "0001193125-16-465311",
+    "file": "LYB-income.htm",
+    "url": "https://www.sec.gov/Archives/edgar/data/1489393/000119312516465311/R2.htm",
+    "sha256": "b067c62da028ad70bb22a6a4de65b4a8be27300e24859c7cd68a3d6b49c4868c"
+  },
+  {
+    "symbol": "PHM",
+    "cik": "0000822416",
+    "accession": "0000822416-16-000048",
+    "file": "PHM-income.htm",
+    "url": "https://www.sec.gov/Archives/edgar/data/822416/000082241616000048/R4.htm",
+    "sha256": "6d94374484abdfef001b965da6fe9f41896fe2be20041cff06ee8bf79fe0cf85"
+  },
+  {
+    "symbol": "TGT",
+    "cik": "0000027419",
+    "accession": "0000027419-19-000006",
+    "file": "TGT-income.htm",
+    "url": "https://www.sec.gov/Archives/edgar/data/27419/000002741919000006/R2.htm",
+    "sha256": "6f181dd4b8b3ddaaf7e5df4524346cac9b651950ba3f7221963ee53849150c4a"
+  },
+  {
+    "symbol": "HPE",
+    "cik": "0001645590",
+    "accession": "0001628280-16-022051",
+    "file": "HPE-annual-mda.htm",
+    "url": "https://www.sec.gov/Archives/edgar/data/1645590/000162828016022051/hpe-10312016x10k.htm",
+    "sha256": "2f667a697cb72c28f649528380ead97a1937a4303177b4786b5556510b810c37",
+    "source_document_sha256": "ac14cb29e36a531140a93bc0ef171bacaba5a46f13268ec88eda3af0c43893bd",
+    "capture_scope": "Unmodified complete table excerpt; full captured source retained in isolated source store."
+  },
+  {
+    "symbol": "MDT",
+    "cik": "0001613103",
+    "accession": "0001613103-19-000028",
+    "file": "MDT-quarterly-2019.htm",
+    "url": "https://www.sec.gov/Archives/edgar/data/1613103/000161310319000028/R28.htm",
+    "sha256": "2a8dd51bc398c41a9953c8bafb3ef0047cf8e5d677f875b820ff2652026de720",
+    "source_document_sha256": "4722c5e044b504f177240bfd6e43f535cad290d1dbd89de89b9b1e4626caa0ae",
+    "capture_scope": "Unmodified complete table excerpt; full captured source retained in isolated source store."
+  },
+  {
+    "symbol": "HPE",
+    "cik": "0001645590",
+    "accession": "0001645590-25-000130",
+    "file": "HPE-annual-mda-2025.htm",
+    "url": "https://www.sec.gov/Archives/edgar/data/1645590/000164559025000130/hpe-20251031.htm",
+    "sha256": "7cd79b9679cebc547b4fa5c35acb43513d820dffe9281aa74f25786a161acf1b",
+    "source_document_sha256": "f32e60977c31ce96eb1616f618ffc1616160126ee47c8c5c179ec303c43743d3",
+    "capture_scope": "Complete consolidated MD&A table excerpt with UTF-8 wrapper; full source retained."
+  },
+  {
+    "symbol": "PHM",
+    "cik": "0000822416",
+    "accession": "0000822416-17-000008",
+    "file": "PHM-display-income.htm",
+    "url": "https://www.sec.gov/Archives/edgar/data/822416/000082241617000008/R4.htm",
+    "sha256": "2af5d6c74ae0d66dec22867df689947cfc6a60e1af5d4a049bd0a652825cc360"
+  },
+  {
+    "symbol": "STX",
+    "cik": "0001137789",
+    "accession": "0001047469-16-014732",
+    "file": "STX-display-income.htm",
+    "url": "https://www.sec.gov/Archives/edgar/data/1137789/000104746916014732/R4.htm",
+    "sha256": "da7352cd3b69f2e71579c4da11a1647d126c5f63372c37aebac0a9db0c581752"
+  },
+  {
+    "symbol": "LHX",
+    "cik": "0000202058",
+    "accession": "0000202058-18-000063",
+    "file": "LHX-display-income.htm",
+    "url": "https://www.sec.gov/Archives/edgar/data/202058/000020205818000063/R2.htm",
+    "sha256": "c0435466a1e3e3649e6f10d8acc2cdb0da1aa3877df8336479810ded5a6868d1"
+  },
+  {
+    "symbol": "AMZN",
+    "cik": "0001018724",
+    "accession": "0001018724-17-000011",
+    "file": "AMZN-residual-income.htm",
+    "url": "https://www.sec.gov/Archives/edgar/data/1018724/000101872417000011/R3.htm",
+    "sha256": "613e1d87ad97c16af2372458a7c1e70b14bb23e8825b25379a8bb6cd962473b5"
+  },
+  {
+    "symbol": "PFE",
+    "cik": "0000078003",
+    "accession": "0000078003-17-000014",
+    "file": "PFE-residual-income.htm",
+    "url": "https://www.sec.gov/Archives/edgar/data/78003/000007800317000014/R2.htm",
+    "sha256": "0c123a68c760fa019c945295be7b2f817909ba974d658d13e1ffa561ac20c703"
+  },
+  {
+    "symbol": "ZTS",
+    "cik": "0001555280",
+    "accession": "0001555280-17-000044",
+    "file": "ZTS-residual-income.htm",
+    "url": "https://www.sec.gov/Archives/edgar/data/1555280/000155528017000044/R2.htm",
+    "sha256": "920ffe460221edd52c7e333a2314eb5ca14ce56b2de258a5c45741da24b795bb"
+  },
+  {
+    "symbol": "ITW",
+    "cik": "0000049826",
+    "accession": "0000049826-17-000022",
+    "file": "ITW-residual-income.htm",
+    "url": "https://www.sec.gov/Archives/edgar/data/49826/000004982617000022/R2.htm",
+    "sha256": "0c51a20e603e177e712f87ec533378983566213ba7c5987a75dc4f195cff500a"
+  },
+  {
+    "symbol": "PHM",
+    "cik": "0000822416",
+    "accession": "0000822416-26-000007",
+    "file": "PHM-later-display-income.htm",
+    "url": "https://www.sec.gov/Archives/edgar/data/822416/000082241626000007/R5.htm",
+    "sha256": "89d3bac2837de89df186fd5b87b063609c60c7a67e3a0b51cbff41257e892bcb"
+  },
+  {
+    "symbol": "TMO",
+    "cik": "0000097745",
+    "accession": "0000097745-26-000018",
+    "file": "TMO-2025-income.htm",
+    "url": "https://www.sec.gov/Archives/edgar/data/97745/000009774526000018/R5.htm",
+    "sha256": "c9ef478e158a747b986a219e9a62c91ffcb3aaa2f9abf4b2aa64bad78a582d01"
+  },
+  {
+    "symbol": "CHRW",
+    "cik": "0001043277",
+    "accession": "0001043277-19-000006",
+    "file": "CHRW-partition-income.htm",
+    "url": "https://www.sec.gov/Archives/edgar/data/1043277/000104327719000006/R4.htm",
+    "sha256": "f2b3e4a1beb12a5518dec974c618302df7dd70afb8dbdfb680c1d75078197a61"
+  },
+  {
+    "symbol": "INTU",
+    "cik": "0000896878",
+    "accession": "0000896878-26-000037",
+    "file": "INTU-partition-income.htm",
+    "url": "https://www.sec.gov/Archives/edgar/data/896878/000089687826000037/R3.htm",
+    "sha256": "778d58b4d3f176d501262d12c4e0cbc8a721a6efe729d9ef087d69a26f28174a"
+  },
+  {
+    "symbol": "PAYC",
+    "cik": "0001590955",
+    "accession": "0001564590-19-002998",
+    "file": "PAYC-partition-income.htm",
+    "url": "https://www.sec.gov/Archives/edgar/data/1590955/000156459019002998/R4.htm",
+    "sha256": "60737c96d864109536404f4aa69c8134a7e8f54465127871c686c6696ce068f8"
+  }
+]

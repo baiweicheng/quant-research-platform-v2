@@ -45,3 +45,11 @@ def evidence(company, symbol="ABC", multi=False):
             url=f"https://www.sec.gov/Archives/edgar/data/1/{acc.replace('-', '')}/annual.htm",
         )
     return result
+
+
+INCOME_SUMMARY = b"<FilingSummary><MyReports><Report><MenuCategory>Statements</MenuCategory><ShortName>Consolidated Statements of Income</ShortName><HtmlFileName>R2.htm</HtmlFileName></Report></MyReports></FilingSummary>"
+
+
+def income_report(revenue=100, cost=60):
+    """Independent whole-company annual statement for the monetary fixtures."""
+    return f"""<html><body><table class="report"><tr><th>Income, USD ($)</th><th>12 Months Ended</th></tr><tr><th>Dec. 31, 2022</th></tr><tr><td><a onclick="defref_us-gaap_Revenues">Total revenues</a></td><td>{revenue}</td></tr><tr><td><a onclick="defref_us-gaap_CostOfRevenue">Cost of revenue</a></td><td>{cost}</td></tr><tr><td><a onclick="defref_us-gaap_OperatingIncomeLoss">Operating income</a></td><td>{revenue - cost}</td></tr></table></body></html>""".encode()

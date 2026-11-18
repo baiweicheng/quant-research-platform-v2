@@ -41,7 +41,12 @@ def total_return_levels(bars: tuple[Bar, ...] | list[Bar]) -> list[float]:
 
 
 def rank(
-    dataset: Dataset, identifier: str, decision: date, exit_only: set[str] | None = None
+    dataset: Dataset,
+    identifier: str,
+    decision: date,
+    exit_only: set[str] | None = None,
+    *,
+    factor_audit: dict | None = None,
 ) -> tuple[list[RankedStock], list[dict]]:
     strategy(identifier)
     fundamental = identifier in FUNDAMENTAL_STRATEGIES
@@ -57,6 +62,23 @@ def rank(
     excluded: list[dict] = []
     research_exclusions = set(dataset.metadata.get("research_exclusions", []))
     members = eligible(dataset, decision) - (exit_only or set()) - research_exclusions
+    if factor_audit is not None and fundamental:
+        factor_audit.update(
+            {
+                "members": len(members - {"SPY"}),
+                "assessed": 0,
+                "factors": {
+                    key: {"positive": 0, "nonpositive": 0, "unavailable": 0}
+                    for key in (
+                        {
+                            "quality": ("profitability",),
+                            "quality_value": ("profitability", "earnings_yield"),
+                            "value_momentum": ("earnings_yield",),
+                        }[identifier]
+                    )
+                },
+            }
+        )
     from .research_data import blocked_inputs, indexed_issues
 
     issue_index = indexed_issues(dataset)
@@ -141,6 +163,17 @@ def rank(
                 "quality_value": ("profitability", "earnings_yield"),
                 "value_momentum": ("earnings_yield", "momentum"),
             }[identifier]
+            if factor_audit is not None:
+                factor_audit["assessed"] += 1
+                for key, counts in factor_audit["factors"].items():
+                    status = (
+                        "unavailable"
+                        if components.get(key) is None
+                        else "positive"
+                        if components[key] > 0
+                        else "nonpositive"
+                    )
+                    counts[status] += 1
             if reason or any(components.get(key, 0) <= 0 for key in factors):
                 excluded.append(
                     {

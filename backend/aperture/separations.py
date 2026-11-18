@@ -15,7 +15,7 @@ VERSION = "reviewed-separations-v1"
 ARCONIC = {
     "url": "https://www.sec.gov/Archives/edgar/data/4281/000110465920043824/tm2015094d1_8k.htm",
     "sha256": "d6c40d8f10e6440ceda0b5139e551b903ed5e4174415a7063b386beca651ed99",
-    "content_sha256": "d6c40d8f10e6440ceda0b5139e551b903ed5e4174415a7063b386beca651ed99",
+    "content_sha256": "405a727148314735ddc4d0e74f0a22b183a830ad4efbc28256bdf03a9f6dbdbf",
     "basis": "Old Arconic Inc. continued as Howmet (HWM), retaining one parent share and distributing 0.25 new Arconic Corporation shares per old share on April 1, 2020. HWM prices continue the old parent; the child's later $30 merger does not terminate that parent. Spun-off value is reinvested at the closing parent price in total-return research, not delivered as spendable opening cash.",
 }
 DOW = {

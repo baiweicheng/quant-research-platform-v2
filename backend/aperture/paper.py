@@ -604,10 +604,14 @@ def prepare(store, job, progress, broker):
         raise ResearchError("Paper preparation requires captured actual Alpaca prices.")
     if max(b.session for rows in ds.bars.values() for b in rows) != latest:
         raise ResearchError("Data is not current through the latest completed session.")
+    factor_audit = {}
+    arguments = (ds, cfg["strategy_id"], latest)
+    if cfg.get("exit_symbols"):
+        arguments += (set(cfg["exit_symbols"]),)
     ranked, excluded = (
-        rank(ds, cfg["strategy_id"], latest, set(cfg.get("exit_symbols", [])))
-        if cfg.get("exit_symbols")
-        else rank(ds, cfg["strategy_id"], latest)
+        rank(*arguments, factor_audit=factor_audit)
+        if cfg["strategy_id"] in {"quality", "quality_value", "value_momentum"}
+        else rank(*arguments)
     )
     policy = policy_from(
         {**cfg["policy"], "positions": int(cfg["policy"]["positions"])}
@@ -684,6 +688,7 @@ def prepare(store, job, progress, broker):
         ],
         "changes": changes,
         "cash_weight": str(ONE - sum(targets.values(), ZERO)),
+        **({"factor_coverage": factor_audit} if factor_audit else {}),
         "signals": [
             {"symbol": s.symbol, "score": s.score, "components": s.components}
             for s in ranked

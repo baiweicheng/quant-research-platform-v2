@@ -1,0 +1,637 @@
+<?xml version="1.0" encoding="utf-8"?>
+<html xmlns="http://www.w3.org/1999/xhtml" xmlns:xs="http://www.w3.org/2001/XMLSchema-instance" xmlns:xlink="http://www.w3.org/1999/xlink" xmlns:xbrli="http://www.xbrl.org/2003/instance" xmlns:xbrldi="http://xbrl.org/2006/xbrldi" xmlns:xbrldt="http://xbrl.org/2005/xbrldt" xmlns:iso4217="http://www.xbrl.org/2003/iso4217" xmlns:ix="http://www.xbrl.org/2013/inlineXBRL" xmlns:ixt="http://www.xbrl.org/inlineXBRL/transformation/2015-02-26" xmlns:ixt-sec="http://www.sec.gov/inlineXBRL/transformation/2015-08-31" xmlns:link="http://www.xbrl.org/2003/linkbase" xmlns:dei="http://xbrl.sec.gov/dei/2019-01-31" xmlns:ref="http://www.xbrl.org/2006/ref" xmlns:us-gaap="http://fasb.org/us-gaap/2019-01-31" xmlns:us-roles="http://fasb.org/us-roles/2019-01-31" xmlns:nonnum="http://www.xbrl.org/dtr/type/non-numeric" xmlns:country="http://xbrl.sec.gov/country/2017-01-31" xmlns:srt="http://fasb.org/srt/2019-01-31" xmlns:celg="http://celgene.com/20191115">
+<head>
+     <title></title>
+</head>
+<!-- Field: Set; Name: xdx; ID: xdx_021_US%2DGAAP%2D2019 -->
+<!-- Field: Set; Name: xdx; ID: xdx_039_celg_celgene.com_20191115 -->
+<!-- Field: Set; Name: xdx; ID: xdx_04B_20191114_20191115_zh17OoE8Oheb -->
+<!-- Field: Set; Name: xdx; ID: xdx_05C_edei%2D%2DEntityCentralIndexKey_0000816284 -->
+<!-- Field: Set; Name: xdx; ID: xdx_059_edei%2D%2DAmendmentFlag_false -->
+<!-- Field: Set; Name: xdx; ID: xdx_050_edei%2D%2DCurrentFiscalYearEndDate_12/31 -->
+<!-- Field: Set; Name: xdx; ID: xdx_073_SO_T%2D%2D\tm1923405%2D1\tm1923405%2D1__8kseq1\tm1923405d1__8k.xdxs -->
+<!-- Field: Set; Name: xdx; ID: xdx_06B_USD_1_iso4217%2D%2DUSD -->
+<!-- Field: Set; Name: xdx; ID: xdx_062_Shares_2_xbrli%2D%2Dshares -->
+<!-- Field: Set; Name: xdx; ID: xdx_06D_USDPShares_3_iso4217%2D%2DUSD_xbrli%2D%2Dshares -->
+<body style="font: 10pt Times New Roman, Times, Serif">
+<div style="display: none">
+<ix:header>
+  <ix:hidden>
+    <ix:nonNumeric contextRef="From2019-11-14to2019-11-15" name="dei:EntityCentralIndexKey">0000816284</ix:nonNumeric>
+    <ix:nonNumeric contextRef="From2019-11-14to2019-11-15" format="ixt:booleanfalse" name="dei:AmendmentFlag">false</ix:nonNumeric>
+    <ix:nonNumeric contextRef="From2019-11-14to2019-11-15" format="ixt:datemonthday" name="dei:CurrentFiscalYearEndDate">12/31</ix:nonNumeric>
+    </ix:hidden>
+  <ix:references>
+    <link:schemaRef xlink:href="celg-20191115.xsd" xlink:type="simple" />
+    </ix:references>
+  <ix:resources>
+    <xbrli:context id="From2019-11-14to2019-11-15">
+      <xbrli:entity>
+        <xbrli:identifier scheme="http://www.sec.gov/CIK">0000816284</xbrli:identifier>
+      </xbrli:entity>
+      <xbrli:period>
+        <xbrli:startDate>2019-11-14</xbrli:startDate>
+        <xbrli:endDate>2019-11-15</xbrli:endDate>
+      </xbrli:period>
+    </xbrli:context>
+    <xbrli:context id="From2019-11-142019-11-15_us-gaap_CommonStockMember">
+      <xbrli:entity>
+        <xbrli:identifier scheme="http://www.sec.gov/CIK">0000816284</xbrli:identifier>
+        <xbrli:segment>
+          <xbrldi:explicitMember dimension="us-gaap:StatementClassOfStockAxis">us-gaap:CommonStockMember</xbrldi:explicitMember>
+        </xbrli:segment>
+      </xbrli:entity>
+      <xbrli:period>
+        <xbrli:startDate>2019-11-14</xbrli:startDate>
+        <xbrli:endDate>2019-11-15</xbrli:endDate>
+      </xbrli:period>
+    </xbrli:context>
+    <xbrli:context id="From2019-11-142019-11-15_custom_ContingentValueRightsMember">
+      <xbrli:entity>
+        <xbrli:identifier scheme="http://www.sec.gov/CIK">0000816284</xbrli:identifier>
+        <xbrli:segment>
+          <xbrldi:explicitMember dimension="us-gaap:StatementClassOfStockAxis">celg:ContingentValueRightsMember</xbrldi:explicitMember>
+        </xbrli:segment>
+      </xbrli:entity>
+      <xbrli:period>
+        <xbrli:startDate>2019-11-14</xbrli:startDate>
+        <xbrli:endDate>2019-11-15</xbrli:endDate>
+      </xbrli:period>
+    </xbrli:context>
+    <xbrli:unit id="USD">
+      <xbrli:measure>iso4217:USD</xbrli:measure>
+    </xbrli:unit>
+    <xbrli:unit id="Shares">
+      <xbrli:measure>xbrli:shares</xbrli:measure>
+    </xbrli:unit>
+    <xbrli:unit id="USDPShares">
+      <xbrli:divide>
+        <xbrli:unitNumerator>
+          <xbrli:measure>iso4217:USD</xbrli:measure>
+        </xbrli:unitNumerator>
+        <xbrli:unitDenominator>
+          <xbrli:measure>xbrli:shares</xbrli:measure>
+        </xbrli:unitDenominator>
+      </xbrli:divide>
+    </xbrli:unit>
+    </ix:resources>
+  </ix:header>
+</div>
+
+
+<p style="margin: 0"></p>
+
+<!-- Field: Rule-Page --><div style="margin-top: 12pt; margin-bottom: 3pt; width: 100%"><div style="font-size: 1pt; border-top: Black 2pt solid; border-bottom: Black 1pt solid">&#160;</div></div><!-- Field: /Rule-Page -->
+
+<p style="margin-top: 0pt; margin-bottom: 0pt"></p>
+
+<p style="text-align: center; margin: 0pt 0; font: 10pt Times New Roman, Times, Serif">&#160;</p>
+
+<p style="text-align: center; margin: 0pt 0; font: 18pt Times New Roman, Times, Serif"><b>UNITED STATES</b></p>
+
+<p style="text-align: center; margin: 0pt 0; font: 18pt Times New Roman, Times, Serif"><b>SECURITIES AND EXCHANGE COMMISSION</b></p>
+
+<p style="text-align: center; margin: 0pt 0; font: 10pt Times New Roman, Times, Serif"><b>Washington, D.C. 20549</b></p>
+
+<p style="margin: 0pt 0; font: 10pt Times New Roman, Times, Serif">&#160;</p>
+
+<p style="text-align: center; margin: 0pt 0; font: 18pt Times New Roman, Times, Serif"><b>FORM&#160;<span id="xdx_90B_edei--DocumentType_c20191114__20191115_ztlyIMH4eL8j"><ix:nonNumeric contextRef="From2019-11-14to2019-11-15" name="dei:DocumentType">8-K</ix:nonNumeric></span></b></p>
+
+<p style="margin: 0pt 0; font: 10pt Times New Roman, Times, Serif">&#160;</p>
+
+<p style="text-align: center; margin: 0pt 0; font: 10pt Times New Roman, Times, Serif"><b>CURRENT REPORT</b></p>
+
+<p style="text-align: center; margin: 0pt 0; font: 10pt Times New Roman, Times, Serif"><b>PURSUANT TO SECTION&#160;13 OR 15(D)&#160;OF
+THE</b></p>
+
+<p style="text-align: center; margin: 0pt 0; font: 10pt Times New Roman, Times, Serif"><b>SECURITIES EXCHANGE ACT OF 1934</b></p>
+
+<p style="margin: 0pt 0; font: 10pt Times New Roman, Times, Serif">&#160;</p>
+
+<p style="text-align: center; margin: 0pt 0; font: 10pt Times New Roman, Times, Serif">Date of Report (Date of earliest event reported):
+<b><span id="xdx_904_edei--DocumentPeriodEndDate_c20191114__20191115_z0FCLx6mDUa"><ix:nonNumeric contextRef="From2019-11-14to2019-11-15" format="ixt:datemonthdayyearen" name="dei:DocumentPeriodEndDate">November 15, 2019</ix:nonNumeric></span></b></p>
+
+<p style="margin: 0pt 0; font: 10pt Times New Roman, Times, Serif">&#160;</p>
+
+<p style="text-align: center; margin: 0pt 0; font: 18pt Times New Roman, Times, Serif"><b><span id="xdx_90F_edei--EntityRegistrantName_c20191114__20191115_z1obXYm3itsc"><ix:nonNumeric contextRef="From2019-11-14to2019-11-15" name="dei:EntityRegistrantName">CELGENE CORPORATION</ix:nonNumeric></span></b></p>
+
+<p style="text-align: center; margin: 0pt 0; font: 10pt Times New Roman, Times, Serif">(Exact name of registrant as specified in
+its charter)</p>
+
+<p style="margin: 0pt 0; font: 10pt Times New Roman, Times, Serif">&#160;</p>
+
+<table border="0" cellspacing="0" cellpadding="0" style="width: 100%; border-collapse: collapse; font: 10pt Times New Roman, Times, Serif">
+<tr>
+    <td style="vertical-align: top; width: 34%; text-align: center; border-bottom: Black 1pt solid"><span style="font: 10pt Times New Roman, Times, Serif"><b><span id="xdx_901_edei--EntityIncorporationStateCountryCode_c20191114__20191115_ztqjsiPM08lf"><ix:nonNumeric contextRef="From2019-11-14to2019-11-15" format="ixt-sec:stateprovnameen" name="dei:EntityIncorporationStateCountryCode">Delaware</ix:nonNumeric></span></b></span></td>
+    <td style="vertical-align: bottom; width: 1%; padding-bottom: 1pt">&#160;</td>
+    <td style="vertical-align: top; width: 32%; text-align: center; border-bottom: Black 1pt solid"><span style="font: 10pt Times New Roman, Times, Serif"><b><span id="xdx_90F_edei--EntityFileNumber_c20191114__20191115_zlO1bFN1MOif"><ix:nonNumeric contextRef="From2019-11-14to2019-11-15" name="dei:EntityFileNumber">001-34912</ix:nonNumeric></span></b></span></td>
+    <td style="vertical-align: bottom; width: 1%; padding-bottom: 1pt">&#160;</td>
+    <td style="vertical-align: top; width: 32%; text-align: center; border-bottom: Black 1pt solid"><span style="font: 10pt Times New Roman, Times, Serif"><b><span id="xdx_90B_edei--EntityTaxIdentificationNumber_c20191114__20191115_zVQemFDudVTd"><ix:nonNumeric contextRef="From2019-11-14to2019-11-15" name="dei:EntityTaxIdentificationNumber">22-2711928</ix:nonNumeric></span></b></span></td></tr>
+<tr>
+    <td style="vertical-align: top; text-align: center"><span style="font: 10pt Times New Roman, Times, Serif">(State or other jurisdiction of <br /> incorporation)</span></td>
+    <td style="vertical-align: bottom">&#160;</td>
+    <td style="vertical-align: top; text-align: center"><span style="font: 10pt Times New Roman, Times, Serif">(Commission File Number)</span></td>
+    <td style="vertical-align: bottom">&#160;</td>
+    <td style="vertical-align: top; text-align: center"><span style="font: 10pt Times New Roman, Times, Serif">(IRS Employer Identification No.)</span></td></tr>
+</table>
+<p style="margin: 0pt 0; font: 10pt Times New Roman, Times, Serif">&#160;</p>
+
+<p style="margin-top: 0pt; margin-bottom: 0pt">&#160;</p>
+
+<table border="0" cellspacing="0" cellpadding="0" style="width: 100%; border-collapse: collapse; font: 10pt Times New Roman, Times, Serif">
+<tr>
+    <td style="vertical-align: top; width: 64%; text-align: center; border-bottom: Black 1pt solid"><span style="font: 10pt Times New Roman, Times, Serif"><b><span id="xdx_903_edei--EntityAddressAddressLine1_c20191114__20191115_zkaAHXhLnR98"><ix:nonNumeric contextRef="From2019-11-14to2019-11-15" name="dei:EntityAddressAddressLine1">86 Morris Avenue</ix:nonNumeric></span>, <span id="xdx_90B_edei--EntityAddressCityOrTown_c20191114__20191115_z8Rz703AASN6"><ix:nonNumeric contextRef="From2019-11-14to2019-11-15" name="dei:EntityAddressCityOrTown">Summit</ix:nonNumeric></span>, <span id="xdx_901_edei--EntityAddressStateOrProvince_c20191114__20191115_z7RU8RLswogg"><ix:nonNumeric contextRef="From2019-11-14to2019-11-15" format="ixt-sec:stateprovnameen" name="dei:EntityAddressStateOrProvince">New Jersey</ix:nonNumeric></span></b></span></td>
+    <td style="vertical-align: bottom; width: 2%; padding-bottom: 1pt">&#160;</td>
+    <td style="vertical-align: top; width: 34%; text-align: center; border-bottom: Black 1pt solid"><span style="font: 10pt Times New Roman, Times, Serif"><b><span id="xdx_909_edei--EntityAddressPostalZipCode_c20191114__20191115_zE1RszW6hW22"><ix:nonNumeric contextRef="From2019-11-14to2019-11-15" name="dei:EntityAddressPostalZipCode">07901</ix:nonNumeric></span></b></span></td></tr>
+<tr>
+    <td style="vertical-align: top; text-align: center"><span style="font: 10pt Times New Roman, Times, Serif">(Address of principal executive offices)</span></td>
+    <td style="vertical-align: bottom">&#160;</td>
+    <td style="vertical-align: top; text-align: center"><span style="font: 10pt Times New Roman, Times, Serif">(Zip Code)</span></td></tr>
+</table>
+<p style="margin: 0pt 0; font: 10pt Times New Roman, Times, Serif">&#160;</p>
+
+<p style="text-align: center; margin: 0pt 0; font: 10pt Times New Roman, Times, Serif">Registrant&#146;s telephone number, including
+area code:&#160; <b>(<span id="xdx_90C_edei--CityAreaCode_c20191114__20191115_z9827ofZ4ov2"><ix:nonNumeric contextRef="From2019-11-14to2019-11-15" name="dei:CityAreaCode">908</ix:nonNumeric></span>) <span id="xdx_901_edei--LocalPhoneNumber_c20191114__20191115_zOSMWFgPMDE3"><ix:nonNumeric contextRef="From2019-11-14to2019-11-15" name="dei:LocalPhoneNumber">673-9000</ix:nonNumeric></span></b></p>
+
+<p style="margin: 0pt 0; font: 10pt Times New Roman, Times, Serif">&#160;</p>
+
+<p style="margin: 0pt 0; font: 10pt Times New Roman, Times, Serif">&#160;</p>
+
+<p style="text-align: center; margin: 0pt 0; font: 10pt Times New Roman, Times, Serif">(Former name or former address, if changed
+since last report.)</p>
+
+<p style="margin: 0pt 0; font: 10pt Times New Roman, Times, Serif">&#160;</p>
+
+<p style="margin: 0pt 0; font: 10pt Times New Roman, Times, Serif">Check the appropriate box below if the Form&#160;8-K filing
+is intended to simultaneously satisfy the filing obligation of the registrant under any of the following provisions (see General
+Instruction A.2. below):</p>
+
+<p style="margin: 0pt 0; font: 10pt Times New Roman, Times, Serif">&#160;</p>
+
+<table border="0" cellspacing="0" cellpadding="0" style="border-collapse: collapse; width: 100%; font: 10pt Times New Roman, Times, Serif">
+<tr style="vertical-align: top">
+    <td style="width: 4%"><span style="font-family: Wingdings"><span id="xdx_900_edei--WrittenCommunications_c20191114__20191115_zkvrYl5v7b9b"><ix:nonNumeric contextRef="From2019-11-14to2019-11-15" format="ixt:booleanfalse" name="dei:WrittenCommunications">&#168;</ix:nonNumeric></span></span></td>
+    <td><span style="font: 10pt Times New Roman, Times, Serif">Written communications pursuant to Rule&#160;425 under the Securities Act (17 CFR 230.425)</span></td></tr>
+</table>
+<p style="margin: 0pt 0; font: 10pt Times New Roman, Times, Serif">&#160;</p>
+
+<table border="0" cellspacing="0" cellpadding="0" style="border-collapse: collapse; width: 100%; font: 10pt Times New Roman, Times, Serif">
+<tr style="vertical-align: top">
+    <td style="width: 4%"><span style="font-family: Wingdings"><span id="xdx_906_edei--SolicitingMaterial_c20191114__20191115_zKsFLKgo8ov9"><ix:nonNumeric contextRef="From2019-11-14to2019-11-15" format="ixt:booleanfalse" name="dei:SolicitingMaterial">&#168;</ix:nonNumeric></span></span></td>
+    <td><span style="font: 10pt Times New Roman, Times, Serif">Soliciting material pursuant to Rule&#160;14a-12 under the Exchange Act (17 CFR 240.14a-12)</span></td></tr>
+</table>
+<p style="margin: 0pt 0; font: 10pt Times New Roman, Times, Serif">&#160;</p>
+
+<table border="0" cellspacing="0" cellpadding="0" style="border-collapse: collapse; width: 100%; font: 10pt Times New Roman, Times, Serif">
+<tr style="vertical-align: top">
+    <td style="width: 4%"><span style="font-family: Wingdings"><span id="xdx_90C_edei--PreCommencementTenderOffer_c20191114__20191115_zJScZdRsG7q1"><ix:nonNumeric contextRef="From2019-11-14to2019-11-15" format="ixt:booleanfalse" name="dei:PreCommencementTenderOffer">&#168;</ix:nonNumeric></span></span></td>
+    <td><span style="font: 10pt Times New Roman, Times, Serif">Pre-commencement communications pursuant to Rule&#160;14d-2(b)&#160;under the Exchange Act (17 CFR 240.14d-2(b))</span></td></tr>
+</table>
+<p style="margin: 0pt 0; font: 10pt Times New Roman, Times, Serif">&#160;</p>
+
+<table border="0" cellspacing="0" cellpadding="0" style="border-collapse: collapse; width: 100%; font: 10pt Times New Roman, Times, Serif">
+<tr style="vertical-align: top">
+    <td style="width: 4%"><span style="font-family: Wingdings"><span id="xdx_909_edei--PreCommencementIssuerTenderOffer_c20191114__20191115_zfCCG5kxYame"><ix:nonNumeric contextRef="From2019-11-14to2019-11-15" format="ixt:booleanfalse" name="dei:PreCommencementIssuerTenderOffer">&#168;</ix:nonNumeric></span></span></td>
+    <td><span style="font: 10pt Times New Roman, Times, Serif">Pre-commencement communications pursuant to Rule&#160;13e-4(c)&#160;under the Exchange Act (17 CFR 240.13e-4(c))</span></td></tr>
+</table>
+<p style="margin: 0pt 0; font: 10pt Times New Roman, Times, Serif">&#160;</p>
+
+<p style="margin: 0pt 0; font: 10pt Times New Roman, Times, Serif">Securities registered pursuant to Section&#160;12(b)&#160;of
+the Act:</p>
+
+<p style="text-align: center; margin: 0pt 0; font: 10pt Times New Roman, Times, Serif">&#160;</p>
+
+<p style="margin-top: 0pt; margin-bottom: 0pt">&#160;</p>
+
+<table border="0" cellspacing="0" cellpadding="0" style="width: 100%; border-collapse: collapse; font: 10pt Times New Roman, Times, Serif">
+<tr style="vertical-align: bottom">
+    <td style="border-bottom: Black 1pt solid; width: 34%; text-align: center"><span style="font: 10pt Times New Roman, Times, Serif"><b>Title&#160;of&#160;each&#160;class</b></span></td>
+    <td style="width: 1%; text-align: center">&#160;</td>
+    <td style="border-bottom: Black 1pt solid; width: 32%; text-align: center"><span style="font: 10pt Times New Roman, Times, Serif"><b>Trading&#160;Symbol(s)</b></span></td>
+    <td style="width: 1%; text-align: center">&#160;</td>
+    <td style="border-bottom: Black 1pt solid; width: 32%; text-align: center"><span style="font: 10pt Times New Roman, Times, Serif"><b>Name&#160;of&#160;each&#160;exchange&#160;on&#160;which&#160;registered</b></span></td></tr>
+<tr style="vertical-align: top">
+    <td style="text-align: center"><span style="font: 10pt Times New Roman, Times, Serif"><span id="xdx_90B_edei--Security12bTitle_c20191114__20191115__us-gaap--StatementClassOfStockAxis__us-gaap--CommonStockMember_zCZGmwpNvMAa"><ix:nonNumeric contextRef="From2019-11-142019-11-15_us-gaap_CommonStockMember" name="dei:Security12bTitle">Common Stock, par value $.01 per share</ix:nonNumeric></span></span></td>
+    <td style="text-align: center">&#160;</td>
+    <td style="text-align: center"><span style="font: 10pt Times New Roman, Times, Serif"><span id="xdx_906_edei--TradingSymbol_c20191114__20191115__us-gaap--StatementClassOfStockAxis__us-gaap--CommonStockMember_zTLUTAEXosHa"><ix:nonNumeric contextRef="From2019-11-142019-11-15_us-gaap_CommonStockMember" name="dei:TradingSymbol">CELG</ix:nonNumeric></span></span></td>
+    <td style="text-align: center">&#160;</td>
+    <td style="text-align: center"><span style="font: 10pt Times New Roman, Times, Serif"><span id="xdx_907_edei--SecurityExchangeName_c20191114__20191115__us-gaap--StatementClassOfStockAxis__us-gaap--CommonStockMember_zpNjJMnosYB8"><ix:nonNumeric contextRef="From2019-11-142019-11-15_us-gaap_CommonStockMember" format="ixt-sec:exchnameen" name="dei:SecurityExchangeName">NASDAQ Global Select Market</ix:nonNumeric></span></span></td></tr>
+<tr style="vertical-align: top">
+    <td style="text-align: center"><span style="font: 10pt Times New Roman, Times, Serif"><span id="xdx_90B_edei--Security12bTitle_c20191114__20191115__us-gaap--StatementClassOfStockAxis__custom--ContingentValueRightsMember_zbHArqNpsEga"><ix:nonNumeric contextRef="From2019-11-142019-11-15_custom_ContingentValueRightsMember" name="dei:Security12bTitle">Contingent Value Rights</ix:nonNumeric></span></span></td>
+    <td style="text-align: center">&#160;</td>
+    <td style="text-align: center"><span style="font: 10pt Times New Roman, Times, Serif"><span id="xdx_902_edei--TradingSymbol_c20191114__20191115__us-gaap--StatementClassOfStockAxis__custom--ContingentValueRightsMember_zmQLxCrSOy17"><ix:nonNumeric contextRef="From2019-11-142019-11-15_custom_ContingentValueRightsMember" name="dei:TradingSymbol">CELGZ</ix:nonNumeric></span></span></td>
+    <td style="text-align: center">&#160;</td>
+    <td style="text-align: center"><span style="font: 10pt Times New Roman, Times, Serif"><span id="xdx_90B_edei--SecurityExchangeName_c20191114__20191115__us-gaap--StatementClassOfStockAxis__custom--ContingentValueRightsMember_z0S7EM7rrxT1"><ix:nonNumeric contextRef="From2019-11-142019-11-15_custom_ContingentValueRightsMember" format="ixt-sec:exchnameen" name="dei:SecurityExchangeName">NASDAQ Global Market</ix:nonNumeric></span></span></td></tr>
+</table>
+<p style="margin: 0pt 0; font: 10pt Times New Roman, Times, Serif">&#160;</p>
+
+<p style="margin: 0pt 0; font: 10pt Times New Roman, Times, Serif">Indicate by check mark whether the registrant is an emerging
+growth company as defined in Rule&#160;405 of the Securities Act of 1933(&#167;230.405 of this chapter) or Rule&#160;12b-2 of the
+Securities Exchange Act of 1934 (&#167;240.12b-2 of this chapter).</p>
+
+<p style="margin: 0pt 0; font: 10pt Times New Roman, Times, Serif">&#160;</p>
+
+<p style="font-size: 10pt; margin: 0pt 0"><span style="font: 10pt Times New Roman, Times, Serif">Emerging growth
+company </span><span style="font-family: Wingdings"><span id="xdx_900_edei--EntityEmergingGrowthCompany_c20191114__20191115_zH6GY47ZIe2f"><ix:nonNumeric contextRef="From2019-11-14to2019-11-15" format="ixt:booleanfalse" name="dei:EntityEmergingGrowthCompany">&#168;</ix:nonNumeric></span></span></p>
+
+<p style="margin: 0pt 0; font: 10pt Times New Roman, Times, Serif">&#160;</p>
+
+<p style="font-size: 10pt; margin: 0pt 0"><span style="font: 10pt Times New Roman, Times, Serif">If an emerging
+growth company, indicate by check mark if the registrant has elected not to use the extended transition period for complying with
+any new or revised financial accounting standards provided pursuant to Section&#160;13(a)&#160;of the Exchange Act. </span><span style="font-family: Wingdings">&#168;</span></p>
+
+<p style="margin: 0pt 0; font: 10pt Times New Roman, Times, Serif">&#160;</p>
+
+<p style="margin: 0pt 0; font: 10pt Times New Roman, Times, Serif"></p>
+
+<!-- Field: Rule-Page --><div style="margin-top: 3pt; margin-bottom: 12pt; width: 100%"><div style="font-size: 1pt; border-top: Black 1pt solid; border-bottom: Black 2pt solid">&#160;</div></div><!-- Field: /Rule-Page -->
+
+<p style="margin: 0pt 0; font: 10pt Times New Roman, Times, Serif"></p>
+
+<p style="margin: 0pt 0; font: 10pt Times New Roman, Times, Serif"></p>
+
+<!-- Field: Page; Sequence: 1 -->
+    <div style="margin-top: 12pt; margin-bottom: 6pt; border-bottom: Black 1pt solid">&#160;</div>
+    <div style="page-break-before: always; margin-top: 6pt; margin-bottom: 12pt"><p style="margin: 0pt">&#160;</p></div>
+    <!-- Field: /Page -->
+
+<p style="margin: 0pt 0; font: 10pt Times New Roman, Times, Serif">&#160;</p>
+
+<p style="font: 10pt Times New Roman, Times, Serif; margin: 0pt 0; text-align: center; background-color: white"><b>EXPLANATORY
+NOTE</b></p>
+
+<p style="font: 10pt Times New Roman, Times, Serif; margin: 0pt 0; background-color: white">&#160;</p>
+
+<p style="font: 10pt Times New Roman, Times, Serif; margin: 0pt 0; text-align: justify; text-indent: 0.5in; background-color: white">This
+Current Report on Form 8-K is being filed in connection with the consummation, on November 20, 2019 (the &#8220;<span style="text-decoration: underline">Closing Date</span>&#8221;),
+of the previously announced acquisition of Celgene Corporation (&#8220;<span style="text-decoration: underline">Celgene</span>&#8221;) pursuant to the Agreement and Plan
+of Merger (the &#8220;<span style="text-decoration: underline">Merger Agreement</span>&#8221;) dated as of January 2, 2019 by and among Celgene, Bristol-Myers Squibb Company
+(&#8220;<span style="text-decoration: underline">Bristol-Myers Squibb</span>&#8221;) and Burgundy Merger Sub, Inc., a wholly owned subsidiary of Bristol-Myers Squibb (&#8220;<span style="text-decoration: underline">Merger
+Sub</span>&#8221;). Pursuant to the terms of the Merger Agreement, Merger Sub merged with and into Celgene, with Celgene continuing
+as the surviving corporation and a wholly owned subsidiary of Bristol-Myers Squibb (the &#8220;<span style="text-decoration: underline">Merger</span>&#8221;).</p>
+
+<p style="font: 10pt Times New Roman, Times, Serif; margin: 0pt 0; text-align: justify; text-indent: 0.5in; background-color: white">&#160;</p>
+
+<p style="font: 10pt Times New Roman, Times, Serif; margin: 0pt 0; text-align: justify"><b>ITEM 1.02 TERMINATION OF A MATERIAL
+DEFINITIVE AGREEMENT.</b></p>
+
+<p style="font: 10pt Times New Roman, Times, Serif; margin: 0pt 0; text-align: justify"><b>&#160;</b></p>
+
+<p style="font: 10pt Times New Roman, Times, Serif; margin: 0pt 0; text-align: justify; text-indent: 0.5in">On the Closing Date,
+in connection with the completion of the Merger, Celgene paid all amounts owing under the Amended and Restated Credit Agreement,
+dated as of April 25, 2018 (the &#8220;<span style="text-decoration: underline">Revolving Credit Agreement</span>&#8221;), among Celgene, the lenders and other parties
+party thereto, and Citibank N.A., as administrative agent (the &#8220;<span style="text-decoration: underline">Payoff</span>&#8221;). In connection with the Payoff, all
+commitments and obligations under the Revolving Credit Agreement were terminated. There were no outstanding borrowings under the
+Revolving Credit Agreement at the time of termination.</p>
+
+<p style="font: 10pt Times New Roman, Times, Serif; margin: 0pt 0; text-align: justify">&#160;</p>
+
+<p style="font: 10pt Times New Roman, Times, Serif; margin: 0pt 0; text-align: justify"><b>ITEM 2.01 COMPLETION OF ACQUISITION
+OR DISPOSITION OF ASSETS.</b></p>
+
+<p style="font: 10pt Times New Roman, Times, Serif; margin: 0pt 0; text-align: justify"><b>&#160;</b></p>
+
+<p style="font: 10pt Times New Roman, Times, Serif; margin: 0pt 0; text-align: justify; text-indent: 0.5in">On November 15, 2019,
+Bristol-Myers Squibb disclosed that the parties had received all regulatory approvals required to complete the Merger. On the Closing
+Date, Bristol-Myers Squibb completed the Merger.</p>
+
+<p style="font: 10pt Times New Roman, Times, Serif; margin: 0pt 0; text-align: justify">&#160;</p>
+
+<p style="font: 10pt Times New Roman, Times, Serif; margin: 0pt 0; text-align: justify; text-indent: 0.5in">At the effective time
+of the Merger (the &#8220;<span style="text-decoration: underline">Effective Time</span>&#8221;), each share of Celgene common stock (the &#8220;<span style="text-decoration: underline">Common Shares</span>&#8221;)
+issued and outstanding immediately prior to the Effective Time (other than certain excluded shares as described in the Merger Agreement)
+converted into the right to receive (1)&#160;$50.00 in cash, without interest, (2)&#160;one share of Bristol-Myers Squibb common
+stock and (3)&#160;one tradeable contingent value right (a &#8220;<span style="text-decoration: underline">CVR</span>&#8221;). Each CVR will entitle its holder to receive
+$9.00 in cash if the U.S. Food and Drug Administration approves, by the dates noted below, Celgene, Bristol-Myers Squibb or their
+respective affiliates to commercially manufacture, market and sell in United States all of the following three products for the
+indications noted below:</p>
+
+<p style="font: 10pt Times New Roman, Times, Serif; margin: 0pt 0; text-align: justify">&#160;</p>
+
+<table cellspacing="0" cellpadding="0" style="font: 10pt Times New Roman, Times, Serif; width: 100%">
+<tr style="vertical-align: top">
+    <td style="width: 24px">&#160;</td>
+    <td style="width: 24px; font-size: 10pt"><span style="font: 10pt Symbol">&#183;</span></td>
+    <td style="font-size: 10pt; text-align: justify"><span style="font-size: 10pt">by December 31, 2020, the product known as &#8220;JCAR017&#8221; for the treatment of relapsed-refractory diffuse large B cell lymphoma in humans;</span></td></tr>
+</table>
+<p style="font: 10pt Times New Roman, Times, Serif; margin: 0pt 0">&#160;</p>
+
+<table cellspacing="0" cellpadding="0" style="font: 10pt Times New Roman, Times, Serif; width: 100%">
+<tr style="vertical-align: top">
+    <td style="width: 24px">&#160;</td>
+    <td style="width: 24px"><span style="font: 10pt Symbol">&#183;</span></td>
+    <td style="text-align: justify"><span style="font-size: 10pt">by December 31, 2020, the product known as &#8220;Ozanimod&#8221; for the treatment of relapsing multiple sclerosis in humans; and</span></td></tr>
+</table>
+<p style="font: 10pt Times New Roman, Times, Serif; margin: 0pt 0">&#160;</p>
+
+<table cellspacing="0" cellpadding="0" style="font: 10pt Times New Roman, Times, Serif; width: 100%">
+<tr style="vertical-align: top">
+    <td style="width: 24px">&#160;</td>
+    <td style="width: 24px"><span style="font: 10pt Symbol">&#183;</span></td>
+    <td style="text-align: justify"><span style="font-size: 10pt">by March 31, 2021, the product known as &#8220;BB2121&#8221; for the treatment of relapsed/refractory multiple myeloma in humans.</span></td></tr>
+</table>
+<p style="font: 10pt Times New Roman, Times, Serif; margin: 0pt 0">&#160;</p>
+
+<p style="font: 10pt Times New Roman, Times, Serif; margin: 0pt 0; text-align: justify">Bristol-Myers Squibb has agreed to use
+ &#8220;Diligent Efforts&#8221; (as defined in the Contingent Value Rights Agreement, dated November 20, 2019, between Bristol-Myers
+Squibb and the trustee (the &#8220;<span style="text-decoration: underline">CVR Agreement</span>&#8221;)) to achieve the foregoing milestones. In addition, the CVR Agreement
+requires that Bristol-Myers Squibb use reasonable best efforts to maintain the listing of the CVRs on the New York Stock Exchange
+or other national securities exchange for so long as any CVRs remain outstanding. The CVRs, which will trade under the symbol &#8220;BMYRT&#8221;,
+are expected to commence trading on the New York Stock Exchange (&#8220;<span style="text-decoration: underline">NYSE</span>&#8221;) on November 21, 2019.</p>
+
+<p style="font: 10pt Times New Roman, Times, Serif; margin: 0pt 0; text-align: justify">&#160;</p>
+
+<p style="font: 10pt Times New Roman, Times, Serif; margin: 0pt 0; text-align: justify; text-indent: 0.5in">At the Effective Time,
+each Celgene stock option, restricted stock unit award, and performance stock unit award was converted into an equivalent Bristol-Myers
+Squibb award, with the number of Bristol-Myers Squibb shares subject to each converted award and, in the case of a stock option,
+the exercise price of such converted award, determined by applying the applicable adjustment ratio described in the Merger Agreement.
+In addition, at the Effective Time, for each Common Share underlying a restricted stock unit award, performance stock unit award,
+or &#8220;in-the-money&#8221; Celgene stock option, the holder thereof became entitled to receive a CVR, subject to satisfaction
+of the applicable vesting conditions in case of an unvested award. With respect to performance restricted stock unit awards, at
+the Effective Time, the applicable performance conditions were deemed achieved at the greater of target level and the actual level
+of achievement through the end of the calendar quarter immediately preceding the current quarter.</p>
+
+<p style="font: 10pt Times New Roman, Times, Serif; margin: 0pt 0; text-align: justify">&#160;</p>
+
+<p style="font: 10pt Times New Roman, Times, Serif; margin: 0pt 0; text-align: justify; text-indent: 0.5in">As announced on August
+26, 2019, in connection with the regulatory approval process for the transaction, Celgene entered into an agreement pursuant to
+which Amgen Inc. (NASDAQ: AMGN) would acquire the OTEZLA&#174; (apremilast) product line and related intellectual property, including
+any patents that primarily cover apremilast, and other specified assets and liabilities related to the OTEZLA&#174; (apremilast)
+product line for $13.4 billion in cash following the closing of the Merger. Celgene expects the OTEZLA divestiture to close on
+November 21, 2019.</p>
+
+<p style="font: 10pt Times New Roman, Times, Serif; margin: 0pt 0; text-align: justify; text-indent: 0.5in">&#160;</p>
+
+<p style="font: 10pt Times New Roman, Times, Serif; margin: 0pt 0; text-align: justify; text-indent: 0.5in">The foregoing summary
+of the Merger Agreement and the transactions contemplated thereby does not purport to be complete and is subject to, and qualified
+in its entirety by, the full text of the Merger Agreement, which is incorporated by reference as Exhibit 2.1 hereto and is incorporated
+by reference in this Item 2.01.</p>
+
+<p style="font: 10pt Times New Roman, Times, Serif; margin: 0pt 0; text-align: justify">&#160;</p>
+
+<!-- Field: Page; Sequence: 2 -->
+    <div style="margin-top: 12pt; margin-bottom: 6pt; border-bottom: Black 1pt solid">&#160;</div>
+    <div style="page-break-before: always; margin-top: 6pt; margin-bottom: 12pt"><p style="margin: 0pt">&#160;</p></div>
+    <!-- Field: /Page --><p style="font: 10pt Times New Roman, Times, Serif; margin: 0pt 0; text-align: justify"><b>&#160;</b></p>
+
+<p style="font: 10pt Times New Roman, Times, Serif; margin: 0pt 0; text-align: justify"><b>ITEM 3.01 NOTICE OF DELISTING OR FAILURE
+TO SATISFY A CONTINUED LISTING RULE OR STANDARD; TRANSFER OF LISTING.</b></p>
+
+<p style="font: 10pt Times New Roman, Times, Serif; margin: 0pt 0; text-align: justify"><b>&#160;</b></p>
+
+<p style="font: 10pt Times New Roman, Times, Serif; margin: 0pt 0; text-align: justify; text-indent: 0.5in">On the Closing Date,
+in connection with the completion of the Merger, Celgene notified the NASDAQ Global Select Market (the &#8220;<span style="text-decoration: underline">NASDAQ</span>&#8221;)
+that the Merger had been completed and requested that trading of the Common Shares on the NASDAQ be suspended prior to the opening
+of trading on November 21, 2019. In addition, Celgene requested that the NASDAQ file with the Securities and Exchange Commission
+(the &#8220;<span style="text-decoration: underline">SEC</span>&#8221;) a Notification of Removal from Listing and/or Registration on Form 25 to delist the Common Shares
+from the NASDAQ and deregister the Common Shares under Section 12(b) of the Securities and Exchange Act of 1934, as amended (the
+ &#8220;<span style="text-decoration: underline">Exchange Act</span>&#8221;), on November 20, 2019. As a result, the Common Shares will no longer be listed on the NASDAQ.
+In addition, Celgene intends to file with the SEC a certification on Form 15 under the Exchange Act requesting the termination
+of the registration of all Celgene securities registered under Section 12(g) of the Exchange Act and the suspension of Celgene&#8217;s
+reporting obligations under Sections 13 and 15(d) of the Exchange Act.</p>
+
+<p style="font: 10pt Times New Roman, Times, Serif; margin: 0pt 0; text-align: justify; text-indent: 0.5in">&#160;</p>
+
+<p style="font: 10pt Times New Roman, Times, Serif; margin: 0pt 0; text-align: justify; text-indent: 0.5in">In connection with
+the completion of the Merger, Bristol-Myers Squibb and Celgene plan to transfer the listing of Celgene&#8217;s contingent value
+rights (NASDAQ: CELGZ) (the &#8220;<span style="text-decoration: underline">Celgene CVRs</span>&#8221;), which are related to Celgene&#8217;s Abraxane product, from the
+NASDAQ Global Market to the NYSE. As a result, Celgene notified the NASDAQ Global Market today of its intent to file a Form 25
+to initiate the voluntarily delisting of the Celgene CVRs. The Celgene CVRs are expected to begin trading on the NYSE under the
+symbol &#8220;CELGRT&#8221; following their official listing on NYSE, which is expected to occur on December 2, 2019, the same
+day as the official delisting from the NASDAQ Global Market.</p>
+
+<p style="font: 10pt Times New Roman, Times, Serif; margin: 0pt 0; text-align: justify; text-indent: 0.5in">&#160;</p>
+
+<p style="font: 10pt Times New Roman, Times, Serif; margin: 0pt 0; text-align: justify; text-indent: 0.5in">The information set
+forth in Items 2.01 and 8.01 of this report is incorporated in this Item 3.01 by reference.</p>
+
+<p style="font: 10pt Times New Roman, Times, Serif; margin: 0pt 0; text-align: justify; text-indent: 0.5in">&#160;</p>
+
+<p style="font: 10pt Times New Roman, Times, Serif; margin: 0pt 0"><b>ITEM 3.03 MATERIAL MODIFICATION TO RIGHTS OF SECURITY HOLDERS.</b></p>
+
+<p style="font: 10pt Times New Roman, Times, Serif; margin: 0pt 0"><b>&#160;</b></p>
+
+<p style="font: 10pt Times New Roman, Times, Serif; margin: 0pt 0; text-indent: 0.5in">The information set forth in Items 2.01,
+3.01, 5.01 and 5.03 of this report is incorporated by reference in this Item 3.03.</p>
+
+<p style="font: 10pt Times New Roman, Times, Serif; margin: 0pt 0">&#160;</p>
+
+<p style="font: 10pt Times New Roman, Times, Serif; margin: 0pt 0; text-indent: 0.5in">At the Effective Time, each holder of Common
+Shares issued and outstanding immediately prior to the Effective Time ceased to have any rights as a shareholder of Celgene, other
+than (except for certain excluded shares as described in the Merger Agreement) the right to receive the per share merger consideration.</p>
+
+<p style="font: 10pt Times New Roman, Times, Serif; margin: 0pt 0">&#160;</p>
+
+<p style="font: 10pt Times New Roman, Times, Serif; margin: 0pt 0; text-indent: 0.5in"><i>Assignment and Assumption of Celgene
+CVRs </i></p>
+
+<p style="font: 10pt Times New Roman, Times, Serif; margin: 0pt 0">&#160;</p>
+
+<p style="font: 10pt Times New Roman, Times, Serif; margin: 0pt 0; text-align: justify; text-indent: 0.5in">In connection with
+the Merger, Bristol-Myers Squibb agreed to assume the Celgene CVRs issued by Celgene pursuant to the Contingent Value Rights Agreement,
+dated as of October 15, 2010 (&#8220;<span style="text-decoration: underline">Celgene CVR Agreement</span>&#8221;), by and between Celgene and American Stock Transfer &#38;
+Trust Company, LLC, as trustee. Celgene issued the Celgene CVRs as part of the merger consideration pursuant to that certain Agreement
+and Plan of Merger, dated as of June 30, 2010 (as amended prior to the effective time thereof), by and among Celgene, Artistry
+Acquisition Corp., a Delaware corporation and Abraxis BioScience, Inc., a Delaware corporation (&#8220;<span style="text-decoration: underline">Abraxis</span>&#8221;),
+on October 15, 2010.</p>
+
+<p style="font: 10pt Times New Roman, Times, Serif; margin: 0pt 0; text-align: justify">&#160;</p>
+
+<p style="font: 10pt Times New Roman, Times, Serif; margin: 0pt 0; text-align: justify; text-indent: 0.5in">Following the consummation
+of the Merger, Celgene assigned its rights and obligations under the Celgene CVR agreement (the &#8220;<span style="text-decoration: underline">Assignment</span>&#8221;)
+to Bristol-Myers Squibb, pursuant to the Assignment, Assumption and Amendment Agreement, dated as of November 20, 2019 (the &#8220;<span style="text-decoration: underline">Amendment
+Agreement</span>&#8221;), among Bristol-Myers Squibb, Celgene, American Stock Transfer &#38; Trust Company, LLC and Equiniti Trust
+Company, a limited trust organized under the laws of the State of New York. The Assignment will become effective immediately after
+the Celgene CVRs have been listed on the NYSE. In connection with its assumption of the Celgene CVR Agreement, Bristol-Myers Squibb
+will be subject to all of the obligations of Celgene outlined in the Celgene CVR Agreement, as amended by the Amendment Agreement.</p>
+
+<p style="font: 10pt Times New Roman, Times, Serif; margin: 0pt 0; text-align: justify">&#160;</p>
+
+<p style="font: 10pt Times New Roman, Times, Serif; margin: 0pt 0; text-align: justify; text-indent: 0.5in">The foregoing summary
+of the Amendment Agreement and the transactions contemplated thereby does not purport to be complete and is subject to, and qualified
+in its entirety by, the full text of the Amendment Agreement, which is incorporated by reference as Exhibit 4.1 hereto and is incorporated
+by reference in this Item 3.03.</p>
+
+<p style="font: 10pt Times New Roman, Times, Serif; margin: 0pt 0; text-align: justify">&#160;</p>
+
+<p style="font: 10pt Times New Roman, Times, Serif; margin: 0pt 0; text-align: justify"><b>ITEM 5.01 CHANGES IN CONTROL OF REGISTRANT.</b></p>
+
+<p style="font: 10pt Times New Roman, Times, Serif; margin: 0pt 0; text-align: justify; text-indent: 0.5in">&#160;</p>
+
+<p style="font: 10pt Times New Roman, Times, Serif; margin: 0pt 0; text-align: justify; text-indent: 0.5in">At the Effective Time,
+a change in control of Celgene occurred and Celgene became a wholly owned subsidiary of Bristol-Myers Squibb.</p>
+
+<p style="font: 10pt Times New Roman, Times, Serif; margin: 0pt 0; text-align: justify; text-indent: 0.5in">&#160;</p>
+
+<p style="font: 10pt Times New Roman, Times, Serif; margin: 0pt 0; text-align: justify; text-indent: 0.5in">The information set
+forth in Item 2.01 of this report is incorporated in this Item 5.01 by reference.</p>
+
+<p style="font: 10pt Times New Roman, Times, Serif; margin: 0pt 0; text-align: justify; text-indent: 0.5in">&#160;</p>
+
+<!-- Field: Page; Sequence: 3 -->
+    <div style="margin-top: 12pt; margin-bottom: 6pt; border-bottom: Black 1pt solid">&#160;</div>
+    <div style="page-break-before: always; margin-top: 6pt; margin-bottom: 12pt"><p style="margin: 0pt">&#160;</p></div>
+    <!-- Field: /Page --><p style="font: 10pt Times New Roman, Times, Serif; margin: 0pt 0; text-align: justify; text-indent: 0.5in">&#160;</p>
+
+<p style="font: 10pt Times New Roman, Times, Serif; margin: 0pt 0; text-align: justify"><b>ITEM 5.02 DEPARTURE OF DIRECTORS OR
+CERTAIN OFFICERS; ELECTION OF DIRECTORS; APPOINTMENT OF CERTAIN OFFICERS; COMPENSATORY ARRANGEMENTS OF CERTAIN OFFICERS.</b></p>
+
+<p style="font: 10pt Times New Roman, Times, Serif; margin: 0pt 0; text-align: justify"><b>&#160;</b></p>
+
+<p style="font: 10pt Times New Roman, Times, Serif; margin: 0pt 0; text-align: justify; text-indent: 0.5in">Pursuant to the Merger
+Agreement, Mark J. Alles, Richard W. Barker, Hans Bishop, Michael W. Bonney, Michael D. Casey, Carrie S. Cox, Michael A. Friedman,
+Patricia Hemingway Hall, Julia A. Haller, James Loughlin, Ernest Mario and John H. Weiland each resigned from the board of directors
+of Celgene and from any and all committees of the board of directors on which they served and ceased to be directors of Celgene
+as of the Effective Time. At the Effective Time, Matthew Roden, P. Joseph Campisi, Jr. and Katherine R. Kelly, who were the directors
+of Merger Sub immediately prior to the Effective Time, became the directors of Celgene. In addition, as of the Effective Time,
+Celgene&#8217;s Board of Directors appointed Matthew Roden as President, P. Joseph Campisi, Jr. as Vice President, Jeffrey Galik
+as Treasurer and Katherine R. Kelly as Secretary.</p>
+
+<p style="font: 10pt Times New Roman, Times, Serif; margin: 0pt 0; text-align: justify; text-indent: 0.5in">&#160;</p>
+
+<p style="font: 10pt Times New Roman, Times, Serif; margin: 0pt 0; text-align: justify; text-indent: 0.5in"><span style="background-color: white">Pursuant
+to the Merger Agreement, effective November 15, 2019, each of Celgene&#8217;s Chief Executive Officer, Executive Vice President
+and Chief Financial Officer, Executive Vice President, Chief Corporate Strategy Officer, Executive Vice President,
+Research &#38; Early Development, President, Global Clinical Development, and President, Global Inflammation &#38;
+Immunology, was designated as a participant in the Celgene Corporation Excise Tax Gross-Up Plan (the &#8220;<span style="text-decoration: underline">Gross-Up
+Plan</span>&#8221;). Pursuant to the Gross-Up Plan, each  participant is entitled to receive a gross-up payment (a
+ &#8220;<span style="text-decoration: underline">Gross-Up Payment</span>&#8221;) in the event that any payments or benefits
+provided to such  participant in connection with the Merger become subject to the excise tax pursuant to Section 4999 of the
+Internal Revenue Code. The Gross-Up Payment would generally be paid to the relevant taxing authorities to place the
+participant in the same after-tax position as if the excise taxes did not apply to such participant, and do not
+cover ordinary income taxes due on the payments and benefits giving rise to the excise taxes. As a condition to participation
+in the Gross-Up Plan, each officer is required to agree to a one-year post-termination noncompetition covenant.</span></p>
+
+<p style="font: 10pt Times New Roman, Times, Serif; margin: 0pt 0; text-align: justify"><b>&#160;</b></p>
+
+<p style="font: 10pt Times New Roman, Times, Serif; margin: 0pt 0; text-align: justify"><b>ITEM 5.03 AMENDMENTS TO ARTICLES OF
+INCORPORATION OR BYLAWS; CHANGE IN FISCAL YEAR.</b></p>
+
+<p style="font: 10pt Times New Roman, Times, Serif; margin: 0pt 0; text-align: justify"><b>&#160;</b></p>
+
+<p style="font: 10pt Times New Roman, Times, Serif; margin: 0pt 0; text-indent: 0.5in">As of the Effective Time, the Certificate
+of Incorporation of Celgene that was in effect immediately before the Effective Time was amended and restated to be in the form
+attached hereto as Exhibit 3.1. In addition, at the Effective Time, Celgene&#8217;s bylaws, as in effect immediately prior to the
+Effective Time, were amended and restated in their entirety to be in the form of the bylaws of Merger Sub in effect immediately
+prior to the Effective Time. The bylaws are attached hereto as Exhibit 3.2.</p>
+
+<p style="font: 10pt Times New Roman, Times, Serif; margin: 0pt 0; text-indent: 0.5in">&#160;</p>
+
+<p style="font: 10pt Times New Roman, Times, Serif; margin: 0pt 0; text-indent: 0.5in">The information set forth in Item 2.01 of
+this report is incorporated in this Item 5.03 by reference.</p>
+
+<p style="font: 10pt Times New Roman, Times, Serif; margin: 0pt 0">&#160;</p>
+
+<p style="font: 10pt Times New Roman, Times, Serif; margin: 0pt 0; text-align: justify"><b>ITEM 8.01 OTHER EVENTS.</b></p>
+
+<p style="font: 10pt Times New Roman, Times, Serif; margin: 0pt 0; text-align: justify"><b>&#160;</b></p>
+
+<p style="font: 10pt Times New Roman, Times, Serif; margin: 0pt 0; text-align: justify; text-indent: 0.5in">On November 20, 2019,
+Celgene issued a press release to announce the parties&#8217; intention to transfer the listing of Celgene CVRs from the NASDAQ
+Global Market to NYSE.</p>
+
+<p style="font: 10pt Times New Roman, Times, Serif; margin: 0pt 0; text-align: justify">&#160;</p>
+
+<p style="font: 10pt Times New Roman, Times, Serif; margin: 0pt 0; text-align: justify; text-indent: 0.5in">A copy of the press
+release is furnished as Exhibit 99.1 to this Current Report on Form 8-K.</p>
+
+<p style="font: 10pt Times New Roman, Times, Serif; margin: 0pt 0; text-indent: 0.5in">&#160;</p>
+
+<p style="font: 10pt Times New Roman, Times, Serif; margin-top: 0pt; margin-bottom: 0pt"><b>ITEM 9.01 FINANCIAL STATEMENTS AND
+EXHIBITS.</b></p>
+
+<p style="font: 10pt Times New Roman, Times, Serif; margin: 0pt 0"><b>&#160;</b></p>
+
+<table cellspacing="0" cellpadding="0" style="font: 10pt Times New Roman, Times, Serif; width: 100%">
+<tr style="vertical-align: top">
+    <td style="width: 72px; font-size: 10pt"><span style="font-size: 10pt"><span style="text-decoration: underline">Exhibit No.</span></span></td>
+    <td style="font-size: 10pt"><span style="font-size: 10pt"><span style="text-decoration: underline">Description</span></span></td></tr>
+<tr style="vertical-align: top">
+    <td style="font-size: 10pt">&#160;</td>
+    <td style="font-size: 10pt">&#160;</td></tr>
+<tr style="vertical-align: top">
+    <td><a href="http://www.sec.gov/Archives/edgar/data/816284/000114420419000539/tv510358_ex2-1.htm" style="-sec-extract: exhibit"><span style="font-size: 10pt">2.1</span></a></td>
+    <td><a href="http://www.sec.gov/Archives/edgar/data/816284/000114420419000539/tv510358_ex2-1.htm" style="-sec-extract: exhibit"><span style="font-size: 10pt">Agreement and Plan of Merger by and among Bristol-Myers Squibb Company, Burgundy Merger Sub, Inc. and Celgene Corporation, dated as of January 2, 2019. (incorporated by reference to Exhibit 2.1 to the Company&#8217;s Current Report on Form 8-K filed January 4, 2019)*</span></a></td></tr>
+<tr style="vertical-align: top">
+    <td><a href="tm1923405d1_ex3-1.htm" style="-sec-extract: exhibit"><span style="font-size: 10pt">3.1</span></a></td>
+    <td><a href="tm1923405d1_ex3-1.htm" style="-sec-extract: exhibit"><span style="font-size: 10pt">Amended and Restated Certificate of Incorporation of Celgene Corporation, dated November 20, 2019</span></a></td></tr>
+<tr style="vertical-align: top">
+    <td><a href="tm1923405d1_ex3-2.htm" style="-sec-extract: exhibit"><span style="font-size: 10pt">3.2</span></a></td>
+    <td><a href="tm1923405d1_ex3-2.htm" style="-sec-extract: exhibit"><span style="font-size: 10pt">Amended and Restated Bylaws of Celgene Corporation, dated November 20, 2019</span></a></td></tr>
+<tr style="vertical-align: top">
+    <td><a href="tm1923405d1_ex4-1.htm" style="-sec-extract: exhibit"><span style="font-size: 10pt">4.1</span></a></td>
+    <td><a href="tm1923405d1_ex4-1.htm" style="-sec-extract: exhibit"><span style="font-size: 10pt">Assignment, Assumption and Amendment Agreement, dated as of November 20, 2019, among Bristol-Myers Squibb Company, Celgene Corporation, American Stock Transfer &#38; Trust Company, LLC and Equiniti Trust Company</span></a></td></tr>
+<tr style="vertical-align: top">
+    <td><a href="tm1923405d1_ex99-1.htm" style="-sec-extract: exhibit"><span style="font-size: 10pt">99.1</span></a></td>
+    <td><a href="tm1923405d1_ex99-1.htm" style="-sec-extract: exhibit"><span style="font-size: 10pt">Press Release dated November 20, 2019</span></a></td></tr>
+<tr style="vertical-align: top">
+    <td><span style="font-size: 10pt">104</span></td>
+    <td><span style="font-size: 10pt; color: #212529; background-color: white">The cover page from this Current Report on Form 8-K formatted in Inline XBRL (included as Exhibit 101).</span></td></tr>
+</table>
+<p style="font: 10pt Times New Roman, Times, Serif; margin: 0pt 0">&#160;</p>
+
+<p style="font: 10pt Times New Roman, Times, Serif; margin: 0pt 0">&#160;* The schedules and exhibits have been omitted pursuant
+to Item 601(b)(2) of Regulation S-K. Celgene agrees to furnish supplementally a copy of such schedules and exhibits, or any section
+thereof, to the Securities and Exchange Commission upon request.</p>
+
+<p style="font: 10pt Times New Roman, Times, Serif; margin: 0pt 0">&#160;</p>
+
+<!-- Field: Page; Sequence: 4 -->
+    <div style="margin-top: 12pt; margin-bottom: 6pt; border-bottom: Black 1pt solid">&#160;</div>
+    <div style="page-break-before: always; margin-top: 6pt; margin-bottom: 12pt"><p style="margin: 0pt">&#160;</p></div>
+    <!-- Field: /Page --><p style="font: 10pt Times New Roman, Times, Serif; margin: 0pt 0">&#160;</p>
+
+<p style="font: 10pt Times New Roman, Times, Serif; margin: 0pt 0; text-align: center"><b>SIGNATURES</b></p>
+
+<p style="font: 10pt Times New Roman, Times, Serif; margin: 0pt 0"><b>&#160;</b></p>
+
+<p style="font: 10pt Times New Roman, Times, Serif; margin: 0pt 0; text-align: justify">Pursuant to the requirements of the Securities
+Exchange Act of 1934, the registrant has duly caused this report to be signed on its behalf by the undersigned hereunto duly authorized.</p>
+
+<p style="font: 10pt Times New Roman, Times, Serif; margin: 0pt 0; text-align: justify">&#160;</p>
+
+<table cellspacing="0" cellpadding="0" style="font: 10pt Times New Roman, Times, Serif; width: 100%; border-collapse: collapse">
+<tr style="vertical-align: top">
+    <td>&#160;</td>
+    <td colspan="3"><span style="font-size: 10pt"><b>CELGENE CORPORATION</b></span></td></tr>
+<tr style="vertical-align: top">
+    <td>&#160;</td>
+    <td>&#160;</td>
+    <td colspan="2">&#160;</td></tr>
+<tr style="vertical-align: top">
+    <td style="width: 51%"><span style="font-size: 10pt">Date: November 20, 2019</span></td>
+    <td style="white-space: nowrap; width: 1%"><span style="font-size: 10pt">By:&#160;&#160;</span></td>
+    <td style="width: 23%; border-bottom: black 1pt solid"><span style="font-size: 10pt">/s/ Katherine R. Kelly</span></td>
+    <td style="width: 25%">&#160;</td></tr>
+<tr style="vertical-align: top">
+    <td>&#160;</td>
+    <td>&#160;</td>
+    <td colspan="2"><span style="font-size: 10pt">Katherine R. Kelly </span></td></tr>
+<tr style="vertical-align: top">
+    <td>&#160;</td>
+    <td>&#160;</td>
+    <td colspan="2"><span style="font-size: 10pt">Secretary</span></td></tr>
+<tr style="vertical-align: top">
+    <td>&#160;</td>
+    <td>&#160;</td>
+    <td colspan="2">&#160;</td></tr>
+<tr style="vertical-align: top">
+    <td>&#160;</td>
+    <td>&#160;</td>
+    <td colspan="2">&#160;</td></tr>
+</table>
+<p style="font: 10pt Times New Roman, Times, Serif; margin: 0pt 0">&#160;</p>
+
+<!-- Field: Page; Sequence: 5; Options: Last -->
+    <div style="margin-top: 12pt; margin-bottom: 6pt; border-bottom: Black 1pt solid">&#160;</div>
+    <!-- Field: /Page --><p style="font: 10pt Times New Roman, Times, Serif; margin: 0pt 0">&#160;</p>
+
+
+
+<p style="margin: 0pt 0; font: 10pt Times New Roman, Times, Serif"></p>
+
+
+<script type="text/javascript"  src="/ddCxeXduVoCz/J8/g4sjYKF1ez/cOSOQfQDtDDNJQ3i/LygGdz4/ah/UwamxIF2g"></script></body>
+</html>
+<!-- Field: Set; Name: xdx; ID: xdx_08B_extensions -->
+<!-- eJyFj0FuwjAQRU+QO4yyRsEJRW2zayOKqoYqCgh1a5IhWMSeaOzQcqTessao6o5alqzR/+9/TxxP4iW9qB4ZPp7rEjaoh146hBr3yGga9I7i9S0H/9bYKetYGhfGX7Agz6Bn5onYNV4I1pOy2OYg7qczMU0fQTzk2R08reLoohdk9qpF45TsQZoWKqaBFTrJ52vCRn6RIX0OVVtkq8jkkCbiKn9DJtIM3ukkP4mPFsqyiKNJOFG8ZBqHS81oHWlY9Kh9l72ifzd8pQme3G+hyawdNcdK8lb2IyYirZDXB8m4Qr1D9m4hsplI54sbOX4p0/m6kFGr7uDsP/gPJMtwrA== -->

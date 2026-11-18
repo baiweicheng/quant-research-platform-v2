@@ -13,7 +13,7 @@ import { api, download, money, percent, points, shortDate } from "./api";
 import { Badge, Empty, MetricStrip, Notice, PeriodPicker } from "./components";
 import type { Period, Run, State, Strategy } from "./types";
 import Validation from "./Validation";
-import { SignalAudit } from "./Fundamentals";
+import { SignalAudit, FactorAvailability } from "./Fundamentals";
 import ResearchManager, { DeleteResearchButton } from "./ResearchManager";
 const Chart = lazy(() => import("./Chart"));
 
@@ -516,6 +516,14 @@ export function RunDetail({
             buy-and-hold comparison; the exposure can differ substantially. This
             average uses the displayed period, including its starting valuation.
           </Notice>
+          <FactorAvailability
+            decisions={run.decisions || []}
+            start={window.start}
+            end={window.end}
+            expected={["quality", "quality_value", "value_momentum"].includes(
+              run.strategy.id,
+            )}
+          />
           {run.sector_classification?.warning && (
             <p className="field-hint">{run.sector_classification.warning}</p>
           )}

@@ -1,0 +1,26 @@
+[
+  {
+    "module": "aperture.historical_issuers",
+    "path": "ISSUERS.CELG",
+    "url": "https://www.sec.gov/Archives/edgar/data/816284/000110465919065939/tm1923405d1_8k.htm",
+    "original": "9ba2ef9e90f791494166176f668016ebbde569745fa5f502df6d620b2c20183a",
+    "canonical": "8198f90d97775fe11328c8bd122d54bc40aa21822cd4f3475eb524127f026318",
+    "file": "CELG-original.htm"
+  },
+  {
+    "module": "aperture.historical_issuers",
+    "path": "SUCCESSIONS.BG.predecessors.0",
+    "url": "https://www.sec.gov/Archives/edgar/data/1996862/000110465923113123/tm2329005d3_8k12g3.htm",
+    "original": "83c6435682e6fe8544119544b1cdcb365dafd022783c7489585fa67ef35d7b48",
+    "canonical": "fa00f56316b426eb8edadea1c437372d012084bbe54cba4b7e030cdc67a1b675",
+    "file": "BG-original.htm"
+  },
+  {
+    "module": "aperture.historical_timing",
+    "path": "TIMING.ATVI",
+    "url": "https://www.sec.gov/Archives/edgar/data/718877/000110465923108985/tm2328253d1_8k.htm",
+    "original": "88fdea02f0ec4f1306a0b47e83ffb85eae36906d02e961ea3b5ffb331808e5f3",
+    "canonical": "4953b64acd5eaba8398f68c43b219d7eb4294e1c6c712f82e04577a612c5bcbf",
+    "file": "ATVI-original.htm"
+  }
+]

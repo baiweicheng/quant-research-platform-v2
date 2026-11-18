@@ -139,7 +139,7 @@ TIMING = {
         "cash": "95",
         "url": "https://www.sec.gov/Archives/edgar/data/718877/000110465923108985/tm2328253d1_8k.htm",
         "sha256": "88fdea02f0ec4f1306a0b47e83ffb85eae36906d02e961ea3b5ffb331808e5f3",
-        "content_sha256": "88fdea02f0ec4f1306a0b47e83ffb85eae36906d02e961ea3b5ffb331808e5f3",
+        "content_sha256": "4953b64acd5eaba8398f68c43b219d7eb4294e1c6c712f82e04577a612c5bcbf",
         "basis": "Completed merger 8-K: halt before October 13 open, $95 cash. Nasdaq ECA2023-588 confirms last trading October 12. Only the exact flat zero-volume closing-date mark is non-executable.",
     },
 }
@@ -318,11 +318,27 @@ def verified_nontrading_tail(event, rows):
     """
     proof = event.get("reviewed_market_timing") or {}
     expected = TIMING.get(event.get("source"))
+    # This one immutable proof predates the cosmetic SEC edge-script
+    # normalization repair. Preserve its exact raw fingerprint and every term;
+    # accepting arbitrary old or partially matching metadata would hide changes.
+    legacy = (
+        {
+            "version": VERSION,
+            **expected,
+            "content_sha256": "88fdea02f0ec4f1306a0b47e83ffb85eae36906d02e961ea3b5ffb331808e5f3",
+        }
+        if expected and event.get("source") == "ATVI"
+        else None
+    )
     if (
         not expected
-        or proof != {"version": VERSION, **expected}
+        or proof not in ({"version": VERSION, **expected}, legacy)
         or event.get("id") != expected["event_id"]
         or event.get("effective") != expected["effective"]
+        or event.get("kind") != expected["kind"]
+        or decimal(event.get("cash", 0)) != decimal(expected["cash"])
+        or decimal(event.get("ratio", 0)) != decimal(expected["ratio"])
+        or event.get("target") != expected["target"]
         or not proof.get("zero_volume_mark")
     ):
         return False

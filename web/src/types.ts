@@ -57,6 +57,14 @@ export type Decision = {
   session: string;
   execute_session: string;
   eligible: number;
+  factor_coverage?: {
+    members: number;
+    assessed: number;
+    factors: Record<
+      string,
+      { positive: number; nonpositive: number; unavailable: number }
+    >;
+  };
   signals?: Signal[];
   exclusions?: { symbol: string; reason: string }[];
 };

@@ -446,7 +446,7 @@ TERMINALS = {
         "cash": "52.25",
         "url": "https://www.sec.gov/Archives/edgar/data/816284/000110465919065939/tm1923405d1_8k.htm",
         "sha256": "9ba2ef9e90f791494166176f668016ebbde569745fa5f502df6d620b2c20183a",
-        "content_sha256": "9ba2ef9e90f791494166176f668016ebbde569745fa5f502df6d620b2c20183a",
+        "content_sha256": "8198f90d97775fe11328c8bd122d54bc40aa21822cd4f3475eb524127f026318",
         "basis": "Completed Bristol-Myers Squibb merger: $50.00 cash, one BMY share and one tradeable CVR per Celgene share; Nasdaq trading suspended before the November 21, 2019 open.",
         "rights": "The tradeable CVR (BMY.RT) is valued at its first regular-way NYSE close of $2.25 on November 21, 2019 and added to the $50.00 cash. Its later expiry without payment is not modeled for holders who would have kept it.",
     },
