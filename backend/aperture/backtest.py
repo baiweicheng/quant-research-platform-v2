@@ -1,8 +1,9 @@
 """A daily accounting loop with after-close decisions and next-session fills."""
 
 from dataclasses import replace
-from datetime import date
+from datetime import date, timedelta
 from decimal import Decimal
+from statistics import median
 from typing import Callable
 
 from . import __version__, calendar
@@ -23,6 +24,41 @@ from .metrics import windows
 from .membership import validate_coverage, HISTORY_NOTE
 from .portfolio import target_weights
 from .signals import rank
+from .sector_evidence import GICS_SCHEDULE
+from .sectors import HISTORICAL_NOTE, has_sector_history
+
+
+def trailing_dollar_volume(rows, sessions, cutoff):
+    marks = [
+        bar.close * bar.volume
+        for session in sessions
+        if (bar := rows.get(session)) is not None
+        and bar.volume > 0
+        and (bar.available_at is None or bar.available_at <= cutoff)
+    ]
+    return median(marks) if len(marks) >= 10 else None
+
+
+def cost_totals(trades):
+    fees = slippage = traded = ZERO
+    missing_volume = large_orders = 0
+    for fill in trades:
+        mark = decimal(fill["quantity"]) * decimal(fill["reference_open"])
+        volume = decimal(fill["trailing_dollar_volume"] or 0)
+        traded += mark
+        fees += decimal(fill["fee"])
+        slippage += decimal(fill["slippage_cost"])
+        missing_volume += not volume
+        large_orders += 0 < volume < 100 * mark
+    return {
+        "total": str(fees + slippage),
+        "fees": str(fees),
+        "slippage": str(slippage),
+        "traded_at_open": str(traded),
+        "average_bps": float(10000 * (fees + slippage) / traded) if traded else None,
+        "without_liquidity_data": missing_volume,
+        "above_one_percent_daily_volume": large_orders,
+    }
 
 
 def run(
@@ -118,12 +154,14 @@ def run(
         cash_reserve=ZERO,
         fee_bps=policy.fee_bps,
         slippage_bps=policy.slippage_bps,
+        cost_model=policy.cost_model,
     )
     from .lifecycles import event_session
 
     decisions = calendar.decision_sessions(days, frequency)
     pending: tuple[date, dict[str, Decimal]] | None = None
-    curve, trades, decision_log = [], [], []
+    curve, trades, decision_log, benchmark_trades = [], [], [], []
+    liquidity_costs = policy.cost_model == "liquidity-v1"
     cash_targets = []
     notes = {
         HISTORY_NOTE
@@ -140,20 +178,28 @@ def run(
         )
     notes.add(coverage_audit["price_window_policy"])
     if identifier in {"quality_value", "value_momentum"}:
+        from .eps_policy import VERSION as current_eps_policy
+
         eps_policy = dataset.metadata.get("fundamentals", {}).get("eps_policy")
         if eps_policy:
             notes.add(dataset.metadata["fundamentals"]["share_basis"])
+            if eps_policy != current_eps_policy:
+                notes.add(
+                    "Update this dataset in Data to load the latest SEC share-class evidence. "
+                    "New runs already apply the reviewed Halliburton corrections."
+                )
     if coverage_mode == "coverage_limited":
         notes.add(coverage_audit["warning"])
         notes.add(
             f"Excluded {coverage_audit['excluded_count']} of {coverage_audit['universe_count']} in-period stocks. Every exclusion and reason is retained in the coverage audit."
         )
     sector_audit = dataset.metadata.get("sector_classification")
+    sector_history = has_sector_history(dataset)
     if sector_audit:
-        notes.add(sector_audit["warning"])
+        notes.add(HISTORICAL_NOTE if sector_history else sector_audit["warning"])
         if sector_audit["unresolved_count"]:
             notes.add(
-                f"{sector_audit['unresolved_count']} symbols have unresolved sectors. Unknown stocks share one capped bucket; inspect sector coverage in Data."
+                f"{sector_audit['unresolved_count']} snapshot sector labels are unresolved. Stocks still unclassified at the decision share one capped bucket."
             )
     if dataset.kind == "synthetic":
         notes.add(
@@ -169,6 +215,19 @@ def run(
         )
     first_fill_day = days[1]
     issue_index = indexed_issues(dataset)
+
+    def pretrade_volumes(day, symbols):
+        if not liquidity_costs:
+            return {}
+        previous = calendar.sessions(day - timedelta(days=60), day - timedelta(days=1))[
+            -20:
+        ]
+        cutoff = calendar.open_time(day)
+        return {
+            symbol: trailing_dollar_volume(all_by_day[symbol], previous, cutoff)
+            for symbol in symbols
+        }
+
     for index, day in enumerate(days):
         today = {
             symbol: rows[day] for symbol, rows in investible.items() if day in rows
@@ -219,13 +278,25 @@ def run(
                 notes.add(
                     "A merger became effective between decision and execution; instructions to buy the ceased security were canceled."
                 )
-            trades.extend(rebalance(portfolio, targets, today, policy, day))
+            volumes = pretrade_volumes(day, targets.keys() | portfolio.positions.keys())
+            trades.extend(rebalance(portfolio, targets, today, policy, day, volumes))
             pending = None
         if benchmark_ready:
             spy = all_by_day["SPY"][day]
             apply_actions(benchmark, day, {"SPY": spy}, dividend_model)
-            if day >= first_fill_day:
-                buy(benchmark, "SPY", spy.open, benchmark.cash, reference_policy, day)
+            if day >= first_fill_day and benchmark.cash >= ONE:
+                volumes = pretrade_volumes(day, {"SPY"})
+                fill = buy(
+                    benchmark,
+                    "SPY",
+                    spy.open,
+                    benchmark.cash,
+                    reference_policy,
+                    day,
+                    volumes.get("SPY"),
+                )
+                if fill is not None:
+                    benchmark_trades.append(fill)
         if dividend_model == "ex_date":
             reinvest_research_income(portfolio, day, today)
             if benchmark_ready:
@@ -320,6 +391,17 @@ def run(
         }
         for symbol, quantity in sorted(portfolio.positions.items())
     ]
+    costs = {}
+    if liquidity_costs:
+        costs = {
+            "strategy": cost_totals(trades),
+            "benchmark": cost_totals(benchmark_trades),
+        }
+        if any(summary["above_one_percent_daily_volume"] for summary in costs.values()):
+            notes.add(
+                "Some orders exceed 1% of recent daily dollar volume. "
+                "Daily bars cannot establish opening liquidity or fill capacity for these orders."
+            )
     result = {
         "engine_version": __version__,
         "input_contract": "dated-research-v1"
@@ -347,29 +429,41 @@ def run(
             for key, value in vars(policy).items()
         },
         "sector_classification": {
-            k: sector_audit[k]
-            for k in (
-                "version",
-                "policy",
-                "warning",
-                "classified_count",
-                "unresolved_count",
-                "classification_digest",
-            )
+            **{
+                k: sector_audit[k]
+                for k in (
+                    "version",
+                    "policy",
+                    "classified_count",
+                    "unresolved_count",
+                    "classification_digest",
+                )
+            },
+            "warning": HISTORICAL_NOTE if sector_history else sector_audit["warning"],
         }
         if sector_audit
         else None,
+        **({"historical_sector_revisions": GICS_SCHEDULE} if sector_history else {}),
         "curve": curve,
         "windows": windows(curve),
         "trades": trades,
         "trade_count": len(trades),
+        **({"trading_costs": costs} if costs else {}),
+        **({"benchmark_trades": benchmark_trades} if costs else {}),
         "holdings": holdings,
         "decisions": decision_log,
         "notes": sorted(notes),
         "benchmark_model": "SPY buy-and-hold from the same next-session open, with the same costs and ex-date closing-price reinvestment."
         if dividend_model == "ex_date"
         else "SPY buy-and-hold from the same next-session open, with the same costs and dividend reinvestment when cash is paid.",
-        "execution_model": "Targets decided after close; simulated fills at the next actual session open with explicit slippage, fees, fractional shares and cash checks. No opening-auction execution guarantee.",
+        "execution_model": (
+            "Targets decided after close; simulated fills use the next session’s opening price. "
+            "Each side pays a fee allowance and adverse slippage, with an order-size charge estimated "
+            "from preceding daily dollar volume. Missing liquidity data adds 10 bps instead. "
+            "Daily bars cannot measure the opening spread, participation or actual fills."
+            if liquidity_costs
+            else "Targets decided after close; simulated fills at the next actual session open with explicit slippage, fees, fractional shares and cash checks. No opening-auction execution guarantee."
+        ),
     }
     from .exposure import summarize as summarize_exposure
 

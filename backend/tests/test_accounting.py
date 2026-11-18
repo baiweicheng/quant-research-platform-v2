@@ -42,6 +42,54 @@ def test_buying_on_ex_date_does_not_receive_dividend():
     assert p.cash < 501
 
 
+def test_liquidity_cost_increases_for_larger_orders_and_with_missing_volume():
+    from aperture.domain import backtest_policy
+
+    standard = backtest_policy()
+    higher = backtest_policy("higher")
+    fills = [
+        buy(Portfolio(D("10000")), "ABC", D(100), D(10000), policy, DAY, volume)
+        for policy, volume in (
+            (standard, D("100000000")),
+            (standard, D("1000000")),
+            (standard, None),
+            (higher, D("100000000")),
+        )
+    ]
+    assert [D(f["slippage_bps"]) for f in fills] == [6, 15, 15, 16]
+    for f in fills:
+        assert D(f["price"]) > 100
+        assert D(f["slippage_cost"]) == D(f["quantity"]) * (D(f["price"]) - 100)
+        assert D(f["notional"]) + D(f["fee"]) <= 10_000
+    exit_fill = sell(
+        Portfolio(D(0), {"ABC": D(100)}),
+        "ABC",
+        D(100),
+        D(100),
+        standard,
+        DAY,
+        D("100000000"),
+    )
+    assert D(exit_fill["price"]) == D("99.94")
+
+
+def test_liquidity_uses_available_prior_bars_and_never_the_execution_day():
+    from datetime import datetime, timezone
+
+    from aperture.backtest import trailing_dollar_volume
+
+    cutoff = datetime(2025, 1, 20, 14, 30, tzinfo=timezone.utc)
+    previous = [date(2025, 1, day) for day in range(1, 20)]
+    rows = {day: bar(day) for day in previous[:10]}
+    rows[date(2025, 1, 20)] = bar(date(2025, 1, 20), price="10000")
+    rows[previous[10]] = bar(
+        previous[10], price="20000", available_at=cutoff.replace(hour=15)
+    )
+    assert trailing_dollar_volume(rows, previous, cutoff) == 100_000
+    del rows[previous[0]]
+    assert trailing_dollar_volume(rows, previous, cutoff) is None
+
+
 def test_total_return_index_does_not_double_adjust_split():
     bars = [
         bar(date(2025, 1, 3), "100"),

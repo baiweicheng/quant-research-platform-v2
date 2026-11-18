@@ -1,4 +1,5 @@
 from dataclasses import replace
+from datetime import date
 from decimal import Decimal as D
 
 import httpx
@@ -10,7 +11,15 @@ from aperture.domain import Policy, RankedStock, ResearchError
 from aperture.exposure import summarize
 from aperture.ingest import practice_dataset
 from aperture.portfolio import target_weights
-from aperture.sectors import URL, attach, capture, classify, normalize, parse
+from aperture.sectors import (
+    URL,
+    attach,
+    capture,
+    classify,
+    normalize,
+    parse,
+    sectors_on,
+)
 from aperture.store import Store, decode
 from sector_fixtures import archive_csv
 
@@ -20,6 +29,33 @@ SOURCE = {
     "sha256": "source-digest",
     "captured_at": "2026-11-05T00:00:00+00:00",
 }
+
+
+def test_reviewed_historical_sectors_respect_effective_sessions_and_identity():
+    data = replace(
+        practice_dataset()[0],
+        sectors={
+            "META": "Communication Services",
+            "TGT": "Consumer Staples",
+            "FOXA.OLD": "Unknown",
+            "FOXA": "Communication Services",
+            "NFLX": "Industrials",
+        },
+        metadata={
+            "membership": {"kind": "combined"},
+            "sector_classification": {"version": "fixture"},
+        },
+    )
+    before = sectors_on(data, date(2018, 9, 21))
+    assert before["META"] == "Information Technology"
+    assert before["FOXA.OLD"] == "Consumer Discretionary"
+    assert before["FOXA"] == data.sectors["FOXA"]
+    assert before["NFLX"] == data.sectors["NFLX"]
+    after = sectors_on(data, date(2018, 9, 24))
+    assert after["META"] == after["FOXA.OLD"] == "Communication Services"
+    assert sectors_on(data, date(2023, 3, 17))["TGT"] == "Consumer Discretionary"
+    assert sectors_on(data, date(2023, 3, 20))["TGT"] == "Consumer Staples"
+    assert sectors_on(replace(data, metadata={}), date(2018, 9, 21)) == data.sectors
 
 
 def snapshot(names, **metadata):

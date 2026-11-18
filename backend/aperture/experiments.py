@@ -10,8 +10,8 @@ from . import __version__, calendar
 from .backtest import run
 from .domain import (
     ARCHIVED_STRATEGIES,
-    Policy,
     ResearchError,
+    backtest_policy,
     decimal,
     runnable_strategy,
 )
@@ -139,7 +139,12 @@ def create(store: Store, data: dict) -> dict:
         "dataset_name": ds.name,
         "source_digest": ds.digest,
         "engine_version": __version__,
-        "policy": {k: str(v) for k, v in vars(Policy()).items()},
+        "policy": {
+            k: str(v)
+            for k, v in vars(
+                backtest_policy(data.get("cost_profile", "standard"))
+            ).items()
+        },
         "folds": folds,
         "protocol_version": "chronological-v1",
         "hypothesis": data["hypothesis"].strip(),
@@ -294,7 +299,7 @@ def execute(store: Store, job: dict, progress) -> dict:
             "The frozen recipe or engine changed. Create a new protocol; saved results remain available."
         )
     phase = job["payload"]["phase"]
-    policy = Policy()
+    policy = backtest_policy(p.get("cost_profile", "standard"))
     if phase == "holdout":
         specs = [("Final test", p["holdout_start"], p["end"], policy, "weekly")]
     else:
@@ -307,10 +312,10 @@ def execute(store: Store, job: dict, progress) -> dict:
         ]
         specs += [
             (
-                "Higher costs: 15 + 1 bps",
+                f"Higher costs: {policy.slippage_bps + 10} + 1 bps plus size adjustment",
                 p["start"],
                 p["development_end"],
-                replace(policy, slippage_bps=decimal(15)),
+                replace(policy, slippage_bps=policy.slippage_bps + 10),
                 "weekly",
             ),
             (

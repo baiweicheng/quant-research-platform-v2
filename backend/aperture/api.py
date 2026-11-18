@@ -41,6 +41,7 @@ class TaskInputs(BaseModel):
     capital: str = Field(default="100000", max_length=20)
     dividend_model: Literal["ex_date", "pay_date"] = "ex_date"
     coverage_mode: Literal["strict", "coverage_limited"] = "coverage_limited"
+    cost_profile: Literal["standard", "higher"] = "standard"
 
 
 class TaskRequest(TaskInputs):

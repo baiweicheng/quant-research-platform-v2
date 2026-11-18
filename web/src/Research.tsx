@@ -598,10 +598,25 @@ export function RunDetail({
               <div>
                 <dt>Modeled costs</dt>
                 <dd>
-                  {run.policy.slippage_bps ?? 5} bps slippage +{" "}
-                  {run.policy.fee_bps ?? 1} bp fee, each side
+                  {run.policy.slippage_bps ?? 5} bps{" "}
+                  {run.trading_costs ? "base slippage" : "slippage"} +{" "}
+                  {run.policy.fee_bps ?? 1} bp{" "}
+                  {run.trading_costs
+                    ? "fee allowance + size adjustment"
+                    : "fee"}
+                  , each side
                 </dd>
               </div>
+              {run.trading_costs && (
+                <div>
+                  <dt>Full-run trading costs</dt>
+                  <dd>
+                    {money(run.trading_costs.strategy.total)}
+                    {run.trading_costs.strategy.average_bps != null &&
+                      ` · ${run.trading_costs.strategy.average_bps.toFixed(1)} bps per dollar traded`}
+                  </dd>
+                </div>
+              )}
               <div>
                 <dt>Cash return</dt>
                 <dd>0% · no borrowing</dd>
@@ -622,6 +637,17 @@ export function RunDetail({
             <details className="details">
               <summary>Execution, dividends & benchmark</summary>
               <p>{run.execution_model}</p>
+              {run.trading_costs && (
+                <p>
+                  Strategy costs include{" "}
+                  {money(run.trading_costs.strategy.fees)} in fees and{" "}
+                  {money(run.trading_costs.strategy.slippage)} in slippage
+                  across the full run. SPY modeled costs were{" "}
+                  {money(run.trading_costs.benchmark.total)}.{" "}
+                  {run.trading_costs.strategy.without_liquidity_data > 0 &&
+                    `${run.trading_costs.strategy.without_liquidity_data.toLocaleString()} fills used the missing-volume allowance.`}
+                </p>
+              )}
               <p>
                 {run.dividend_model === "ex_date"
                   ? "Total-return research: overnight holders’ distributions are reinvested at the ex-date close when still held, otherwise retained as cash. This is a research assumption, not payment-date cash availability."

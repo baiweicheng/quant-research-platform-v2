@@ -278,7 +278,7 @@ def test_enrichment_is_immutable_idempotent_and_worker_results_serialize(
         name: tuple(replace(row, sources={}) for row in rows)
         for name, rows in dataset.fundamentals.items()
     }
-    assert enriched.metadata["fundamentals"]["eps_policy"] == "structured-eps-v1"
+    assert enriched.metadata["fundamentals"]["eps_policy"] == "structured-eps-v2"
     assert attach(store, enriched.id, lambda *args: None, FixtureProvider())[
         "already_imported"
     ]

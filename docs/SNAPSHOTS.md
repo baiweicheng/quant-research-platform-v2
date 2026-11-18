@@ -36,7 +36,7 @@ Total-return research keeps the captured ex-date amount separate from verified p
 
 Strict payment-date simulation retains verified settlement/share-delivery requirements. Dated issues apply to the relevant period and signal lookback instead of marking every date of a symbol permanently unusable. Coverage-limited mode freezes possible-holding-window availability exclusions before simulation, saves every omitted security/reason and warns of survivorship/selection bias. Required membership bounds still apply. Strict full-index mode does not omit unresolved members. See [the open free-data backlog](FREE_DATA_GAPS.md).
 
-Reproduction requires the original immutable snapshot, the saved assumptions and the same engine version. The current engine is 0.7.0; an engine upgrade is distinct from a data refresh. Original saved outputs are retained even after either changes.
+Reproduction requires the original immutable snapshot, the saved assumptions and the same engine version. The current engine is 0.8.0. An engine upgrade and a data refresh are separate operations. Original saved outputs are retained after either.
 
 ## Lightweight annual financial inputs
 

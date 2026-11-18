@@ -18,6 +18,7 @@ from .sector_evidence import (
     ALIASES,
     BUSINESS_INFERENCES,
     FUNDS,
+    GICS_SCHEDULE,
     REVIEWED,
     VERSION as REVIEW_VERSION,
     WARRANTS,
@@ -27,6 +28,39 @@ from .store import decode, now
 VERSION = "current-last-known-sectors-v1"
 URL = "https://raw.githubusercontent.com/lawcal/sp500-components-history/main/data/components_history.csv"
 NOTE = "Sector caps use captured current or last-known classifications, including reviewed issuer-business proxies when necessary. These static labels may use information after a historical decision and can introduce classification look-ahead bias; they are not point-in-time sector history."
+HISTORICAL_NOTE = (
+    "Backtests use dated 2018 and 2023 S&P/GICS revisions for reviewed securities. "
+    "Other sector labels use captured current or last-known classifications and may reflect later information."
+)
+_GICS_FLOOR = date(2016, 1, 4)
+_GICS_COHORTS = tuple(
+    (date.fromisoformat(record["effective"]), before, after, symbols.split())
+    for record in GICS_SCHEDULE
+    for before, after, symbols in record["cohorts"]
+)
+
+
+def has_sector_history(dataset):
+    return (dataset.metadata.get("membership") or {}).get(
+        "kind"
+    ) == "combined" and bool(dataset.metadata.get("sector_classification"))
+
+
+def sectors_on(dataset, decision):
+    if not has_sector_history(dataset) or decision < _GICS_FLOOR:
+        return dataset.sectors
+    labels = dict(dataset.sectors)
+    for effective, before, after, names in _GICS_COHORTS:
+        for symbol in names:
+            label = labels.get(symbol)
+            # 21CF's two reviewed security identities can carry an Unknown
+            # static label. The archived classification explicitly covers both.
+            known_fox = symbol in ("FOX.OLD", "FOXA.OLD") and label == "Unknown"
+            if label == after or known_fox:
+                labels[symbol] = before if decision < effective else after
+    return labels
+
+
 LABELS = (
     "Energy",
     "Materials",

@@ -10,6 +10,7 @@ from . import calendar
 from .domain import Bar, Dataset, RankedStock, ResearchError, strategy
 from .fundamentals import FUNDAMENTAL_STRATEGIES, inputs
 from .membership import eligible
+from .sectors import sectors_on
 
 
 def total_return_levels(bars: tuple[Bar, ...] | list[Bar]) -> list[float]:
@@ -97,7 +98,7 @@ def rank(
             + ", ".join(sorted(blocked)[:12])
             + ". See Data for the per-stock reasons; they cannot be omitted from ranking."
         )
-    sectors = dataset.sectors
+    sectors = sectors_on(dataset, decision)
     audit = dataset.metadata.get("membership")
     if (
         audit

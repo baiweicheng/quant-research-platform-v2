@@ -75,6 +75,10 @@ it("submits selected strategies once with the same visible inputs", async () => 
     screen.getByLabelText("Starting capital · USD"),
     "125000",
   );
+  await userEvent.selectOptions(
+    screen.getByLabelText("Trading costs"),
+    "higher",
+  );
   await userEvent.click(
     screen.getByRole("button", { name: "Run 2 backtests" }),
   );
@@ -89,6 +93,7 @@ it("submits selected strategies once with the same visible inputs", async () => 
     capital: "125000",
     dividend_model: "ex_date",
     coverage_mode: "coverage_limited",
+    cost_profile: "higher",
   });
 });
 

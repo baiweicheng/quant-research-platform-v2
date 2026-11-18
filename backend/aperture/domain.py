@@ -122,8 +122,11 @@ class Policy:
     cash_reserve: Decimal = Decimal("0.02")
     slippage_bps: Decimal = Decimal("5")
     fee_bps: Decimal = Decimal("1")
+    cost_model: Literal["fixed", "liquidity-v1"] = "fixed"
 
     def __post_init__(self):
+        if self.cost_model not in ("fixed", "liquidity-v1"):
+            raise ResearchError("Unknown trading cost model.")
         for name in (
             "max_weight",
             "sector_cap",
@@ -147,6 +150,13 @@ class Policy:
             raise ResearchError(
                 "Trading cost assumptions must be between 0 and 500 basis points."
             )
+
+
+def backtest_policy(profile: Literal["standard", "higher"] = "standard") -> Policy:
+    return Policy(
+        slippage_bps=Decimal("15") if profile == "higher" else Decimal("5"),
+        cost_model="liquidity-v1",
+    )
 
 
 @dataclass(frozen=True)
@@ -235,7 +245,7 @@ STRATEGIES = [
     },
     {
         "id": "value_momentum",
-        "version": "1.0.0",
+        "version": "1.0.1",
         "name": "Value + Momentum",
         "category": "Technical + fundamental",
         "description": "Combine what a business costs with how its stock is behaving.",

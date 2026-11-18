@@ -241,3 +241,41 @@ FUNDS = {
         "https://www.blackrock.com/us/individual/products/240271/blackrock-muniyield-new-york-insured-fund-inc-usd-fund",
     ),
 }
+
+# S&P U.S. index effective dates and MSCI's published prior/new classifications.
+# Cohorts cover reviewed securities in the historical S&P data. Ticker aliases
+# here belong to the same listing history, including the retired 21CF symbols.
+GICS_SCHEDULE = (
+    {
+        "effective": "2018-09-24",
+        "effective_source": "https://www.spglobal.com/spdji/en/documents/indexnews/announcements/20180423-697354/697354_technologyselectsectorindexconsultationresults4.23.2018.pdf",
+        "classification_source": "https://app2.msci.com/webapp/index_ann/DocGet?pub_key=n0ZnkDXBqMg%3D",
+        "cohorts": (
+            (
+                "Information Technology",
+                "Communication Services",
+                "ATVI EA FB GOOG GOOGL META MTCH TTWO TWTR",
+            ),
+            (
+                "Consumer Discretionary",
+                "Communication Services",
+                "CBS CHTR CMCSA DIS DISCA DISCK DISH FOX.OLD FOXA.OLD IPG LYV NFLX NWS NWSA OMC TRIP VIAB",
+            ),
+            ("Information Technology", "Consumer Discretionary", "EBAY"),
+        ),
+    },
+    {
+        "effective": "2023-03-20",
+        "effective_source": "https://press.spglobal.com/2022-03-31-S-P-DOW-JONES-INDICES-AND-MSCI-ANNOUNCE-REVISIONS-TO-THE-GLOBAL-INDUSTRY-CLASSIFICATION-STANDARD-GICS-R-STRUCTURE-IN-2023",
+        "classification_source": "https://app2.msci.com/webapp/index_ann/DocGet?pub_key=9piYXWAaifg%3D",
+        "cohorts": (
+            ("Information Technology", "Industrials", "ADP BR CDAY DAY PAYC PAYX"),
+            (
+                "Information Technology",
+                "Financials",
+                "CPAY FI FIS FISV FLT GPN JKHY MA PYPL SQ V XYZ",
+            ),
+            ("Consumer Discretionary", "Consumer Staples", "DG DLTR TGT"),
+        ),
+    },
+)

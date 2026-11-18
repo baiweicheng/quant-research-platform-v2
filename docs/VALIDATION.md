@@ -1,5 +1,22 @@
 # Research milestone validation
 
+## Engine 0.8.0 data and execution costs
+
+Six browser runs used the same frozen historical sample from January 3, 2017 through November 6, 2026, starting with $100,000 and using weekly rebalances and ex-date total-return accounting. The 704-stock historical universe passed strict price and action coverage in all six runs. By design, availability of an individual factor is measured separately. Value + Momentum earnings observations improved from 252,721 to 255,486 available out of 257,655 assessed. The prior unavailable observations included 157 Halliburton filing-scale errors and 2,608 share-class observations recovered by this release.
+
+| Recipe | Standard net return | Higher-cost net return |
+| --- | ---: | ---: |
+| 12–1 Momentum | +212.04% | +159.42% |
+| Defensive Low Volatility | +137.46% | +122.61% |
+| Value + Momentum | +269.38% | +203.59% |
+| SPY | +277.69% | +277.31% |
+
+The independent replay checked 86,412 fills, 29,712 daily strategy and benchmark valuations, and 312,442 filing-dated EPS and split checks. It reconciled fill prices, prior-session dollar volume, fees, cash, final holdings, net return, drawdown and benchmark equity. All six reports displayed their cost totals on desktop and at 390 px and 320 px. The full backend suite passed 738 tests and the frontend suite passed 68 tests. TypeScript and the production build passed.
+
+The refreshed data matched 31,146 annual record keys and preserved all original assets, profitability values, price chunks, action metadata and roster inputs in the comparison. The acquisition replay used 43 additional compact SEC captures and the repeated replay reproduced the same snapshot. Dated sector revisions changed target weights on 120 Momentum, 75 Low Volatility and 69 Value + Momentum decision sessions in the fixed comparison. A further 90 Value + Momentum decisions changed after admitting verified share-class EPS with the same sector policy. [Execution and data assumptions](RESEARCH_CONTRACT.md)
+
+The checked same-session roster additions agree with the published effective dates. A sensitivity that also cancels targets removed by the execution session changed Value + Momentum terminal return by 0.95 percentage points and the daily equity path by at most 0.28%. The Millrose later-first-quote timing sensitivity altered signals but changed no target allocations. No sampled portfolio held the failed-bank write-offs or the reviewed distributions priced with a proxy or a later quote. The Fox timing proxy still affects one daily mark in two recipes. Opening fills remain modeled from daily bars and sector coverage uses static labels outside the reviewed revisions.
+
 ## B-039 annual profitability
 
 The v7 normalizer and v28 filing reader preserve the $8.3691bn TMO FY2016 correction and exclude incomplete cost candidates for CNC, ORCL and AMT. The rendered-statement reader checks all verified production and residual expenses in the annual filing. Regressions cover miscategorized income reports, displayed rounding, reviewed product/service dimensions and separately allocated depreciation. The source audit verified 1,862 adopted annual rows from 649 accessions, with zero source, hash or reconciliation failures.

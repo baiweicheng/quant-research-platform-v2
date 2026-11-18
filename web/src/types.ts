@@ -192,6 +192,14 @@ export type State = {
 };
 export const PERIODS = ["1W", "1M", "3M", "6M", "YTD", "1Y", "All"] as const;
 export type Period = (typeof PERIODS)[number];
+type TradingCosts = {
+  total: string;
+  fees: string;
+  slippage: string;
+  average_bps: number | null;
+  without_liquidity_data: number;
+  above_one_percent_daily_volume: number;
+};
 export type Run = Omit<RunSummary, "metrics"> & {
   engine_version?: string;
   audit_path?: string;
@@ -210,6 +218,7 @@ export type Run = Omit<RunSummary, "metrics"> & {
   source_digest: string;
   policy: Record<string, string | number>;
   execution_model: string;
+  trading_costs?: { strategy: TradingCosts; benchmark: TradingCosts };
   benchmark_model: string;
   decisions?: Decision[];
   curve: {

@@ -1,5 +1,13 @@
 # Lightweight EPS research policy
 
+## Current policy in engine 0.8.0
+
+Normal Download and Update use `structured-eps-v2`. The Halliburton FY2022–2024 10-Ks have structured values scaled a million-fold. The engine maps the exact erroneous issuer, accession, period, tag and amount to the filed per-share amount, including comparative rows in those filings. New runs on older snapshots apply the same correction. EPS greater than the share price can be valid. Extreme raw per-share amounts of $10,000 or more require corroboration from the same annual filing or a reviewed filed figure. [2022 filing](https://www.sec.gov/Archives/edgar/data/45012/000004501223000011/hal-20221231.htm) · [2023 filing](https://www.sec.gov/Archives/edgar/data/45012/000004501224000007/hal-20231231.htm) · [2024 filing](https://www.sec.gov/Archives/edgar/data/45012/000004501225000010/hal-20241231.htm)
+
+Company Facts omits class-specific EPS for some issuers. A bounded check uses the compact SEC statements of Berkshire Class B, Visa Class A, Hershey's listed common stock, Constellation Class A and pre-merger Discovery Class A and C. Berkshire's older filings give the exact 1-to-1,500 Class B relation. Later statements publish the Class B earnings directly. Issuer, filing date, annual period and known intervening split requirements apply. Ordinary Data Update loads these proofs into a new snapshot. Earlier saved results retain their original inputs. [Berkshire Class B disclosure](https://www.sec.gov/Archives/edgar/data/1067983/000119312526083899/brka-20251231.htm) · [Hershey listed common shares and annual earnings](https://www.sec.gov/Archives/edgar/data/47111/000162828026008586/hsy-20251231.htm)
+
+## Historical policy in engine 0.7.0
+
 Engine **0.7.0** keeps all five recipes and uses structured SEC annual financial facts for ordinary Download, Update and weekly paper preparation. It no longer downloads thousands of historical report bodies to establish each accession's share class. This is an intentional research approximation, accepted for exploratory usability. It is not an independent earnings audit or a certification of historical share units.
 
 ## Retained checks and limitations

@@ -66,6 +66,9 @@ export function TaskDialog({
     ["quality_value", "value_momentum"].some((id) =>
       selectedStrategies.includes(id),
     ) && !!dataset?.metadata?.fundamentals?.eps_policy;
+  const olderEps =
+    lightweightEps &&
+    dataset?.metadata?.fundamentals?.eps_policy !== "structured-eps-v2";
   const [start, setStart] = useState(
     dataset ? afterWarmup(dataset.start, dataset.end) : "",
   );
@@ -109,6 +112,7 @@ export function TaskDialog({
       capital: kind === "backtest" ? String(values.get("capital")) : "100000",
       dividend_model: String(values.get("dividend_model") || "ex_date"),
       coverage_mode: String(values.get("coverage_mode") || "strict"),
+      cost_profile: String(values.get("cost_profile") || "standard"),
     });
   }
   return (
@@ -254,9 +258,14 @@ export function TaskDialog({
         {lightweightEps && (
           <p className="field-hint">
             EPS uses lightweight share-class assumptions. Known unequal-share
-            cases are excluded; historical classes are not exhaustively
-            verified.
+            earnings need a verified share-class amount.
           </p>
+        )}
+        {olderEps && (
+          <Notice>
+            In Data, update this dataset to load the latest filing checks and
+            recover additional share-class earnings.
+          </Notice>
         )}
         {legacyClasses && (
           <Notice>
@@ -274,7 +283,7 @@ export function TaskDialog({
         {dataset?.kind === "imported" && (
           <Notice>
             {dataset.metadata?.sector_classification
-              ? "The 25% sector cap uses captured current or last-known classifications. These may reflect later information than a historical decision. Concentrated selections can leave more cash than the 2% minimum reserve."
+              ? "The 25% sector cap uses dated classifications for reviewed S&P revisions. Other captured classifications may reflect later information. Concentrated selections can leave more cash than the 2% minimum reserve."
               : "This snapshot has no sector coverage audit. Refresh sectors in Data for a new classified snapshot; unresolved labels can leave substantial cash under the 25% sector cap."}
           </Notice>
         )}
@@ -336,6 +345,17 @@ export function TaskDialog({
               can require additional historical data.
             </p>
             <label>
+              Trading costs
+              <select name="cost_profile" defaultValue="standard">
+                <option value="standard">Standard</option>
+                <option value="higher">Higher costs</option>
+              </select>
+            </label>
+            <p className="field-hint">
+              Standard uses 5 bps of base slippage per side. Higher costs uses
+              15 bps. Both add a 1 bp fee allowance and a liquidity adjustment.
+            </p>
+            <label>
               Starting capital · USD
               <input
                 name="capital"
@@ -359,9 +379,9 @@ export function TaskDialog({
             remainder stays in cash.
           </p>
           <p>
-            Backtests model 5 basis points of slippage and 1 basis point of fees
-            per side. Cash earns 0%. These are research assumptions, not broker
-            quotes.
+            Backtests estimate the liquidity adjustment from order size and
+            earlier daily trading volume. Fees are a research allowance. Cash
+            earns 0%.
           </p>
           {kind === "review" && (
             <p>

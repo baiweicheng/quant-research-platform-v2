@@ -23,6 +23,7 @@ def batch(tmp_path):
         "capital": "123456",
         "coverage_mode": "coverage_limited",
         "dividend_model": "ex_date",
+        "cost_profile": "higher",
     }
     return app, TestClient(app), payload
 
@@ -56,6 +57,10 @@ def test_one_submission_keeps_common_inputs_and_saves_independent_results(batch)
     results = app.state.store.results("backtest")
     assert {r["strategy"]["id"] for r in results} == set(payload["strategy_ids"])
     assert all(r["dataset_id"] == payload["dataset_id"] for r in results)
+    for result in results:
+        saved = app.state.store.result(result["id"])
+        assert saved["policy"]["cost_model"] == "liquidity-v1"
+        assert saved["policy"]["slippage_bps"] == "15"
 
 
 @pytest.mark.parametrize(
@@ -67,6 +72,7 @@ def test_one_submission_keeps_common_inputs_and_saves_independent_results(batch)
         {"dataset_id": "deleted"},
         {"start": "2024-01-01"},
         {"capital": "NaN"},
+        {"cost_profile": "invalid"},
         {"end": "2025-01-06"},
     ],
 )

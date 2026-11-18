@@ -92,7 +92,7 @@ def amount(value):
     return Decimal(value.strip("()")) * (-1 if value.startswith("(") else 1)
 
 
-def parse_report(raw):
+def parse_report(raw, *, displayed_values=False):
     """Return annual-column rows with explicit concept/scope and USD scale.
 
     Reject unusual headers instead of interpreting quarters as annual values.
@@ -173,6 +173,7 @@ def parse_report(raw):
                         "scope": scope,
                         "value": str(val * scale),
                         "display_unit": str(scale.scaleb(val.as_tuple().exponent)),
+                        **({"displayed_value": str(val)} if displayed_values else {}),
                     }
                 )
     return result
@@ -576,6 +577,17 @@ def _statement_priority(name, category):
     ):
         return 2 if "comprehensive" in name else 1
     return None
+
+
+def statement_reports(summary):
+    """Ordered (priority, position, filename) candidates for the face statement."""
+    for node in summary.findall(".//Report"):
+        fields = {e.tag: (e.text or "").strip() for e in node}
+        name = " ".join(fields.get("ShortName", "").lower().split())
+        priority = _statement_priority(name, fields.get("MenuCategory"))
+        filename = fields.get("HtmlFileName", "")
+        if priority is not None and re.fullmatch(r"R\d+\.htm", filename):
+            yield priority, int(fields.get("Position") or 999999), filename
 
 
 def read(api, cik, accession):

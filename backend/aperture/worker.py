@@ -9,7 +9,7 @@ from pathlib import Path
 
 from . import __version__, calendar
 from .backtest import run
-from .domain import Policy, ResearchError, decimal, runnable_strategy
+from .domain import Policy, ResearchError, backtest_policy, decimal, runnable_strategy
 from .ingest import practice_dataset
 from .portfolio import target_weights
 from .signals import rank
@@ -245,7 +245,7 @@ def execute(store: Store, job: dict):
             date.fromisoformat(payload["start"]),
             date.fromisoformat(payload["end"]),
             decimal(payload["capital"]),
-            policy,
+            backtest_policy(payload.get("cost_profile", "standard")),
             progress=update,
             dividend_model=payload.get("dividend_model"),
             coverage_mode=payload.get("coverage_mode", "strict"),

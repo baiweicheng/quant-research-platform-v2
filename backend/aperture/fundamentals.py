@@ -17,9 +17,13 @@ from . import calendar, profitability
 from .annual_refresh import companyfacts as read_companyfacts
 from .domain import ONE, ZERO, AnnualStatement, Dataset, ResearchError, decimal
 from .eps_policy import (
+    CORROBORATION_TAGS,
     EPS_TAGS,
     assess,
+    checked_amount,
+    fact_unit,
 )
+from .filed_eps import enrich as enrich_class_eps
 from .eps_policy import (
     VERSION as EPS_VERSION,
 )
@@ -33,7 +37,7 @@ from .profitability_filings import (
 )
 from .store import Store, now
 
-VERSION = "annual-us-gaap-v7-reconciled-profitability"
+VERSION = "annual-us-gaap-v8-reviewed-eps-scale"
 AVAILABILITY = "After close + 15 minutes on the first exchange session strictly after the SEC filing date. No same-day publication assumption."
 TAGS = {
     "assets": ("Assets",),
@@ -56,10 +60,6 @@ TAGS = {
     "eps": EPS_TAGS,
 }
 REVENUE_COMPONENTS = ("SalesRevenueGoodsNet", "SalesRevenueServicesNet")
-# Positive diluted EPS above the share price (a P/E below one) is not a
-# plausible reported value for a listed common share; it indicates an XBRL
-# scale error (for example 1,730,000 for $1.73).
-IMPLAUSIBLE_EPS = "Reported positive EPS exceeds the decision share price, which indicates a filing scale error. EPS valuation is excluded for this filing."
 FUNDAMENTAL_STRATEGIES = ("quality", "quality_value", "value_momentum")
 
 
@@ -94,8 +94,9 @@ def normalize(
     groups: dict[tuple, dict[str, set[Decimal]]] = {}
     filed_dates, forms = {}, {}
     wanted = {tag for tags in TAGS.values() for tag in tags} | set(profitability.TAGS)
+    wanted.update(CORROBORATION_TAGS)
     for tag in wanted:
-        unit = "USD/shares" if tag in TAGS["eps"] else "USD"
+        unit = fact_unit(tag)
         for item in facts.get(tag, {}).get("units", {}).get(unit, []):
             if item.get("form") not in ("10-K", "10-K/A"):
                 continue
@@ -114,6 +115,7 @@ def normalize(
             except (KeyError, TypeError, ValueError):
                 issues.append(f"Invalid {tag} fact excluded.")
                 continue
+            # Corroboration facts alone must not create another filing period.
             key = (accession, start, end)
             groups.setdefault(key, {}).setdefault(tag, set()).add(value)
             if accession in filed_dates and filed_dates[accession] != filed:
@@ -125,7 +127,7 @@ def normalize(
     for (accession, start, end), values in sorted(
         groups.items(), key=lambda pair: (pair[0][2], pair[0][0], str(pair[0][1]))
     ):
-        if start is None:
+        if start is None or not (values.keys() - set(CORROBORATION_TAGS)):
             continue
         sources, row_issues, conflicted = {}, [], set()
 
@@ -160,6 +162,13 @@ def normalize(
             and evidence.get("symbol") == symbol
         )
         eps = value_for("eps") if eps_compatible else None
+        eps, scale_sources, scale_issue = checked_amount(
+            cik, accession, start, end, eps, sources, values
+        )
+        sources.update(scale_sources)
+        if scale_issue:
+            sources["eps_issue"] = scale_issue
+            row_issues.append(scale_issue)
         if evidence.get("url"):
             key = (
                 "eps_evidence"
@@ -309,26 +318,29 @@ def inputs(
     ) and not blocked_inputs(
         dataset, {symbol}, statement.filed, decision, "signals", issue_index=issue_index
     )
-    if (
-        statement.eps is not None
-        and statement.eps_compatible
-        and split_history_complete
-    ):
+    eps, scale_sources, scale_issue = checked_amount(
+        statement.cik,
+        statement.accession,
+        statement.start,
+        statement.end,
+        statement.eps,
+        statement.sources,
+    )
+    if scale_sources:
+        values["filing"]["sources"] = {**statement.sources, **scale_sources}
+    if scale_issue or statement.sources.get("eps_issue"):
+        values["valuation_issue"] = scale_issue or statement.sources["eps_issue"]
+    elif eps is not None and statement.eps_compatible and split_history_complete:
         factor = ONE
         # EPS is in the share basis reported by that filing. Apply only splits
         # after its filing date and through this decision, not all future splits.
         for bar in bars:
             if statement.filed < bar.session <= decision:
                 factor *= bar.split
-        eps_asof = statement.eps / factor
-        # A loss can exceed the share price; a positive P/E below one cannot
-        # be a plausible reported value and indicates an XBRL scale error.
-        if eps_asof > bars[-1].close:
-            values["valuation_issue"] = IMPLAUSIBLE_EPS
-        else:
-            values["eps_asof"] = eps_asof
-            values["earnings_yield"] = eps_asof / bars[-1].close
-    elif statement.eps is not None and not split_history_complete:
+        eps_asof = eps / factor
+        values["eps_asof"] = eps_asof
+        values["earnings_yield"] = eps_asof / bars[-1].close
+    elif eps is not None and not split_history_complete:
         values["valuation_issue"] = (
             "Price/action history after this filing is incomplete; intervening split units cannot be verified."
         )
@@ -567,6 +579,9 @@ def attach(
                 )
             if prior_coverage and normalized:
                 issues = [i for i in issues if "No supported" not in i]
+            normalized = enrich_class_eps(
+                normalized, reader, first_session, last_session, class_evidence
+            )
             normalized = enrich_profitability(
                 normalized,
                 reader,
@@ -608,6 +623,7 @@ def attach(
                                 "start": str(r.start),
                                 "end": str(r.end),
                                 "gross_profit": str(r.gross_profit),
+                                "eps": str(r.eps),
                                 "sources": r.sources,
                                 "issues": r.issues,
                             }
@@ -695,7 +711,7 @@ def attach(
             "profitability_filing_parser": PROFITABILITY_VERSION,
             "availability": AVAILABILITY,
             "staleness_days": 550,
-            "units": "USD; reported diluted EPS USD/shares (EarningsPerShareDiluted, else the combined EarningsPerShareBasicAndDiluted amount, else diluted EPS from continuing operations when the filing reports no whole-entity net element). Positive EPS above the decision share price is rejected as a likely scale error.",
+            "units": "USD and USD/share. Reported annual diluted EPS uses the net element when available, then combined basic/diluted or continuing operations. Reviewed SEC scale errors use the amount in the filed statement. Exceptional amounts require independent scale evidence. A low P/E alone does not exclude a stock.",
             "periods": "Annual 330–400 days; 10-K and 10-K/A only",
             "share_class_evidence_storage": "shared-per-security-v1",
             "eps_policy": EPS_VERSION,

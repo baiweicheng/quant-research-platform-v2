@@ -69,6 +69,50 @@ def fee(notional: Decimal, policy: Policy) -> Decimal:
     return (notional * policy.fee_bps / 10000).quantize(CENT, rounding=ROUND_HALF_UP)
 
 
+def slippage_bps(policy, order_value, dollar_volume):
+    if policy.cost_model == "fixed":
+        return policy.slippage_bps
+    if not dollar_volume:
+        return policy.slippage_bps + 10
+    # A scenario with 1% daily volatility and unit impact coefficient. Limit
+    # the modeled rate at one full day's volume and flag large orders in results.
+    rate = min(ONE, order_value / dollar_volume).sqrt() * 100
+    return policy.slippage_bps + rate.quantize(Decimal("0.0001"))
+
+
+def trade_record(
+    day,
+    symbol,
+    side,
+    quantity,
+    price,
+    commission,
+    policy,
+    opening,
+    volume,
+    rate,
+    order_value,
+):
+    record = {
+        "session": str(day),
+        "symbol": symbol,
+        "side": side,
+        "quantity": str(quantity),
+        "price": str(price),
+        "notional": str(quantity * price),
+        "fee": str(commission),
+    }
+    if policy.cost_model == "liquidity-v1":
+        record.update(
+            reference_open=str(opening),
+            slippage_bps=str(rate),
+            slippage_cost=str(quantity * abs(price - opening)),
+            trailing_dollar_volume=str(volume) if volume else None,
+            modeled_order_value=str(order_value),
+        )
+    return record
+
+
 def buy(
     portfolio: Portfolio,
     symbol: str,
@@ -76,11 +120,13 @@ def buy(
     budget: Decimal,
     policy: Policy,
     day: date,
+    dollar_volume: Decimal | None = None,
 ) -> dict | None:
     budget = min(budget, portfolio.cash)
     if budget < ONE:
         return None
-    price = opening * (ONE + policy.slippage_bps / 10000)
+    rate = slippage_bps(policy, budget, dollar_volume)
+    price = opening * (ONE + rate / 10000)
     quantity = ((budget - CENT) / (price * (ONE + policy.fee_bps / 10000))).quantize(
         SHARE, rounding=ROUND_DOWN
     )
@@ -94,15 +140,19 @@ def buy(
         )
     portfolio.cash -= notional + commission
     portfolio.positions[symbol] = portfolio.positions.get(symbol, ZERO) + quantity
-    return {
-        "session": str(day),
-        "symbol": symbol,
-        "side": "Buy",
-        "quantity": str(quantity),
-        "price": str(price),
-        "notional": str(notional),
-        "fee": str(commission),
-    }
+    return trade_record(
+        day,
+        symbol,
+        "Buy",
+        quantity,
+        price,
+        commission,
+        policy,
+        opening,
+        dollar_volume,
+        rate,
+        budget,
+    )
 
 
 def sell(
@@ -112,6 +162,7 @@ def sell(
     quantity: Decimal,
     policy: Policy,
     day: date,
+    dollar_volume: Decimal | None = None,
 ) -> dict | None:
     held = portfolio.positions.get(symbol, ZERO)
     quantity = min(quantity, held)
@@ -122,7 +173,8 @@ def sell(
         quantity = quantity.quantize(SHARE, rounding=ROUND_DOWN)
     if quantity <= ZERO:
         return None
-    price = opening * (ONE - policy.slippage_bps / 10000)
+    rate = slippage_bps(policy, quantity * opening, dollar_volume)
+    price = opening * (ONE - rate / 10000)
     notional = quantity * price
     commission = fee(notional, policy)
     portfolio.cash += notional - commission
@@ -131,15 +183,19 @@ def sell(
         portfolio.positions[symbol] = remaining
     else:
         portfolio.positions.pop(symbol, None)
-    return {
-        "session": str(day),
-        "symbol": symbol,
-        "side": "Sell",
-        "quantity": str(quantity),
-        "price": str(price),
-        "notional": str(notional),
-        "fee": str(commission),
-    }
+    return trade_record(
+        day,
+        symbol,
+        "Sell",
+        quantity,
+        price,
+        commission,
+        policy,
+        opening,
+        dollar_volume,
+        rate,
+        quantity * opening,
+    )
 
 
 def rebalance(
@@ -148,6 +204,7 @@ def rebalance(
     bars: dict[str, Bar],
     policy: Policy,
     day: date,
+    dollar_volumes: dict[str, Decimal | None] | None = None,
 ) -> list[dict]:
     """Execute yesterday's target weights using this session's opening prices.
 
@@ -163,7 +220,22 @@ def rebalance(
     equity = portfolio.value(openings)
     # Bound a full sell-and-buy cycle's modeled costs and fee rounding. Hard caps
     # are not relaxed just because costs reduce the equity denominator.
-    buffer = equity * 2 * (policy.fee_bps + policy.slippage_bps) / 10000 + CENT * (
+    volumes = dollar_volumes or {}
+    worst_slippage = max(
+        (
+            slippage_bps(
+                policy,
+                max(
+                    portfolio.positions.get(symbol, ZERO) * openings[symbol],
+                    targets.get(symbol, ZERO) * equity,
+                ),
+                volumes.get(symbol),
+            )
+            for symbol in targets.keys() | portfolio.positions.keys()
+        ),
+        default=policy.slippage_bps,
+    )
+    buffer = equity * 2 * (policy.fee_bps + worst_slippage) / 10000 + CENT * (
         len(targets) + len(portfolio.positions)
     )
     sizing_value = max(ZERO, equity - buffer)
@@ -180,6 +252,7 @@ def rebalance(
                 quantity if desired == ZERO else excess / price,
                 policy,
                 day,
+                volumes.get(symbol),
             )
             if record:
                 trades.append(record)
@@ -198,7 +271,13 @@ def rebalance(
     scale = min(ONE, usable / total) if total else ZERO
     for symbol, difference in sorted(needs.items()):
         record = buy(
-            portfolio, symbol, openings[symbol], difference * scale, policy, day
+            portfolio,
+            symbol,
+            openings[symbol],
+            difference * scale,
+            policy,
+            day,
+            volumes.get(symbol),
         )
         if record:
             trades.append(record)
