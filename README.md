@@ -91,7 +91,7 @@ npm --prefix web run build
 
 The backend suite includes independent accounting examples, future-price perturbation, late observations, holiday/early-close cutoffs, missing-price failures, persistence/recovery/API tests, and property tests for cash and allocation constraints. Browser UAT is recorded separately in [validation](docs/VALIDATION.md). Unit tests are not a substitute for actual user-style validation or vendor-data audits.
 
-See the [November 9 lightweight EPS baselines](docs/RESEARCH_BASELINES_2026-11-09_LIGHTWEIGHT.md), [historical coverage improvements](docs/HISTORICAL_COVERAGE.md), [measured performance](docs/PERFORMANCE.md), and [remaining free-data gaps](docs/FREE_DATA_GAPS.md) for the current research checkpoint.
+See the [November 18 strategy study](docs/STRATEGY_RESEARCH_2026-11-18.md), [historical coverage improvements](docs/HISTORICAL_COVERAGE.md), [measured performance](docs/PERFORMANCE.md), and [remaining free-data gaps](docs/FREE_DATA_GAPS.md) for the current research checkpoint.
 
 ## Local data and backups
 

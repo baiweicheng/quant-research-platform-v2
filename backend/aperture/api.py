@@ -18,6 +18,7 @@ from .domain import (
     STRATEGIES,
     ResearchError,
     decimal,
+    paper_strategy,
     runnable_strategy,
 )
 from .ingest import MAX_BYTES, TEMPLATE, parse_csv
@@ -355,7 +356,7 @@ def create_app(
                 raise ResearchError(
                     "Save your paper strategy, universe and risk settings first."
                 )
-            runnable_strategy(cfg["strategy_id"])
+            paper_strategy(cfg["strategy_id"])
         settings().headers()
         if kind == "cancel":
             stop(store)

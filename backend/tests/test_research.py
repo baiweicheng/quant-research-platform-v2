@@ -8,6 +8,7 @@ from aperture import calendar
 from aperture.backtest import run
 from aperture.domain import Bar, Dataset, Policy, RankedStock, ResearchError
 from aperture.metrics import windows, summarize
+from aperture.portfolio import target_weights
 from aperture.signals import rank
 
 
@@ -47,9 +48,10 @@ def test_calendar_holidays_early_close_and_after_close_cutoff():
     ) == date(2026, 11, 27)
 
 
-def test_future_perturbation_cannot_change_historical_signal(history):
+@pytest.mark.parametrize("identifier", ["momentum", "liquidity_weighted_momentum"])
+def test_future_perturbation_cannot_change_historical_signal(history, identifier):
     decision = date(2024, 8, 30)
-    original, _ = rank(history, "momentum", decision)
+    original, _ = rank(history, identifier, decision)
     changed = replace(
         history,
         bars={
@@ -61,7 +63,7 @@ def test_future_perturbation_cannot_change_historical_signal(history):
             )
         },
     )
-    assert rank(changed, "momentum", decision)[0] == original
+    assert rank(changed, identifier, decision)[0] == original
     assert len(original) == 1
 
 
@@ -95,6 +97,47 @@ def test_signal_needs_warmup_and_fundamental_strategies_blocked(history):
     assert rank(history, "momentum", date(2023, 3, 1))[0] == []
     with pytest.raises(ResearchError, match="Add SEC fundamentals"):
         rank(history, "value_momentum", date(2024, 8, 30))
+
+
+def test_liquid_momentum_applies_point_in_time_volume_screen_before_ranking(history):
+    decision = date(2024, 8, 30)
+    rows = [b for b in history.bars["ABC"] if b.session <= decision][-253:]
+    bars = {
+        f"A{i:03d}": tuple(replace(b, symbol=f"A{i:03d}", volume=100 + i) for b in rows)
+        for i in range(102)
+    }
+    late = bars["A101"][-1]
+    bars["A101"] = (
+        *bars["A101"][:-1],
+        replace(late, available_at=late.available_at + timedelta(seconds=1)),
+    )
+    ranked, excluded = rank(
+        replace(history, bars=bars), "liquidity_weighted_momentum", decision
+    )
+
+    assert len(ranked) == 100
+    assert set(s.symbol for s in ranked) == set(bars) - {"A000", "A101"}
+    reasons = {row["symbol"]: row["reason"] for row in excluded}
+    assert "highest recent median dollar volume" in reasons["A000"]
+    assert "complete sessions" in reasons["A101"]
+    assert ranked[0].components["momentum"] > ranked[0].components["six_month_momentum"]
+
+
+def test_liquidity_allocation_redistributes_at_sector_cap():
+    ranked = [
+        RankedStock("A", 3, "Technology", {"median_dollar_volume": "100"}),
+        RankedStock("B", 2, "Technology", {"median_dollar_volume": "25"}),
+        RankedStock("C", 1, "Industrials", {"median_dollar_volume": "36"}),
+    ]
+    policy = Policy(
+        positions=3, max_weight=D(".6"), sector_cap=D(".6"), cash_reserve=D(0)
+    )
+
+    equal, _ = target_weights(ranked, policy)
+    weighted, _ = target_weights(ranked, policy, weight_by_liquidity=True)
+
+    assert equal == {"A": D(".3"), "B": D(".3"), "C": D(".4")}
+    assert weighted == {"A": D(".4"), "B": D(".2"), "C": D(".4")}
 
 
 def test_engine_uses_following_open_not_decision_close(monkeypatch):

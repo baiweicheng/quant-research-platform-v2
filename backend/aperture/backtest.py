@@ -3,7 +3,6 @@
 from dataclasses import replace
 from datetime import date, timedelta
 from decimal import Decimal
-from statistics import median
 from typing import Callable
 
 from . import __version__, calendar
@@ -23,20 +22,18 @@ from .research_data import blocked_inputs, indexed_issues, security_events
 from .metrics import windows
 from .membership import validate_coverage, HISTORY_NOTE
 from .portfolio import target_weights
-from .signals import rank
+from .signals import median_dollar_volume, rank
 from .sector_evidence import GICS_SCHEDULE
 from .sectors import HISTORICAL_NOTE, has_sector_history
 
 
 def trailing_dollar_volume(rows, sessions, cutoff):
-    marks = [
-        bar.close * bar.volume
+    return median_dollar_volume(
+        bar
         for session in sessions
         if (bar := rows.get(session)) is not None
-        and bar.volume > 0
         and (bar.available_at is None or bar.available_at <= cutoff)
-    ]
-    return median(marks) if len(marks) >= 10 else None
+    )
 
 
 def cost_totals(trades):
@@ -328,7 +325,11 @@ def run(
                 if identifier in {"quality", "quality_value", "value_momentum"}
                 else rank(dataset, identifier, day)
             )
-            targets, allocation_notes = target_weights(ranked, policy)
+            targets, allocation_notes = target_weights(
+                ranked,
+                policy,
+                weight_by_liquidity=recipe.get("weight_by_liquidity", False),
+            )
             notes.update(
                 note for note in allocation_notes if "stays in cash because" not in note
             )

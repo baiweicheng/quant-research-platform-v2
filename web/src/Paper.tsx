@@ -675,11 +675,13 @@ export default function PaperWorkspace({ state }: { state: State }) {
                   {archivedStrategy && (
                     <option value="">Choose a strategy</option>
                   )}
-                  {state.strategies.map((s) => (
-                    <option key={s.id} value={s.id}>
-                      {s.name} · v{s.version}
-                    </option>
-                  ))}
+                  {state.strategies
+                    .filter((s) => !s.research_only)
+                    .map((s) => (
+                      <option key={s.id} value={s.id}>
+                        {s.name} · v{s.version}
+                      </option>
+                    ))}
                 </select>
               </label>
               <label>

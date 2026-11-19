@@ -159,9 +159,11 @@ export default function Research({
                     )}
                   </span>
                   <Badge tone={s.implemented ? "green" : ""}>
-                    {s.implemented
-                      ? "Ready to research"
-                      : "Fundamentals milestone"}
+                    {s.research_only
+                      ? "Research only"
+                      : s.implemented
+                        ? "Ready to research"
+                        : "Fundamentals milestone"}
                   </Badge>
                 </div>
                 <span className="eyebrow">{s.category}</span>

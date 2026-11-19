@@ -254,6 +254,19 @@ STRATEGIES = [
         "definition": "Equal blend of cross-sectional earnings-yield and 12–1 momentum percentile ranks among stocks that qualify for both. Uses annual reported diluted EPS with explicit split adjustments, not current vendor ratios. Missing or nonpositive components exclude a stock; no single-factor fallback.",
         "implemented": True,
     },
+    {
+        "id": "liquidity_weighted_momentum",
+        "version": "1.0.0",
+        "name": "Liquidity-Weighted Momentum",
+        "category": "Technical",
+        "description": "Favor liquid stocks with strong six- and twelve-month trends relative to their daily volatility.",
+        "risk": "Momentum can reverse quickly. The liquidity screen can concentrate exposure in heavily traded stocks.",
+        "inputs": "253 complete daily closes, split and cash distribution events, and recent daily share volume.",
+        "definition": "Screen for the 100 stocks with highest median dollar volume over the latest 20 sessions, using at least 10 positive-volume sessions. Rank by the average of six- and twelve-month total returns divided by their respective annualized daily volatilities. Both windows end 21 sessions before the decision. Select the top 25 positive scores and size each position in proportion to the square root of median dollar volume, subject to the usual stock, sector and cash limits.",
+        "implemented": True,
+        "research_only": True,
+        "weight_by_liquidity": True,
+    },
 ]
 
 
@@ -277,4 +290,11 @@ def runnable_strategy(identifier: str) -> dict:
         raise ResearchError(
             f"{recipe['name']} is archived. Choose an available strategy for new research or paper trading."
         )
+    return recipe
+
+
+def paper_strategy(identifier: str) -> dict:
+    recipe = runnable_strategy(identifier)
+    if recipe.get("research_only"):
+        raise ResearchError(f"{recipe['name']} is available for research only.")
     return recipe

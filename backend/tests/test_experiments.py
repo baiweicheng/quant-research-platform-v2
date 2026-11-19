@@ -76,6 +76,7 @@ def test_archived_strategy_is_unavailable_to_research_and_queued_jobs(
             "momentum",
             "low_volatility",
             "value_momentum",
+            "liquidity_weighted_momentum",
         }
         registry = client.get("/api/research/protocols").json()
         assert registry["protocols"][0]["strategy"]["id"] == identifier

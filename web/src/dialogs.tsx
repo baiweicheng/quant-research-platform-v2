@@ -647,9 +647,8 @@ export function StrategyDialog({
                     : "Rank the sample standard deviation of 252 daily total returns, lowest first. No volatility forecast or leverage is applied.")}
               </p>
               <p>
-                All strategies use a fixed stock list with complete required
-                history, equal-weight allocation subject to the same position,
-                sector and cash limits.
+                Stocks need complete signal history. Allocation follows the
+                position, sector and cash limits.
               </p>
             </div>
             <Notice>

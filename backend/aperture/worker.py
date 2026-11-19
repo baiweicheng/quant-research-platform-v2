@@ -9,7 +9,14 @@ from pathlib import Path
 
 from . import __version__, calendar
 from .backtest import run
-from .domain import Policy, ResearchError, backtest_policy, decimal, runnable_strategy
+from .domain import (
+    Policy,
+    ResearchError,
+    backtest_policy,
+    decimal,
+    paper_strategy,
+    runnable_strategy,
+)
 from .ingest import practice_dataset
 from .portfolio import target_weights
 from .signals import rank
@@ -57,7 +64,7 @@ def execute(store: Store, job: dict):
         )
 
         if job["kind"] == "paper_prepare" and (cfg := configuration(store)):
-            runnable_strategy(cfg["strategy_id"])
+            paper_strategy(cfg["strategy_id"])
         broker = Broker()
         try:
             if job["kind"] == "paper_sync":
@@ -259,7 +266,9 @@ def execute(store: Store, job: dict):
             )
         ranked, excluded = rank(dataset, identifier, latest)
         ranked_by_symbol = {stock.symbol: stock for stock in ranked}
-        targets, notes = target_weights(ranked, policy)
+        targets, notes = target_weights(
+            ranked, policy, weight_by_liquidity=recipe.get("weight_by_liquidity", False)
+        )
         if identifier in {"quality_value", "value_momentum"} and dataset.metadata.get(
             "fundamentals", {}
         ).get("eps_policy"):

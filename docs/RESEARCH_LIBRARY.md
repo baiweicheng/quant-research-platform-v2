@@ -30,7 +30,7 @@ New downloads and ordinary updates verify EPS share units against the source fil
 
 ## Run several strategies together
 
-Momentum, Low Volatility and Value + Momentum are available for new research.
+Momentum, Low Volatility, Value + Momentum and Liquidity-Weighted Momentum are available for new research. Liquidity-Weighted Momentum uses existing market data and is research only. See the [strategy study](STRATEGY_RESEARCH_2026-11-18.md).
 Profitability / Quality and Quality Value are archived because historical
 profitability coverage remains limited. Saved backtests, allocation reviews,
 validation trials and paper records remain available. Archived strategies

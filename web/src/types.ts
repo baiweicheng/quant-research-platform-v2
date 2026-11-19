@@ -7,6 +7,7 @@ export type Strategy = {
   risk: string;
   inputs: string;
   implemented: boolean;
+  research_only?: boolean;
   definition?: string;
 };
 export type FundamentalCoverage = {

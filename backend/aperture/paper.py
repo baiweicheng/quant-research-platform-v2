@@ -17,7 +17,7 @@ from .domain import (
     Policy,
     ResearchError,
     decimal,
-    runnable_strategy,
+    paper_strategy,
     strategy,
 )
 from .portfolio import target_weights
@@ -73,7 +73,7 @@ def configuration(store):
 
 
 def save_configuration(store, data):
-    recipe = runnable_strategy(data["strategy_id"])
+    recipe = paper_strategy(data["strategy_id"])
     policy = policy_from(data)
     if not decimal(".01") <= policy.cash_reserve <= decimal(".5"):
         raise ResearchError(
@@ -199,7 +199,7 @@ def approval(store, cfg=None, snapshot=None):
 def apply_membership_update(store):
     cfg = configuration(store)
     if cfg:
-        runnable_strategy(cfg["strategy_id"])
+        paper_strategy(cfg["strategy_id"])
     pending = store.preference("paper_membership_update")
     current = store.membership("current")
     if (
@@ -247,7 +247,7 @@ def apply_membership_update(store):
 def approve_strategy(store, data):
     cfg = configuration(store)
     if cfg:
-        runnable_strategy(cfg["strategy_id"])
+        paper_strategy(cfg["strategy_id"])
     snap = store.preference("paper_snapshot", {})
     if not cfg or not snap:
         raise ResearchError(
@@ -338,7 +338,7 @@ def require_runnable_plan(p):
         "strategy_id"
     )
     if identifier:
-        runnable_strategy(identifier)
+        paper_strategy(identifier)
 
 
 def set_state(store, identifier, state, message):
@@ -515,7 +515,7 @@ def prepare(store, job, progress, broker):
         raise ResearchError(
             "Choose the paper strategy, universe and risk policy first."
         )
-    recipe = runnable_strategy(cfg["strategy_id"])
+    recipe = paper_strategy(cfg["strategy_id"])
     if recipe["version"] != cfg["strategy_version"]:
         raise ResearchError(
             "The strategy implementation version changed. Save new settings and obtain fresh approval."
@@ -800,7 +800,7 @@ def schedule(store, identifier):
     require_runnable_plan(p)
     cfg = configuration(store)
     if cfg:
-        runnable_strategy(cfg["strategy_id"])
+        paper_strategy(cfg["strategy_id"])
     a = approval(store)
     if p["state"] != "prepared":
         raise ResearchError(
@@ -841,7 +841,7 @@ def retry_quote(store, identifier):
     require_runnable_plan(p)
     cfg = configuration(store)
     if cfg:
-        runnable_strategy(cfg["strategy_id"])
+        paper_strategy(cfg["strategy_id"])
     if p["state"] != "blocked" or "quote" not in p["message"].lower():
         raise ResearchError(
             "Only a quote-validation stop can retry this frozen plan. Other changes need a new review."
@@ -892,7 +892,7 @@ def resume(store):
     cfg = configuration(store)
     if not cfg:
         raise ResearchError("Save paper settings first.")
-    runnable_strategy(cfg["strategy_id"])
+    paper_strategy(cfg["strategy_id"])
     store.set_preference("paper_config", {**cfg, "paused": False})
     return configuration(store)
 
@@ -933,7 +933,7 @@ def execute_plan(store, p, broker, at=None):
         raise ResearchError(
             "Paper approval/settings changed or execution is paused. Stop and prepare a new review."
         )
-    if runnable_strategy(cfg["strategy_id"])["version"] != cfg["strategy_version"]:
+    if paper_strategy(cfg["strategy_id"])["version"] != cfg["strategy_version"]:
         raise ResearchError(
             "The approved strategy version changed. New paper approval is required."
         )
@@ -1192,7 +1192,7 @@ def tick(store, at=None, broker=None):
         b = broker
         try:
             require_runnable_plan(active)
-            runnable_strategy(cfg["strategy_id"])
+            paper_strategy(cfg["strategy_id"])
             b = b or Broker()
             execute_plan(store, active, b, at)
         except ReconciliationPending as e:
@@ -1216,6 +1216,7 @@ def tick(store, at=None, broker=None):
         return
     if (
         cfg["strategy_id"] in ARCHIVED_STRATEGIES
+        or strategy(cfg["strategy_id"]).get("research_only")
         or cfg["mode"] != "automatic"
         or cfg["paused"]
     ):

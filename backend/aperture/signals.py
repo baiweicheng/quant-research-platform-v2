@@ -1,10 +1,11 @@
 """Price signals with an explicit historical decision cutoff."""
 
+from collections.abc import Iterable
 from datetime import date, timedelta
 from decimal import Decimal
-from math import isfinite
-from statistics import stdev
-from itertools import groupby
+from itertools import groupby, pairwise
+from math import isfinite, sqrt
+from statistics import median, stdev
 
 from . import calendar
 from .domain import Bar, Dataset, RankedStock, ResearchError, strategy
@@ -41,6 +42,29 @@ def total_return_levels(bars: tuple[Bar, ...] | list[Bar]) -> list[float]:
     return result
 
 
+def median_dollar_volume(bars: Iterable[Bar]) -> Decimal | None:
+    marks = [bar.close * bar.volume for bar in bars if bar.volume > 0]
+    return median(marks) if len(marks) >= 10 else None
+
+
+def liquid_momentum_components(bars: list[Bar], dollar_volume: Decimal) -> dict | None:
+    levels = total_return_levels(bars[:-21])
+    changes = [b / a - 1 for a, b in pairwise(levels)]
+    long_return = levels[-1] / levels[0] - 1
+    short_return = levels[-1] / levels[-106] - 1
+    long_volatility = stdev(changes) * sqrt(252)
+    short_volatility = stdev(changes[-105:]) * sqrt(252)
+    if not long_volatility or not short_volatility:
+        return None
+    return {
+        "momentum": long_return,
+        "six_month_momentum": short_return,
+        "momentum_volatility": long_volatility,
+        "six_month_volatility": short_volatility,
+        "median_dollar_volume": str(dollar_volume),
+    }
+
+
 def rank(
     dataset: Dataset,
     identifier: str,
@@ -61,6 +85,7 @@ def rank(
     expected_days = set(expected)
     ranked: list[RankedStock] = []
     excluded: list[dict] = []
+    liquid_candidates: list[tuple[Decimal, str, list[Bar]]] = []
     research_exclusions = set(dataset.metadata.get("research_exclusions", []))
     members = eligible(dataset, decision) - (exit_only or set()) - research_exclusions
     if factor_audit is not None and fundamental:
@@ -152,6 +177,18 @@ def rank(
         if sum(bar.volume for bar in bars[-20:]) == 0:
             excluded.append({"symbol": symbol, "reason": "No recent trading volume."})
             continue
+        if identifier == "liquidity_weighted_momentum":
+            dollar_volume = median_dollar_volume(bars[-20:])
+            if dollar_volume is None:
+                excluded.append(
+                    {
+                        "symbol": symbol,
+                        "reason": "Needs 10 positive-volume sessions in the latest 20.",
+                    }
+                )
+            else:
+                liquid_candidates.append((dollar_volume, symbol, bars))
+            continue
         if fundamental:
             components, reason = inputs(
                 dataset, symbol, decision, issue_index=issue_index
@@ -220,6 +257,42 @@ def rank(
             score = -stdev(changes)
         if isfinite(score):
             ranked.append(RankedStock(symbol, score, sectors.get(symbol, "Unknown")))
+    if identifier == "liquidity_weighted_momentum":
+        liquid_candidates.sort(key=lambda item: (-item[0], item[1]))
+        for dollar_volume, symbol, bars in liquid_candidates[:100]:
+            components = liquid_momentum_components(bars, dollar_volume)
+            if components is None:
+                excluded.append(
+                    {
+                        "symbol": symbol,
+                        "reason": "Daily return volatility is zero in a momentum window.",
+                    }
+                )
+                continue
+            score = (
+                components["momentum"] / components["momentum_volatility"]
+                + components["six_month_momentum"] / components["six_month_volatility"]
+            ) / 2
+            if score > 0 and isfinite(score):
+                ranked.append(
+                    RankedStock(
+                        symbol, score, sectors.get(symbol, "Unknown"), components
+                    )
+                )
+            else:
+                excluded.append(
+                    {
+                        "symbol": symbol,
+                        "reason": "A positive blended momentum score is required.",
+                    }
+                )
+        excluded.extend(
+            {
+                "symbol": symbol,
+                "reason": "Outside the 100 stocks with highest recent median dollar volume.",
+            }
+            for _, symbol, _ in liquid_candidates[100:]
+        )
     if fundamental:
         factors = {
             "quality": ("profitability",),
