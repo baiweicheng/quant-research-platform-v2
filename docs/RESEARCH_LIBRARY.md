@@ -1,5 +1,13 @@
 # Manage saved research
 
+## Reset the research workspace
+
+Open **Data → Reset workspace** and review the counts. Type **RESET WORKSPACE** and choose **Reset permanently**. Cancel closes the preview without changing the workspace. Wait for background tasks to finish, and refresh the preview if the workspace changes before confirmation.
+
+Reset clears downloaded, imported and practice datasets, backtests, allocation reviews, validation protocols and trials, research jobs, and disposable source captures and filing caches. Paper orders, plans, approvals, account history, connection settings and the saved watchlist remain. Any snapshot or membership capture linked to paper records stays available for the paper audit and leaves the research catalog. Minimal research-date markers preserve previously attempted periods. SQLite compacts the workspace after the deletion commits when possible.
+
+## Delete selected records
+
 Use **Manage saved research** in Research, Data, Portfolio → Research allocations, or Activity. Search by name, date, dataset or ID; filter a category; select one item or all shown items; then choose **Review deletion**. Backtests, dataset cards and frozen protocols also have a direct delete button.
 
 The preview lists every affected item and the counts of snapshots, reports, protocols, validation trials and task records. Nothing is deleted until you check the acknowledgment and choose **Delete permanently**. **Keep items** closes the preview without making changes. Deletion cannot be undone; export anything you want to keep first.

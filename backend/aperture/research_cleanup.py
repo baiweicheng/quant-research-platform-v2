@@ -39,7 +39,8 @@ def inventory(store):
                     "created_at": row["created_at"],
                 }
             )
-        for row in db.execute("SELECT id,summary FROM datasets ORDER BY rowid DESC"):
+        for row in db.execute("""SELECT id,summary FROM datasets
+            WHERE id NOT IN (SELECT id FROM retained_paper_datasets) ORDER BY rowid DESC"""):
             s = json.loads(row["summary"])
             items.append(
                 {
@@ -174,6 +175,10 @@ def _plan(db, targets):
                 "Wait for the selected background work to finish before deleting it."
             )
     if selected["dataset"]:
+        if selected["dataset"] & {
+            row[0] for row in db.execute("SELECT id FROM retained_paper_datasets")
+        }:
+            blockers.append("A selected snapshot is retained for paper trading.")
         if any(j["state"] in {"queued", "running"} for j in jobs.values()):
             blockers.append(
                 "Wait for background work to finish before deleting datasets."
@@ -247,6 +252,45 @@ def preview(store, targets):
         return _plan(db, targets)[0]
 
 
+def record_exposures(db, job_ids, trial_ids):
+    # Deleting a report must never turn an already explored period unseen.
+    for identifier in job_ids:
+        row = db.execute("SELECT * FROM jobs WHERE id=?", (identifier,)).fetchone()
+        p = json.loads(row["payload"])
+        start, end = p.get("start"), p.get("end")
+        if row["kind"] == "validation":
+            owner = db.execute(
+                "SELECT body FROM protocols WHERE id=?", (p.get("protocol_id"),)
+            ).fetchone()
+            if owner:
+                owner = json.loads(owner[0])
+                start = (
+                    owner["holdout_start"]
+                    if p.get("phase") == "holdout"
+                    else owner["start"]
+                )
+                end = (
+                    owner["end"]
+                    if p.get("phase") == "holdout"
+                    else owner["development_end"]
+                )
+        if row["kind"] in {"backtest", "validation"} and start and end:
+            db.execute(
+                "INSERT OR IGNORE INTO research_exposures VALUES (?,?,?,?,?)",
+                (identifier, row["kind"], start, end, row["created_at"]),
+            )
+    for identifier in trial_ids:
+        row = db.execute(
+            "SELECT summary,created_at FROM trials WHERE id=?", (identifier,)
+        ).fetchone()
+        s = json.loads(row[0])
+        if s.get("start") and s.get("end"):
+            db.execute(
+                "INSERT OR IGNORE INTO research_exposures VALUES (?,?,?,?,?)",
+                (identifier, "trial", s["start"], s["end"], row[1]),
+            )
+
+
 def delete(store, targets, fingerprint):
     with store.connect() as db:
         db.execute("BEGIN IMMEDIATE")
@@ -257,42 +301,7 @@ def delete(store, targets, fingerprint):
             )
         if plan["blockers"]:
             raise ResearchError(" ".join(plan["blockers"]))
-        # Deleting a report must never turn an already explored period unseen.
-        for identifier in selected["job"]:
-            row = db.execute("SELECT * FROM jobs WHERE id=?", (identifier,)).fetchone()
-            p = json.loads(row["payload"])
-            start, end = p.get("start"), p.get("end")
-            if row["kind"] == "validation":
-                owner = db.execute(
-                    "SELECT body FROM protocols WHERE id=?", (p.get("protocol_id"),)
-                ).fetchone()
-                if owner:
-                    owner = json.loads(owner[0])
-                    start = (
-                        owner["holdout_start"]
-                        if p.get("phase") == "holdout"
-                        else owner["start"]
-                    )
-                    end = (
-                        owner["end"]
-                        if p.get("phase") == "holdout"
-                        else owner["development_end"]
-                    )
-            if row["kind"] in {"backtest", "validation"} and start and end:
-                db.execute(
-                    "INSERT OR IGNORE INTO research_exposures VALUES (?,?,?,?,?)",
-                    (identifier, row["kind"], start, end, row["created_at"]),
-                )
-        for identifier in selected["trial"]:
-            row = db.execute(
-                "SELECT summary,created_at FROM trials WHERE id=?", (identifier,)
-            ).fetchone()
-            s = json.loads(row[0])
-            if s.get("start") and s.get("end"):
-                db.execute(
-                    "INSERT OR IGNORE INTO research_exposures VALUES (?,?,?,?,?)",
-                    (identifier, "trial", s["start"], s["end"], row[1]),
-                )
+        record_exposures(db, selected["job"], selected["trial"])
         for kind in ("trial", "result", "job", "protocol", "dataset"):
             table = TABLES[kind]
             db.executemany(

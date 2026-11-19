@@ -74,6 +74,11 @@ class Store:
                 CREATE TABLE IF NOT EXISTS parsed_filings (
                     key TEXT PRIMARY KEY, digest TEXT NOT NULL, body BLOB NOT NULL);
                 INSERT OR IGNORE INTO schema_version VALUES (8);
+                CREATE TABLE IF NOT EXISTS retained_paper_datasets (
+                    id TEXT PRIMARY KEY REFERENCES datasets(id) ON DELETE CASCADE);
+                CREATE TABLE IF NOT EXISTS retained_paper_memberships (
+                    id TEXT PRIMARY KEY REFERENCES memberships(id) ON DELETE CASCADE);
+                INSERT OR IGNORE INTO schema_version VALUES (9);
             """)
         self.path.chmod(0o600)
         from .paper import initialize
@@ -94,11 +99,15 @@ class Store:
             )
         return body
 
-    def membership(self, kind: str, identifier: str | None = None) -> dict | None:
+    def membership(
+        self, kind: str, identifier: str | None = None, *, include_paper: bool = False
+    ) -> dict | None:
         with self.connect() as db:
             row = db.execute(
-                "SELECT body FROM memberships WHERE kind=? AND (? IS NULL OR id=?) ORDER BY captured_at DESC, rowid DESC LIMIT 1",
-                (kind, identifier, identifier),
+                """SELECT body FROM memberships WHERE kind=? AND (? IS NULL OR id=?)
+                   AND (? OR id NOT IN (SELECT id FROM retained_paper_memberships))
+                   ORDER BY captured_at DESC, rowid DESC LIMIT 1""",
+                (kind, identifier, identifier, include_paper or identifier is not None),
             ).fetchone()
         return decode(row[0]) if row else None
 
@@ -191,13 +200,24 @@ class Store:
         with self.connect() as db:
             return self._blob(db, raw)
 
+    @staticmethod
+    def _reuse_dataset(db, digest):
+        row = db.execute(
+            """SELECT d.id,d.summary,r.id AS retained FROM datasets d
+               LEFT JOIN retained_paper_datasets r ON r.id=d.id WHERE d.digest=?""",
+            (digest,),
+        ).fetchone()
+        if row is None:
+            return None
+        if row["retained"]:
+            db.execute("DELETE FROM retained_paper_datasets WHERE id=?", (row["id"],))
+        return {**json.loads(row["summary"]), "already_imported": True}
+
     def save_dataset(self, dataset: Dataset, raw: bytes, warnings: list[str]) -> dict:
         with self.connect() as db:
-            existing = db.execute(
-                "SELECT summary FROM datasets WHERE digest=?", (dataset.digest,)
-            ).fetchone()
+            existing = self._reuse_dataset(db, dataset.digest)
             if existing:
-                return {**json.loads(existing[0]), "already_imported": True}
+                return existing
         days = sorted({bar.session for rows in dataset.bars.values() for bar in rows})
         summary = dict(
             id=dataset.id,
@@ -245,11 +265,9 @@ class Store:
             },
         }
         with self.connect() as db:
-            existing = db.execute(
-                "SELECT summary FROM datasets WHERE digest=?", (dataset.digest,)
-            ).fetchone()
+            existing = self._reuse_dataset(db, dataset.digest)
             if existing:
-                return {**json.loads(existing[0]), "already_imported": True}
+                return existing
             body["bar_chunks"] = []
             for symbol, rows in sorted(dataset.bars.items()):
                 if any(bar.symbol != symbol for bar in rows):
@@ -304,11 +322,9 @@ class Store:
         immutable. This avoids materializing millions of identical price rows.
         """
         with self.connect() as db:
-            existing = db.execute(
-                "SELECT summary FROM datasets WHERE digest=?", (digest,)
-            ).fetchone()
+            existing = self._reuse_dataset(db, digest)
             if existing:
-                return {**json.loads(existing[0]), "already_imported": True}
+                return existing
             row = db.execute(
                 "SELECT body FROM datasets WHERE id=?", (identifier,)
             ).fetchone()
@@ -339,12 +355,15 @@ class Store:
             )
         return summary
 
-    def datasets(self) -> list[dict]:
+    def datasets(self, *, include_paper: bool = False) -> list[dict]:
         with self.connect() as db:
             return [
                 json.loads(row[0])
                 for row in db.execute(
-                    "SELECT summary FROM datasets ORDER BY rowid DESC"
+                    """SELECT summary FROM datasets
+                       WHERE ? OR id NOT IN (SELECT id FROM retained_paper_datasets)
+                       ORDER BY rowid DESC""",
+                    (include_paper,),
                 )
             ]
 
@@ -568,7 +587,9 @@ class Store:
         if (
             payload.get("dataset_id")
             and not db.execute(
-                "SELECT 1 FROM datasets WHERE id=?", (payload["dataset_id"],)
+                """SELECT 1 FROM datasets WHERE id=?
+                   AND id NOT IN (SELECT id FROM retained_paper_datasets)""",
+                (payload["dataset_id"],),
             ).fetchone()
         ):
             raise ResearchError(

@@ -91,7 +91,7 @@ def save_configuration(store, data):
     if universe == "sp500":
         from . import membership
 
-        captured = membership.fresh(store, "current")
+        captured = membership.fresh(store, "current", include_paper=True)
         if (
             data.get("expected_membership_id")
             and captured["id"] != data["expected_membership_id"]
@@ -201,7 +201,7 @@ def apply_membership_update(store):
     if cfg:
         paper_strategy(cfg["strategy_id"])
     pending = store.preference("paper_membership_update")
-    current = store.membership("current")
+    current = store.membership("current", include_paper=True)
     if (
         not cfg
         or not pending
@@ -470,7 +470,7 @@ def reconcile(store, broker, performance=False, dataset=None):
         from .account_performance import refresh
 
         if dataset is None:
-            summaries = store.datasets()
+            summaries = store.datasets(include_paper=True)
             usable = next(
                 (
                     d

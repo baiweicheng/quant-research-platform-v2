@@ -154,7 +154,9 @@ def create(store: Store, data: dict) -> dict:
     with store.connect() as db:
         db.execute("BEGIN IMMEDIATE")
         if not db.execute(
-            "SELECT 1 FROM datasets WHERE id=? AND digest=?", (ds.id, ds.digest)
+            """SELECT 1 FROM datasets WHERE id=? AND digest=?
+               AND id NOT IN (SELECT id FROM retained_paper_datasets)""",
+            (ds.id, ds.digest),
         ).fetchone():
             raise ResearchError(
                 "The selected dataset was deleted. Choose an available snapshot."

@@ -226,8 +226,12 @@ def refresh(store: Store, kind: str, client=None):
             client.close()
 
 
-def fresh(store, kind):
-    snapshot = store.membership(kind)
+def fresh(store, kind, *, include_paper=False):
+    snapshot = (
+        store.membership(kind, include_paper=True)
+        if include_paper
+        else store.membership(kind)
+    )
     if kind == "historical" and snapshot and not snapshot.get("history_version"):
         return refresh(store, kind)
     if (

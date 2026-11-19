@@ -85,6 +85,11 @@ class CleanupRequest(BaseModel):
     fingerprint: str | None = Field(default=None, max_length=64)
 
 
+class WorkspaceResetRequest(BaseModel):
+    fingerprint: str = Field(pattern=r"^[0-9a-f]{64}$")
+    confirmation: str = Field(max_length=40)
+
+
 class PaperConfigRequest(BaseModel):
     strategy_id: str = Field(max_length=40)
     mode: Literal["manual", "automatic"] = "manual"
@@ -204,6 +209,18 @@ def create_app(
         return delete(
             store, [t.model_dump() for t in payload.targets], payload.fingerprint
         )
+
+    @app.get("/api/workspace/reset-preview")
+    def workspace_reset_preview():
+        from .workspace_reset import preview
+
+        return preview(store)
+
+    @app.post("/api/workspace/reset")
+    def reset_workspace(payload: WorkspaceResetRequest):
+        from .workspace_reset import reset
+
+        return reset(store, payload.fingerprint, payload.confirmation)
 
     @app.get("/api/results/{identifier}")
     def result(identifier: str, view: bool = False, download: bool = False):

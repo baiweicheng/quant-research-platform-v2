@@ -46,6 +46,7 @@ import {
 } from "./Fundamentals";
 import type { Review, State, Strategy } from "./types";
 import ResearchManager, { DeleteResearchButton } from "./ResearchManager";
+import WorkspaceReset from "./WorkspaceReset";
 
 const tabs = [
   ["/", "Overview"],
@@ -764,6 +765,7 @@ function DataPage({
           </p>
         </div>
       </div>
+      <WorkspaceReset />
     </>
   );
 }
