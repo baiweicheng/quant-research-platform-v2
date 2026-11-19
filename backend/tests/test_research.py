@@ -7,7 +7,7 @@ import pytest
 from aperture import calendar
 from aperture.backtest import run
 from aperture.domain import Bar, Dataset, Policy, RankedStock, ResearchError
-from aperture.metrics import windows, summarize
+from aperture.metrics import calendar_year_returns, windows, summarize
 from aperture.portfolio import target_weights
 from aperture.signals import rank
 
@@ -335,3 +335,36 @@ def test_profitable_liquidity_leaders_require_both_signals_and_one_class(history
         "nonpositive": 1,
         "unavailable": 0,
     }
+
+
+def test_calendar_year_returns_carry_prior_close_into_partial_year():
+    curve = [
+        {"session": "2024-03-01", "equity": "100", "benchmark": "100"},
+        {"session": "2024-12-31", "equity": "125", "benchmark": "120"},
+        {"session": "2025-01-02", "equity": "110", "benchmark": "105"},
+        {"session": "2025-03-01", "equity": "150", "benchmark": "132"},
+    ]
+    first, second = calendar_year_returns(curve)
+    assert first["difference"] == 0.05
+    assert (second["start"], second["end"]) == ("2024-12-31", "2025-03-01")
+    assert second["return"] == 0.2
+    assert second["benchmark_return"] == 0.1
+    assert second["difference"] == 0.1
+
+
+@pytest.mark.parametrize(
+    "identifier", ["session_strength_liquidity", "earnings_market_regime"]
+)
+def test_annual_research_requires_spy_inputs_at_decision(history, identifier):
+    day = date(2024, 8, 30)
+    market = tuple(
+        replace(bar, symbol="SPY", available_at=bar.available_at + timedelta(days=1))
+        if bar.session == day
+        else replace(bar, symbol="SPY")
+        for bar in history.bars["ABC"]
+    )
+    data = replace(
+        history, bars={**history.bars, "SPY": market}, annual_income={"ABC": []}
+    )
+    with pytest.raises(ResearchError, match="complete SPY sessions"):
+        rank(data, identifier, day)

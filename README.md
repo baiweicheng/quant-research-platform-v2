@@ -57,6 +57,8 @@ Downloads and updates include the required source checks automatically. There is
 
 **Research → New backtest** lets you select several strategies, including Select all, with one shared dataset, date range and policy. One submission queues separate named tasks and results. The worker runs them in sequence to keep memory bounded; the existing comparison view can compare the saved results.
 
+**Session Strength and Liquidity** and **Earnings and Market Regime Rotation** are available in the Research catalog. Both use complete SPY and stock history plus comparable annual SEC net income. Their results show calendar-year returns against SPY, with the valuation dates for partial years. See the [strategy definitions and historical limitations](docs/RESEARCH_CONTRACT.md#signals-and-allocation).
+
 Research setup separates **total-return research** (ex-date closing reinvestment) from **payment-date cash-flow simulation** (verified settlement dates). It also separates **coverage-limited research**, which saves every omitted security and reason, from **strict full-index coverage**, which stops on unresolved required inputs. Coverage-limited results can have survivorship/selection bias and are not complete S&P 500 results. The unresolved free-data gaps remain open in [B-033](docs/FREE_DATA_GAPS.md); these options do not approve trading.
 
 AI-assisted discovery and broader operational reliability/automation remain future milestones. Real-money trading requires a separate later readiness review and explicit authorization.

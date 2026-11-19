@@ -47,6 +47,10 @@ export type Signal = {
     eps_asof?: string;
     median_dollar_volume?: string;
     above_200_session_average?: number;
+    income_growth?: number;
+    stock_return?: number;
+    daytime_relative_log_return?: number;
+    overnight_followthrough_log_return?: number;
     annual_income?: {
       cik: string;
       accession: string;
@@ -78,6 +82,11 @@ export type Decision = {
   factor_coverage?: {
     members: number;
     assessed: number;
+    market_regime?: {
+      state: "weak" | "mixed" | "strong";
+      average_gap: number;
+      short_return: number;
+    };
     factors: Record<
       string,
       { positive: number; nonpositive: number; unavailable: number }
@@ -237,6 +246,14 @@ export type Run = Omit<RunSummary, "metrics"> & {
   policy: Record<string, string | number>;
   execution_model: string;
   trading_costs?: { strategy: TradingCosts; benchmark: TradingCosts };
+  calendar_year_returns?: {
+    year: string;
+    start: string;
+    end: string;
+    return: number;
+    benchmark_return: number | null;
+    difference: number | null;
+  }[];
   benchmark_model: string;
   decisions?: Decision[];
   curve: {

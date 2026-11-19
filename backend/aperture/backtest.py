@@ -19,9 +19,9 @@ from .domain import (
 from .ledger import apply_actions, buy, rebalance, reinvest_research_income
 from .lifecycles import recipients
 from .research_data import blocked_inputs, indexed_issues, security_events
-from .metrics import windows
+from .metrics import calendar_year_returns, windows
 from .membership import validate_coverage, HISTORY_NOTE
-from .portfolio import target_weights
+from .portfolio import target_weights, uses_liquidity_weights
 from .signals import median_dollar_volume, rank
 from .sector_evidence import GICS_SCHEDULE
 from .sectors import HISTORICAL_NOTE, has_sector_history
@@ -167,6 +167,8 @@ def run(
         if dataset.metadata.get("membership")
         else "Exploratory fixed-list research: historical membership, delisted-stock coverage, and sector classifications have not been independently verified. Results must not be described as survivorship-safe."
     }
+    if recipe.get("calendar_year_comparison"):
+        notes.add(recipe["risk"])
     if (
         identifier in {"quality_value", "value_momentum"}
         and dataset.metadata.get("fundamentals", {}).get("normalizer")
@@ -331,7 +333,7 @@ def run(
             targets, allocation_notes = target_weights(
                 ranked,
                 policy,
-                weight_by_liquidity=recipe.get("weight_by_liquidity", False),
+                weight_by_liquidity=uses_liquidity_weights(recipe, ranked),
             )
             notes.update(
                 note for note in allocation_notes if "stays in cash because" not in note
@@ -472,4 +474,6 @@ def run(
     from .exposure import summarize as summarize_exposure
 
     result["exposure"] = summarize_exposure(result)
+    if recipe.get("calendar_year_comparison"):
+        result["calendar_year_returns"] = calendar_year_returns(curve)
     return result

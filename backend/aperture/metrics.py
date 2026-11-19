@@ -2,6 +2,8 @@
 
 from calendar import monthrange
 from datetime import date, timedelta
+from decimal import Decimal
+from itertools import groupby
 from math import sqrt
 from statistics import stdev
 
@@ -84,3 +86,30 @@ def windows(curve: list[dict]) -> dict:
             "metrics": summarize(subset),
         }
     return output
+
+
+def calendar_year_returns(curve: list[dict]) -> list[dict]:
+    if not curve:
+        return []
+    starting = curve[0]
+    years = []
+    for year, observations in groupby(curve, key=lambda row: row["session"][:4]):
+        final = list(observations)[-1]
+        net = Decimal(final["equity"]) / Decimal(starting["equity"]) - 1
+        spy = (
+            Decimal(final["benchmark"]) / Decimal(starting["benchmark"]) - 1
+            if final["benchmark"] is not None and starting["benchmark"] is not None
+            else None
+        )
+        years.append(
+            {
+                "year": year,
+                "start": starting["session"],
+                "end": final["session"],
+                "return": float(net),
+                "benchmark_return": None if spy is None else float(spy),
+                "difference": None if spy is None else float(net - spy),
+            }
+        )
+        starting = final
+    return years

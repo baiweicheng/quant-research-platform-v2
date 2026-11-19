@@ -269,8 +269,9 @@ export function FactorAvailability({
       })}
       <p>
         These are stock/date checks after price-history and liquidity filters,
-        across {audited.length} of {selected.length} decision dates. Positive
-        inputs are required; price/action coverage is separate.
+        across {audited.length} of {selected.length} decision dates. Eligibility
+        follows the strategy's rules. Price and corporate-action coverage is
+        separate.
       </p>
       {missing && (
         <p>
@@ -296,10 +297,12 @@ export function SignalAudit({
   decisions,
   fundamental = false,
   auditPath,
+  strategyId,
 }: {
   auditPath?: string;
   decisions: Decision[];
   fundamental?: boolean;
+  strategyId?: string;
 }) {
   const available =
     fundamental ||
@@ -324,6 +327,15 @@ export function SignalAudit({
   const incomeAudit =
     !!decision.factor_coverage?.factors.annual_net_income ||
     decision.signals?.some((s) => s.components.annual_income);
+  const sessionStrength = strategyId === "session_strength_liquidity";
+  const regime = decision.factor_coverage?.market_regime;
+  const incomeSignalLabel = sessionStrength
+    ? "Session strength and follow-through"
+    : regime?.state === "weak"
+      ? "Earnings improvement / beginning assets"
+      : regime
+        ? "Stock strength"
+        : "Above 200-session average";
   return (
     <section className="card">
       <div className="card-header">
@@ -350,9 +362,13 @@ export function SignalAudit({
         <p className="field-hint">
           Decided {shortDate(decision.session)} after close · Intended execution{" "}
           {shortDate(decision.execute_session)}.{" "}
-          {incomeAudit
-            ? "Positive annual net income and a positive trend qualify a stock for the liquidity ranking."
-            : "Positive factors are required. Blends use average percentile ranks within the jointly eligible stocks. Ties share a rank."}
+          {sessionStrength
+            ? "The ranking combines liquidity and both session signals for liquid stocks with positive filed income."
+            : regime
+              ? `Market state is ${regime.state}. SPY is ${percent(regime.average_gap, true)} versus its 100-session average, with a ${percent(regime.short_return, true)} 21-session return.`
+              : incomeAudit
+                ? "Positive annual net income and a positive trend qualify a stock for the liquidity ranking."
+                : "Positive factors are required. Blends use average percentile ranks within the jointly eligible stocks. Ties share a rank."}
         </p>
       </div>
       {decision.factor_coverage && (
@@ -393,9 +409,7 @@ export function SignalAudit({
                 {incomeAudit ? "Annual net income" : "Gross profit / assets"}
               </th>
               <th>
-                {incomeAudit
-                  ? "Above 200-session average"
-                  : "Annual earnings yield"}
+                {incomeAudit ? incomeSignalLabel : "Annual earnings yield"}
               </th>
               <th>
                 {incomeAudit ? "Median daily dollar volume" : "12–1 momentum"}
@@ -407,37 +421,61 @@ export function SignalAudit({
             {decision.signals?.map((stock) => {
               const f = stock.components.filing;
               const income = stock.components.annual_income;
-              if (income) {
-                const url = `https://www.sec.gov/Archives/edgar/data/${Number(income.cik)}/${income.accession.replaceAll("-", "")}/`;
+              if (incomeAudit) {
+                const url =
+                  income &&
+                  `https://www.sec.gov/Archives/edgar/data/${Number(income.cik)}/${income.accession.replaceAll("-", "")}/`;
                 return (
                   <tr key={stock.symbol}>
                     <td>
                       <strong>{stock.symbol}</strong>
                     </td>
-                    <td>{money(Number(income.net_income))}</td>
+                    <td>{income ? money(Number(income.net_income)) : "—"}</td>
                     <td>
-                      {percent(stock.components.above_200_session_average)}
+                      {sessionStrength ? (
+                        <>
+                          {percent(
+                            stock.components.daytime_relative_log_return,
+                          )}{" "}
+                          regular session
+                          <br />
+                          {percent(
+                            stock.components.overnight_followthrough_log_return,
+                          )}{" "}
+                          follow-through
+                        </>
+                      ) : (
+                        percent(
+                          regime?.state === "weak"
+                            ? stock.components.income_growth
+                            : regime
+                              ? stock.components.stock_return
+                              : stock.components.above_200_session_average,
+                        )
+                      )}
                     </td>
                     <td>
                       {money(Number(stock.components.median_dollar_volume))}
                     </td>
                     <td>
-                      <details>
-                        <summary>
-                          Fiscal end {income.end} · filed {income.filed}
-                        </summary>
-                        <p>
-                          Usable{" "}
-                          {new Date(income.available_at).toLocaleString()}.
-                        </p>
-                        <p>
-                          {income.net_income_tag} · Prior year{" "}
-                          {money(Number(income.previous_net_income))}
-                        </p>
-                        <a href={url} target="_blank" rel="noreferrer">
-                          SEC filing {income.accession}
-                        </a>
-                      </details>
+                      {income && (
+                        <details>
+                          <summary>
+                            Fiscal end {income.end} · filed {income.filed}
+                          </summary>
+                          <p>
+                            Usable{" "}
+                            {new Date(income.available_at).toLocaleString()}.
+                          </p>
+                          <p>
+                            {income.net_income_tag} · Prior year{" "}
+                            {money(Number(income.previous_net_income))}
+                          </p>
+                          <a href={url} target="_blank" rel="noreferrer">
+                            SEC filing {income.accession}
+                          </a>
+                        </details>
+                      )}
                     </td>
                   </tr>
                 );
@@ -500,9 +538,7 @@ export function SignalAudit({
               </p>
             ))
           ) : (
-            <p>
-              All stocks met this decision’s input and positivity requirements.
-            </p>
+            <p>All stocks met this decision’s input requirements.</p>
           )}
         </details>
         <p className="field-hint">

@@ -6,6 +6,12 @@ from decimal import Decimal, ROUND_DOWN
 from .domain import ONE, ZERO, Policy, RankedStock
 
 
+def uses_liquidity_weights(recipe: dict, ranked: list[RankedStock]) -> bool:
+    return recipe.get("weight_by_liquidity", False) and (
+        not ranked or ranked[0].components.get("market_state") != "weak"
+    )
+
+
 def target_weights(
     ranked: list[RankedStock], policy: Policy, *, weight_by_liquidity: bool = False
 ) -> tuple[dict[str, Decimal], list[str]]:

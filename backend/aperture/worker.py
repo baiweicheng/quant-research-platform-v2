@@ -18,7 +18,7 @@ from .domain import (
     runnable_strategy,
 )
 from .ingest import practice_dataset
-from .portfolio import target_weights
+from .portfolio import target_weights, uses_liquidity_weights
 from .signals import rank
 from .store import Store
 
@@ -267,7 +267,7 @@ def execute(store: Store, job: dict):
         ranked, excluded = rank(dataset, identifier, latest)
         ranked_by_symbol = {stock.symbol: stock for stock in ranked}
         targets, notes = target_weights(
-            ranked, policy, weight_by_liquidity=recipe.get("weight_by_liquidity", False)
+            ranked, policy, weight_by_liquidity=uses_liquidity_weights(recipe, ranked)
         )
         if identifier in {"quality_value", "value_momentum"} and dataset.metadata.get(
             "fundamentals", {}

@@ -569,6 +569,45 @@ export function RunDetail({
           <span>After modeled fees & slippage</span>
         </div>
       </section>
+      {!!run.calendar_year_returns?.length && (
+        <section className="card">
+          <div className="card-header">
+            <div>
+              <h2>Calendar-year returns</h2>
+              <p>
+                Net of modeled trading costs. Holdings carry across years. The
+                dates show the valuations used, including partial years.
+              </p>
+            </div>
+          </div>
+          <div className="table-scroll">
+            <table className="fundamental-table">
+              <thead>
+                <tr>
+                  <th>Year</th>
+                  <th>Valuation dates</th>
+                  <th>Strategy</th>
+                  <th>SPY</th>
+                  <th>Difference</th>
+                </tr>
+              </thead>
+              <tbody>
+                {run.calendar_year_returns.map((year) => (
+                  <tr key={year.year}>
+                    <th scope="row">{year.year}</th>
+                    <td>
+                      {shortDate(year.start)} – {shortDate(year.end)}
+                    </td>
+                    <td>{percent(year.return, true)}</td>
+                    <td>{percent(year.benchmark_return, true)}</td>
+                    <td>{points(year.difference)}</td>
+                  </tr>
+                ))}
+              </tbody>
+            </table>
+          </div>
+        </section>
+      )}
       <div className="two-columns">
         <section className="card">
           <div className="card-header">
@@ -683,6 +722,7 @@ export function RunDetail({
       <SignalAudit
         decisions={run.decisions || []}
         auditPath={run.audit_path}
+        strategyId={run.strategy.id}
         fundamental={["quality", "quality_value", "value_momentum"].includes(
           run.strategy.id,
         )}
