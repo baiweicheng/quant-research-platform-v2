@@ -112,6 +112,7 @@ class Dataset:
     digest: str
     metadata: dict = field(default_factory=dict)
     fundamentals: dict[str, tuple[AnnualStatement, ...]] = field(default_factory=dict)
+    annual_income: dict[str, list[dict]] = field(default_factory=dict)
 
 
 @dataclass(frozen=True)
@@ -266,6 +267,21 @@ STRATEGIES = [
         "implemented": True,
         "research_only": True,
         "weight_by_liquidity": True,
+    },
+    {
+        "id": "profitable_liquidity_leaders",
+        "version": "1.0.0",
+        "name": "Profitable Liquidity Leaders",
+        "category": "Technical + fundamental",
+        "description": "Own actively traded stocks that have positive annual net income and are in an uptrend.",
+        "risk": "An established uptrend can reverse between month-end rebalances. Reported net income can include one-time gains.",
+        "inputs": "Comparable annual SEC net income, 253 complete daily bars, volume and corporate actions.",
+        "definition": "At month end, require positive net income in the latest comparable annual report and a total-return level above its 200-session average. Rank eligible stocks by median dollar volume over 20 sessions. Use the most liquid eligible share class per issuer. Weight up to 25 names by the square root of median dollar volume, subject to the stock, sector and cash limits.",
+        "implemented": True,
+        "research_only": True,
+        "weight_by_liquidity": True,
+        "requires_annual_income": True,
+        "frequency": "monthly",
     },
 ]
 

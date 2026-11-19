@@ -2,7 +2,7 @@ import { useState } from "react";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { useNavigate } from "react-router-dom";
 import { FileText, ArrowRight } from "lucide-react";
-import { api, datasetLabel, percent, shortDate } from "./api";
+import { api, datasetLabel, money, percent, shortDate } from "./api";
 import { snapshotGroups } from "./snapshots";
 import { Badge, Notice } from "./components";
 import type { Dataset, Decision, FundamentalCoverage } from "./types";
@@ -152,6 +152,12 @@ export function FundamentalDetails({ data }: { data: FundamentalCoverage }) {
         Price/action coverage does not establish factor availability.
       </p>
       <p>{data.availability}</p>
+      {!!data.annual_income_count && (
+        <p>
+          {data.coverage.filter((r) => r.annual_income_ready).length} stocks
+          with comparable annual net income at the snapshot end.
+        </p>
+      )}
       {data.eps_policy && <p>{data.share_basis}</p>}
       {data.refresh_policy && <p>{data.refresh_policy}</p>}
       <div className="table-scroll">
@@ -253,12 +259,7 @@ export function FactorAvailability({
         const total = counts.positive + counts.nonpositive + counts.unavailable;
         return (
           <p key={key}>
-            {key === "profitability"
-              ? "Gross profit / assets"
-              : key === "earnings_yield"
-                ? "Earnings yield"
-                : key}
-            :{" "}
+            {factorLabel(key)}:{" "}
             {total
               ? `${percent(counts.positive / total)} positive · ${percent(counts.nonpositive / total)} nonpositive · ${percent(counts.unavailable / total)} unavailable`
               : "No stocks assessed"}
@@ -281,6 +282,16 @@ export function FactorAvailability({
   );
 }
 
+const factorLabels: Record<string, string> = {
+  profitability: "Gross profit / assets",
+  earnings_yield: "Annual earnings yield",
+  annual_net_income: "Annual net income",
+};
+
+function factorLabel(key: string) {
+  return factorLabels[key] ?? key;
+}
+
 export function SignalAudit({
   decisions,
   fundamental = false,
@@ -292,7 +303,13 @@ export function SignalAudit({
 }) {
   const available =
     fundamental ||
-    decisions.some((d) => d.signals?.some((s) => s.components.filing))
+    decisions.some(
+      (d) =>
+        d.factor_coverage?.factors.annual_net_income ||
+        d.signals?.some(
+          (s) => s.components.filing || s.components.annual_income,
+        ),
+    )
       ? decisions
       : [];
   const [chosen, setChosen] = useState("");
@@ -304,6 +321,9 @@ export function SignalAudit({
   });
   const decision = auditPath ? (details.data ?? brief) : brief;
   if (!decision) return null;
+  const incomeAudit =
+    !!decision.factor_coverage?.factors.annual_net_income ||
+    decision.signals?.some((s) => s.components.annual_income);
   return (
     <section className="card">
       <div className="card-header">
@@ -329,9 +349,10 @@ export function SignalAudit({
         </label>
         <p className="field-hint">
           Decided {shortDate(decision.session)} after close · Intended execution{" "}
-          {shortDate(decision.execute_session)}. Positive factors are required.
-          Blends use average percentile ranks within the jointly eligible
-          stocks; ties share a rank.
+          {shortDate(decision.execute_session)}.{" "}
+          {incomeAudit
+            ? "Positive annual net income and a positive trend qualify a stock for the liquidity ranking."
+            : "Positive factors are required. Blends use average percentile ranks within the jointly eligible stocks. Ties share a rank."}
         </p>
       </div>
       {decision.factor_coverage && (
@@ -344,11 +365,9 @@ export function SignalAudit({
           {Object.entries(decision.factor_coverage.factors).map(
             ([key, counts]) => (
               <p key={key}>
-                {key === "profitability"
-                  ? "Gross profit / assets"
-                  : "Annual earnings yield"}
-                : {counts.positive} positive · {counts.nonpositive} nonpositive
-                · {counts.unavailable} unavailable.
+                {factorLabel(key)}: {counts.positive} positive ·{" "}
+                {counts.nonpositive} nonpositive · {counts.unavailable}{" "}
+                unavailable.
               </p>
             ),
           )}
@@ -369,16 +388,60 @@ export function SignalAudit({
         <table className="fundamental-table">
           <thead>
             <tr>
-              <th>Stock / rank score</th>
-              <th>Gross profit / assets</th>
-              <th>Annual earnings yield</th>
-              <th>12–1 momentum</th>
+              <th>{incomeAudit ? "Stock" : "Stock / rank score"}</th>
+              <th>
+                {incomeAudit ? "Annual net income" : "Gross profit / assets"}
+              </th>
+              <th>
+                {incomeAudit
+                  ? "Above 200-session average"
+                  : "Annual earnings yield"}
+              </th>
+              <th>
+                {incomeAudit ? "Median daily dollar volume" : "12–1 momentum"}
+              </th>
               <th>Statement & availability</th>
             </tr>
           </thead>
           <tbody>
             {decision.signals?.map((stock) => {
               const f = stock.components.filing;
+              const income = stock.components.annual_income;
+              if (income) {
+                const url = `https://www.sec.gov/Archives/edgar/data/${Number(income.cik)}/${income.accession.replaceAll("-", "")}/`;
+                return (
+                  <tr key={stock.symbol}>
+                    <td>
+                      <strong>{stock.symbol}</strong>
+                    </td>
+                    <td>{money(Number(income.net_income))}</td>
+                    <td>
+                      {percent(stock.components.above_200_session_average)}
+                    </td>
+                    <td>
+                      {money(Number(stock.components.median_dollar_volume))}
+                    </td>
+                    <td>
+                      <details>
+                        <summary>
+                          Fiscal end {income.end} · filed {income.filed}
+                        </summary>
+                        <p>
+                          Usable{" "}
+                          {new Date(income.available_at).toLocaleString()}.
+                        </p>
+                        <p>
+                          {income.net_income_tag} · Prior year{" "}
+                          {money(Number(income.previous_net_income))}
+                        </p>
+                        <a href={url} target="_blank" rel="noreferrer">
+                          SEC filing {income.accession}
+                        </a>
+                      </details>
+                    </td>
+                  </tr>
+                );
+              }
               return (
                 <tr key={stock.symbol}>
                   <td>

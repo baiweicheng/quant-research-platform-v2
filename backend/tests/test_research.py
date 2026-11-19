@@ -275,3 +275,63 @@ def test_full_engine_split_dividend_and_pay_date_preserve_economic_value(monkeyp
     assert D(result["curve"][2]["receivable"]) > 0
     assert D(result["curve"][3]["receivable"]) == 0
     assert D(result["curve"][3]["cash"]) > D(result["curve"][2]["cash"])
+
+
+def test_profitable_liquidity_leaders_require_both_signals_and_one_class(history):
+    day = date(2024, 8, 30)
+
+    def bar_series(symbol, volume, rising=True):
+        rows = []
+        for place, bar in enumerate(history.bars["ABC"]):
+            value = bar.close if rising else D(200) - D(place) / 10
+            rows.append(
+                replace(
+                    bar,
+                    symbol=symbol,
+                    volume=volume,
+                    open=value,
+                    high=value,
+                    low=value,
+                    close=value,
+                )
+            )
+        return tuple(rows)
+
+    def income(cik, amount):
+        return [
+            {
+                "cik": cik,
+                "accession": cik + "-24-000001",
+                "net_income": str(amount),
+                "end": "2023-12-31",
+                "filed": "2024-02-01",
+                "available_at": calendar.available_time(date(2024, 2, 2)).isoformat(),
+            }
+        ]
+
+    data = replace(
+        history,
+        bars={
+            "A": bar_series("A", 200),
+            "B": bar_series("B", 300),
+            "C": bar_series("C", 500),
+            "D": bar_series("D", 800, rising=False),
+        },
+        annual_income={
+            "A": income("0000000001", 100),
+            "B": income("0000000001", 100),
+            "C": income("0000000002", -1),
+            "D": income("0000000003", 200),
+        },
+    )
+    audit = {}
+    ranked, excluded = rank(
+        data, "profitable_liquidity_leaders", day, factor_audit=audit
+    )
+    assert [stock.symbol for stock in ranked] == ["B"]
+    assert set(row["symbol"] for row in excluded) == {"A", "C", "D"}
+    assert audit["factors"]["annual_net_income"] == {
+        "positive": 3,
+        "nonpositive": 1,
+        "unavailable": 0,
+    }

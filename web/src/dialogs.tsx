@@ -32,13 +32,17 @@ export function TaskDialog({
   onClose: () => void;
   onQueued: () => void;
 }) {
+  const initialNeedsIncome = state.strategies.find(
+    (s) => s.id === initial,
+  )?.requires_annual_income;
   const [datasetId, setDatasetId] = useState(
     (
-      snapshotGroups(researchSnapshots(state.datasets)).latest.find(
-        (d) =>
-          !["quality", "quality_value", "value_momentum"].includes(
-            initial || "",
-          ) || !!d.metadata?.fundamentals?.record_count,
+      snapshotGroups(researchSnapshots(state.datasets)).latest.find((d) =>
+        initialNeedsIncome
+          ? !!d.metadata?.fundamentals?.annual_income_count
+          : !["quality", "quality_value", "value_momentum"].includes(
+              initial || "",
+            ) || !!d.metadata?.fundamentals?.record_count,
       ) || snapshotGroups(researchSnapshots(state.datasets)).latest[0]
     )?.id ?? "",
   );
@@ -58,6 +62,12 @@ export function TaskDialog({
   );
   const missingFundamentals =
     needsFundamentals && !dataset?.metadata?.fundamentals?.record_count;
+  const requiresAnnualIncome = availableStrategies.some(
+    (s) => s.requires_annual_income && selectedStrategies.includes(s.id),
+  );
+  const missingAnnualIncome =
+    requiresAnnualIncome &&
+    !dataset?.metadata?.fundamentals?.annual_income_count;
   const legacyClasses =
     ["quality_value", "value_momentum"].some((id) =>
       selectedStrategies.includes(id),
@@ -280,6 +290,17 @@ export function TaskDialog({
             filing-dated statements as well as prices.
           </Notice>
         )}
+        {missingAnnualIncome && (
+          <Notice>
+            Add or refresh SEC financials in Data, then select the updated
+            snapshot with comparable annual net income.
+          </Notice>
+        )}
+        {kind === "backtest" && requiresAnnualIncome && (
+          <p className="field-hint">
+            Profitable Liquidity Leaders rebalances at month end.
+          </p>
+        )}
         {dataset?.kind === "imported" && (
           <Notice>
             {dataset.metadata?.sector_classification
@@ -402,6 +423,7 @@ export function TaskDialog({
               !dataset ||
               !selectedStrategies.length ||
               missingFundamentals ||
+              missingAnnualIncome ||
               task.isPending
             }
             type="submit"

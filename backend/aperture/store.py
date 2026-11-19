@@ -219,6 +219,11 @@ class Store:
             "summary": summary,
             "sectors": dataset.sectors,
             "metadata": dataset.metadata,
+            **(
+                {"annual_income": dataset.annual_income}
+                if dataset.annual_income
+                else {}
+            ),
             "fundamentals": {
                 symbol: [
                     {
@@ -427,6 +432,7 @@ class Store:
             summary["digest"],
             body.get("metadata", {}),
             fundamentals,
+            body.get("annual_income", {}),
         )
 
     def preference(self, key: str, default=None):

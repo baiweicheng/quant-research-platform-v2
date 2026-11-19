@@ -11,7 +11,7 @@ from fastapi.staticfiles import StaticFiles
 from pydantic import BaseModel, Field
 from starlette.middleware.trustedhost import TrustedHostMiddleware
 
-from . import __version__
+from . import __version__, annual_income
 
 from .domain import (
     ARCHIVED_STRATEGIES,
@@ -512,7 +512,7 @@ def create_app(
         return store.enqueue("dataset_update", {"dataset_id": source["id"]})
 
     def validated_task(kind: str, payload: TaskRequest):
-        runnable_strategy(payload.strategy_id)
+        recipe = runnable_strategy(payload.strategy_id)
         summary = next(
             (row for row in store.datasets() if row["id"] == payload.dataset_id), None
         )
@@ -530,6 +530,10 @@ def create_app(
             raise ResearchError(
                 "Add SEC fundamentals to this market dataset in Data first. Price-only inputs cannot run this strategy."
             )
+        if recipe.get("requires_annual_income") and not summary.get("metadata", {}).get(
+            "fundamentals", {}
+        ).get("annual_income_count"):
+            raise ResearchError(annual_income.MISSING_INPUTS)
         if kind == "backtest":
             if (
                 payload.start is None

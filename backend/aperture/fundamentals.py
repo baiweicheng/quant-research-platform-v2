@@ -13,7 +13,7 @@ from dataclasses import replace
 from datetime import date, timedelta
 from decimal import Decimal
 
-from . import calendar, profitability
+from . import annual_income, calendar, profitability
 from .annual_refresh import companyfacts as read_companyfacts
 from .domain import ONE, ZERO, AnnualStatement, Dataset, ResearchError, decimal
 from .eps_policy import (
@@ -390,7 +390,7 @@ def attach(
             mapping.setdefault(str(row["ticker"]).upper().replace(".", "-"), set()).add(
                 str(row["cik"]).zfill(10)
             )
-        statements, coverage, source_hashes = {}, [], {}
+        statements, coverage, source_hashes, income_rows = {}, [], {}, {}
         symbols = [
             s
             for s in base.bars
@@ -433,7 +433,12 @@ def attach(
             reader = api.fork() if parallel else api
             with progress_lock:
                 readers[symbol] = reader
-            issuer_statements, issuer_coverage, issuer_hashes = {}, [], {}
+            issuer_statements, issuer_coverage, issuer_hashes, issuer_income = (
+                {},
+                [],
+                {},
+                {},
+            )
             report(symbol)
             ciks = mapping.get(symbol.replace(".", "-"), set())
             from .historical_issuers import mapping_evidence
@@ -454,6 +459,7 @@ def attach(
                     issuer_statements,
                     issuer_coverage,
                     issuer_hashes,
+                    issuer_income,
                     reader.observations if parallel else [],
                 )
             if historical_issuer:
@@ -472,6 +478,7 @@ def attach(
                     issuer_statements,
                     issuer_coverage,
                     issuer_hashes,
+                    issuer_income,
                     reader.observations if parallel else [],
                 )
             cik = next(iter(ciks))
@@ -497,6 +504,7 @@ def attach(
                     issuer_statements,
                     issuer_coverage,
                     issuer_hashes,
+                    issuer_income,
                     reader.observations if parallel else [],
                 )
             if (
@@ -514,6 +522,7 @@ def attach(
             normalized, issues = normalize(
                 symbol, cik, company, submissions, class_evidence
             )
+            income = annual_income.normalize(cik, company, submissions)
             # A reviewed Rule 12g-3 predecessor filed the listed shares'
             # annual reports before the successor registrant existed.
             from .historical_issuers import predecessors
@@ -553,6 +562,20 @@ def attach(
                     for row in prior_rows
                     if row.filed < effective
                 )
+                income.extend(
+                    {
+                        **row,
+                        **(
+                            {"valid_before": proof["valid_before"]}
+                            if proof.get("valid_before")
+                            else {}
+                        ),
+                    }
+                    for row in annual_income.normalize(
+                        prior, prior_company, prior_submissions
+                    )
+                    if row["filed"] < proof["effective"]
+                )
                 normalized = tuple(
                     sorted(
                         normalized + prior_rows,
@@ -590,6 +613,8 @@ def attach(
                 lambda n, total: report(symbol, n, total),
             )
             issuer_statements[symbol] = normalized
+            if income:
+                issuer_income[symbol] = income
             latest = as_of(normalized, last_session)
             latest_inputs, latest_issue = inputs(
                 replace(base, fundamentals={symbol: normalized}),
@@ -649,6 +674,13 @@ def attach(
                     "reason": "; ".join(dict.fromkeys(coverage_issues)),
                     "quality_ready": latest_inputs.get("profitability", ZERO) > ZERO,
                     "value_ready": latest_inputs.get("earnings_yield", ZERO) > ZERO,
+                    "annual_income_ready": "net_income"
+                    in (
+                        annual_income.as_of(
+                            income, last_session, calendar.available_time(last_session)
+                        )
+                        or {}
+                    ),
                     "latest_period": str(latest.end) if latest else None,
                     "latest_filed": str(latest.filed) if latest else None,
                     "available_at": latest.available_at.isoformat() if latest else None,
@@ -667,6 +699,7 @@ def attach(
                 issuer_statements,
                 issuer_coverage,
                 issuer_hashes,
+                issuer_income,
                 reader.observations if parallel else [],
             )
 
@@ -689,11 +722,13 @@ def attach(
                 issuer_statements,
                 issuer_coverage,
                 issuer_hashes,
+                issuer_income,
                 observations,
             ) in results:
                 statements.update(issuer_statements)
                 coverage.extend(issuer_coverage)
                 source_hashes.update(issuer_hashes)
+                income_rows.update(issuer_income)
                 api.observations.extend(observations)
         finally:
             if pool:
@@ -718,6 +753,7 @@ def attach(
             "issuer_mapping": "Current SEC directory, reviewed filing evidence for the exact historical quote vintage, or reviewed Rule 12g-3 predecessor registrants of the same listed shares (their reports filed before the succession); never an inferred successor ticker.",
             "share_basis": EPS_WARNING,
             "refresh_policy": "Annual filing changes trigger financial-history refresh; otherwise captured histories can be reused for up to 30 days. Manual SEC refresh forces a new capture.",
+            "annual_income_policy": annual_income.VERSION,
         }
         raw = json.dumps(
             {"price_digest": base.digest, "policy": policy, "sources": source_hashes},
@@ -732,6 +768,11 @@ def attach(
             "fundamentals": {
                 **policy,
                 "record_count": count,
+                "annual_income_count": sum(
+                    "net_income" in row
+                    for reports in income_rows.values()
+                    for row in reports
+                ),
                 "coverage": coverage,
                 "retrieved_at": now(),
                 "observation_ids": api.observations,
@@ -746,6 +787,7 @@ def attach(
             digest=digest,
             metadata=meta,
             fundamentals=statements,
+            annual_income=income_rows,
             source=base.source + " + SEC EDGAR annual filings",
         )
         original_summary = next(

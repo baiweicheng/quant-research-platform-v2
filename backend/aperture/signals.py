@@ -7,7 +7,7 @@ from itertools import groupby, pairwise
 from math import isfinite, sqrt
 from statistics import median, stdev
 
-from . import calendar
+from . import annual_income, calendar
 from .domain import Bar, Dataset, RankedStock, ResearchError, strategy
 from .fundamentals import FUNDAMENTAL_STRATEGIES, inputs
 from .membership import eligible
@@ -73,12 +73,15 @@ def rank(
     *,
     factor_audit: dict | None = None,
 ) -> tuple[list[RankedStock], list[dict]]:
-    strategy(identifier)
+    recipe = strategy(identifier)
     fundamental = identifier in FUNDAMENTAL_STRATEGIES
+    uses_income = recipe.get("requires_annual_income", False)
     if fundamental and not dataset.fundamentals:
         raise ResearchError(
             "Add SEC fundamentals to this market dataset in Data first. Price-only inputs cannot run this strategy."
         )
+    if uses_income and not dataset.annual_income:
+        raise ResearchError(annual_income.MISSING_INPUTS)
     cutoff = calendar.available_time(decision)
     required = 20 if identifier in ("quality", "quality_value") else 253
     expected = calendar.sessions(decision - timedelta(days=740), decision)[-required:]
@@ -104,6 +107,14 @@ def rank(
                     )
                 },
             }
+        )
+    if factor_audit is not None and uses_income:
+        factor_audit.update(
+            members=len(members - {"SPY"}),
+            assessed=0,
+            factors={
+                "annual_net_income": {"positive": 0, "nonpositive": 0, "unavailable": 0}
+            },
         )
     from .research_data import blocked_inputs, indexed_issues
 
@@ -188,6 +199,67 @@ def rank(
                 )
             else:
                 liquid_candidates.append((dollar_volume, symbol, bars))
+            continue
+        if uses_income:
+            dollar_volume = median_dollar_volume(bars[-20:])
+            if dollar_volume is None:
+                excluded.append(
+                    {
+                        "symbol": symbol,
+                        "reason": "Needs 10 positive-volume sessions in the latest 20.",
+                    }
+                )
+                continue
+            report = annual_income.as_of(
+                dataset.annual_income.get(symbol, ()), decision, cutoff
+            )
+            income = (
+                Decimal(report["net_income"])
+                if report and "net_income" in report
+                else None
+            )
+            if factor_audit is not None:
+                factor_audit["assessed"] += 1
+                status = (
+                    "unavailable"
+                    if income is None
+                    else "positive"
+                    if income > 0
+                    else "nonpositive"
+                )
+                factor_audit["factors"]["annual_net_income"][status] += 1
+            if income is None or income <= 0:
+                excluded.append(
+                    {
+                        "symbol": symbol,
+                        "reason": "Latest annual filing has no supported comparable net income."
+                        if income is None
+                        else "Reported annual net income must be positive.",
+                    }
+                )
+                continue
+            levels = total_return_levels(bars)
+            average = sum(levels[-200:]) / 200
+            if levels[-1] <= average:
+                excluded.append(
+                    {
+                        "symbol": symbol,
+                        "reason": "Total-return level must be above its 200-session average.",
+                    }
+                )
+                continue
+            ranked.append(
+                RankedStock(
+                    symbol,
+                    float(dollar_volume),
+                    sectors.get(symbol, "Unknown"),
+                    {
+                        "median_dollar_volume": str(dollar_volume),
+                        "above_200_session_average": levels[-1] / average - 1,
+                        "annual_income": report,
+                    },
+                )
+            )
             continue
         if fundamental:
             components, reason = inputs(
@@ -340,4 +412,21 @@ def rank(
                 )
             )
         ranked = scored
-    return sorted(ranked, key=lambda item: (-item.score, item.symbol)), excluded
+    ranked.sort(key=lambda item: (-item.score, item.symbol))
+    if uses_income:
+        issuers = set()
+        unique = []
+        for stock in ranked:
+            cik = stock.components["annual_income"]["cik"]
+            if cik in issuers:
+                excluded.append(
+                    {
+                        "symbol": stock.symbol,
+                        "reason": "This issuer is represented by another eligible share class.",
+                    }
+                )
+            else:
+                issuers.add(cik)
+                unique.append(stock)
+        ranked = unique
+    return ranked, excluded

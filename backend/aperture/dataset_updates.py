@@ -235,6 +235,7 @@ def update(store, identifier, progress, provider=None):
                 for s in names
             },
             fundamentals={},
+            annual_income={},
         )
         if new_audit and new_audit.get("historical"):
             history = new_audit["historical"]

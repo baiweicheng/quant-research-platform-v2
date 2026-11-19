@@ -65,7 +65,7 @@ def run(
     end: date,
     capital: Decimal,
     policy: Policy,
-    frequency: str = "weekly",
+    frequency: str | None = None,
     progress: Callable[[int, str], None] | None = None,
     dividend_model: str | None = None,
     coverage_mode: str = "strict",
@@ -78,6 +78,8 @@ def run(
             "Choose total-return research or payment-date cash simulation."
         )
     recipe = strategy(identifier)
+    if frequency is None:
+        frequency = recipe.get("frequency", "weekly")
     if not capital.is_finite() or capital < Decimal("100"):
         raise ResearchError("Starting capital must be at least $100.")
     if frequency not in ("weekly", "monthly", "daily"):
@@ -323,6 +325,7 @@ def run(
             ranked, excluded = (
                 rank(dataset, identifier, day, factor_audit=factor_audit)
                 if identifier in {"quality", "quality_value", "value_momentum"}
+                or recipe.get("requires_annual_income")
                 else rank(dataset, identifier, day)
             )
             targets, allocation_notes = target_weights(

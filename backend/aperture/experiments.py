@@ -6,7 +6,7 @@ from dataclasses import replace
 from datetime import date
 from uuid import uuid4
 
-from . import __version__, calendar
+from . import __version__, annual_income, calendar
 from .backtest import run
 from .domain import (
     ARCHIVED_STRATEGIES,
@@ -109,6 +109,8 @@ def create(store: Store, data: dict) -> dict:
 
     if recipe["id"] in FUNDAMENTAL_STRATEGIES and not ds.fundamentals:
         raise ResearchError("Add SEC fundamentals to this dataset first.")
+    if recipe.get("requires_annual_income") and not ds.annual_income:
+        raise ResearchError(annual_income.MISSING_INPUTS)
     capital = decimal(data.get("capital", "100000"))
     if not 100 <= capital <= 1_000_000_000:
         raise ResearchError("Starting capital must be between $100 and $1 billion.")
@@ -300,14 +302,16 @@ def execute(store: Store, job: dict, progress) -> dict:
         )
     phase = job["payload"]["phase"]
     policy = backtest_policy(p.get("cost_profile", "standard"))
+    regular = recipe.get("frequency", "weekly")
+    alternative = "weekly" if regular == "monthly" else "monthly"
     if phase == "holdout":
-        specs = [("Final test", p["holdout_start"], p["end"], policy, "weekly")]
+        specs = [("Final test", p["holdout_start"], p["end"], policy, regular)]
     else:
         specs = [
-            ("Development baseline", p["start"], p["development_end"], policy, "weekly")
+            ("Development baseline", p["start"], p["development_end"], policy, regular)
         ]
         specs += [
-            (f"Forward window {i + 1}", f["start"], f["end"], policy, "weekly")
+            (f"Forward window {i + 1}", f["start"], f["end"], policy, regular)
             for i, f in enumerate(p["folds"])
         ]
         specs += [
@@ -316,23 +320,29 @@ def execute(store: Store, job: dict, progress) -> dict:
                 p["start"],
                 p["development_end"],
                 replace(policy, slippage_bps=policy.slippage_bps + 10),
-                "weekly",
+                regular,
             ),
             (
                 "Lower stock cap: 3%",
                 p["start"],
                 p["development_end"],
                 replace(policy, max_weight=decimal(".03")),
-                "weekly",
+                regular,
             ),
             (
                 "Fewer positions: 15",
                 p["start"],
                 p["development_end"],
                 replace(policy, positions=15),
-                "weekly",
+                regular,
             ),
-            ("Monthly rebalance", p["start"], p["development_end"], policy, "monthly"),
+            (
+                f"{alternative.capitalize()} rebalance",
+                p["start"],
+                p["development_end"],
+                policy,
+                alternative,
+            ),
         ]
     saved = []
     for i, (label, start, end, limits, frequency) in enumerate(specs):

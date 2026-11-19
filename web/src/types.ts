@@ -8,10 +8,13 @@ export type Strategy = {
   inputs: string;
   implemented: boolean;
   research_only?: boolean;
+  requires_annual_income?: boolean;
+  frequency?: "monthly" | "weekly";
   definition?: string;
 };
 export type FundamentalCoverage = {
   normalizer?: string;
+  annual_income_count?: number;
   eps_policy?: string;
   share_basis?: string;
   refresh_policy?: string;
@@ -24,6 +27,7 @@ export type FundamentalCoverage = {
     reason: string;
     quality_ready: boolean;
     value_ready: boolean;
+    annual_income_ready?: boolean;
     latest_period?: string | null;
     latest_filed?: string | null;
     available_at?: string | null;
@@ -41,6 +45,19 @@ export type Signal = {
     earnings_yield?: string;
     momentum?: number;
     eps_asof?: string;
+    median_dollar_volume?: string;
+    above_200_session_average?: number;
+    annual_income?: {
+      cik: string;
+      accession: string;
+      filed: string;
+      end: string;
+      available_at: string;
+      net_income: string;
+      net_income_tag: string;
+      previous_net_income: string;
+      previous_end: string;
+    };
     percentiles?: Record<string, number>;
     filing?: {
       start: string;
