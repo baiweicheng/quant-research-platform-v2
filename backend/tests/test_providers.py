@@ -5,7 +5,12 @@ import pytest
 
 from aperture.config import DATA_URL, Settings, settings
 from aperture.domain import ResearchError
-from aperture.providers import Provider, download_market, validate_symbols
+from aperture.providers import (
+    FilingUnavailable,
+    Provider,
+    download_market,
+    validate_symbols,
+)
 from aperture.store import Store
 
 
@@ -401,3 +406,40 @@ def test_filing_transport_retry_uses_fresh_owned_connections_and_keeps_custom_cl
     api.close()
     assert clients[0].is_closed is owned
     clients[0].close()
+
+
+@pytest.mark.parametrize("recover", [True, False])
+def test_filing_gateway_failures_back_off_and_capture_only_success(
+    tmp_path, monkeypatch, recover
+):
+    clock, starts = [0.0], []
+    monkeypatch.setattr("aperture.providers.time.monotonic", lambda: clock[0])
+    monkeypatch.setattr(
+        "aperture.providers.time.sleep",
+        lambda seconds: clock.__setitem__(0, clock[0] + seconds),
+    )
+
+    def respond(request):
+        starts.append(clock[0])
+        if len(starts) == 1:
+            return httpx.Response(429, headers={"Retry-After": "3"})
+        if len(starts) < 5 or not recover:
+            return httpx.Response(502, content=b"gateway error")
+        return httpx.Response(200, content=b"verified filing bytes")
+
+    store = Store(tmp_path / "gateway.sqlite3")
+    url = "https://www.sec.gov/Archives/edgar/data/1/000000000123000001/annual.htm"
+    with httpx.Client(transport=httpx.MockTransport(respond)) as client:
+        api = Provider(store, client, Settings(sec_agent="Test tester@example.com"))
+        if recover:
+            assert api.document(url) == b"verified filing bytes"
+            assert api.fork().document(url) == b"verified filing bytes"
+        else:
+            with pytest.raises(FilingUnavailable, match="HTTP 502") as failure:
+                api.document(url)
+            assert url in str(failure.value)
+        assert starts == [0.0, 3.0, 5.0, 9.0, 17.0]
+    with store.connect() as db:
+        assert db.execute("SELECT count(*) FROM observations").fetchone()[0] == int(
+            recover
+        )

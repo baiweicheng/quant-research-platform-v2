@@ -16,17 +16,42 @@ from hypothesis import given, strategies as st
 from aperture import calendar, membership, membership_sources
 from aperture.api import create_app
 from aperture.backtest import run
+from aperture.bundles import download as download_bundle
 from aperture.config import Settings
 from aperture.dataset_updates import update
 from aperture.domain import Policy, ResearchError
 from aperture.fundamentals import attach, as_of
-from aperture.providers import Provider, download_market
+from aperture.providers import FilingUnavailable, Provider, download_market
 from aperture.store import Store, decode, encode
 from aperture.storage_maintenance import compact
 from aperture.worker import process_one
 from test_fundamentals import source, ACC
 from filing_fixtures import INCOME_SUMMARY, income_report
 from test_membership import html
+
+
+def test_filing_failure_before_price_snapshot_points_to_full_retry(
+    tmp_path, monkeypatch
+):
+    from aperture import research_data
+
+    store = Store(tmp_path / "price-stage-recovery.sqlite3")
+    url = "https://www.sec.gov/Archives/edgar/data/1/000000000123000001/annual.htm"
+
+    def fail_before_publication(*args, **kwargs):
+        raise FilingUnavailable(f"SEC filing evidence returned HTTP 502 for {url}.")
+
+    monkeypatch.setattr(research_data, "download", fail_before_publication)
+    provider = Provider(store, cfg=Settings(sec_agent="Fixture team@example.com"))
+    try:
+        with pytest.raises(
+            ResearchError, match="market-data validation.*Download & validate"
+        ) as failure:
+            download_bundle(store, {}, lambda *_: None, provider)
+        assert url in str(failure.value)
+        assert not store.datasets()
+    finally:
+        provider.close()
 
 
 def chunks(store, identifier):

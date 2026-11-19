@@ -10,11 +10,19 @@ from .action_evidence import primary_matches
 from .domain import ResearchError
 
 VERSION = "reviewed-historical-issuer-v1"
-# Exact previously accepted metadata retained after a cosmetic edge-script
-# normalization correction. Raw source digests and all issuer/price gates match.
-LEGACY_CONTENT_DIGESTS = {
-    "ARNC": "d6c40d8f10e6440ceda0b5139e551b903ed5e4174415a7063b386beca651ed99",
-    "CELG": "9ba2ef9e90f791494166176f668016ebbde569745fa5f502df6d620b2c20183a",
+# Exact previously accepted source receipts remain valid for saved snapshots.
+LEGACY_SOURCE_FIELDS = {
+    "ARNC": {
+        "content_sha256": "d6c40d8f10e6440ceda0b5139e551b903ed5e4174415a7063b386beca651ed99"
+    },
+    "CELG": {
+        "content_sha256": "9ba2ef9e90f791494166176f668016ebbde569745fa5f502df6d620b2c20183a"
+    },
+    "CXO": {
+        "url": "https://www.sec.gov/Archives/edgar/data/1358071/000135807120000059/R1.htm",
+        "sha256": "948c1428d2b71f65e0805dd211d87c5544a26ab5bcf3baa890c6f7e5efaf1433",
+        "content_sha256": "c7e2d0344e6a301dd984f610aa32efa8338f16fa0bafc4361cc167c68e12a03c",
+    },
 }
 # Entries with ``cik`` None establish a listing identity for an issuer that
 # filed with a bank regulator rather than the SEC; they map no financials.
@@ -149,9 +157,9 @@ ISSUERS = {
         "quote_asof": "2021-01-20",
         "name": "Concho Resources Inc.",
         "exchange": "NYSE",
-        "url": "https://www.sec.gov/Archives/edgar/data/1358071/000135807120000059/R1.htm",
-        "sha256": "948c1428d2b71f65e0805dd211d87c5544a26ab5bcf3baa890c6f7e5efaf1433",
-        "content_sha256": "c7e2d0344e6a301dd984f610aa32efa8338f16fa0bafc4361cc167c68e12a03c",
+        "url": "https://www.sec.gov/Archives/edgar/data/1358071/000135807120000059/cxo-20200930.htm",
+        "sha256": "22603ee4b61c186946d37b9a74219b329f006b16d8cf3378bff3118bd27d6801",
+        "content_sha256": "385166ce3051b78b50b1b57908542d164e2cb4f2ab4bd1da0d5d0a23bf5f3b3b",
         "basis": "The dated SEC filing identifies CXO and original issuer CIK 1358071. Annual financial values retain their "
         "own accession and availability dates; this mapping is issuer evidence, not exhaustive EPS share-class "
         "certification.",
@@ -1519,13 +1527,13 @@ def mapping_evidence(metadata, symbol):
         expected
         and (
             supplied == {"symbol": symbol, "version": VERSION, **expected}
-            or symbol in LEGACY_CONTENT_DIGESTS
+            or symbol in LEGACY_SOURCE_FIELDS
             and supplied
             == {
                 "symbol": symbol,
                 "version": VERSION,
                 **expected,
-                "content_sha256": LEGACY_CONTENT_DIGESTS[symbol],
+                **LEGACY_SOURCE_FIELDS[symbol],
             }
         )
         and _vintage_matches(

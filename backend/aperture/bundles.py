@@ -1,7 +1,7 @@
 """The normal acquisition unit always contains market and SEC inputs."""
 
 from .domain import ResearchError
-from .providers import Provider
+from .providers import FilingUnavailable, Provider
 
 
 def download(store, payload, progress, provider=None, *, base=None, refresh=False):
@@ -15,9 +15,19 @@ def download(store, payload, progress, provider=None, *, base=None, refresh=Fals
             raise ResearchError(
                 "Configure SEC_USER_AGENT with a contact email before downloading market data and SEC filings."
             )
-        saved = prices(
-            store, payload, lambda n, t: progress(round(n * 0.70), t), api, base=base
-        )
+        try:
+            saved = prices(
+                store,
+                payload,
+                lambda n, t: progress(round(n * 0.70), t),
+                api,
+                base=base,
+            )
+        except FilingUnavailable as error:
+            raise ResearchError(
+                f"A required SEC filing was unavailable during historical market-data validation. "
+                f"In Data, use Download & validate with the same dates to retry using available source captures. {error}"
+            ) from None
         try:
             saved = attach_sectors(
                 store,

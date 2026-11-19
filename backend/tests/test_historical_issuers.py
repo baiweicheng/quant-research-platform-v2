@@ -222,3 +222,23 @@ def test_original_arnc_metadata_remains_valid_after_cosmetic_source_recheck():
     assert mapping_evidence(metadata, "ARNC") == proof
     proof["cik"] = "0001790982"  # The separated child remains a different issuer.
     assert mapping_evidence(metadata, "ARNC") is None
+
+
+def test_cxo_supports_previously_verified_and_new_source_receipts():
+    current = {"symbol": "CXO", "version": VERSION, **ISSUERS["CXO"]}
+    assert current["url"].endswith("/cxo-20200930.htm")
+    original = {
+        **current,
+        "url": "https://www.sec.gov/Archives/edgar/data/1358071/000135807120000059/R1.htm",
+        "sha256": "948c1428d2b71f65e0805dd211d87c5544a26ab5bcf3baa890c6f7e5efaf1433",
+        "content_sha256": "c7e2d0344e6a301dd984f610aa32efa8338f16fa0bafc4361cc167c68e12a03c",
+    }
+    metadata = {"identity_resolution": {"CXO": {"asof": "2021-01-20"}}}
+    for proof in (current, original):
+        metadata["historical_issuer_evidence"] = {"CXO": proof}
+        assert mapping_evidence(metadata, "CXO") == proof
+    metadata["historical_issuer_evidence"]["CXO"] = {
+        **original,
+        "sha256": current["sha256"],
+    }
+    assert mapping_evidence(metadata, "CXO") is None

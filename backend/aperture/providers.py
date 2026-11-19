@@ -7,8 +7,9 @@ import base64
 import threading
 import logging
 from contextlib import contextmanager
-from datetime import date, datetime, timedelta
+from datetime import UTC, date, datetime, timedelta
 from decimal import Decimal
+from email.utils import parsedate_to_datetime
 from urllib.parse import quote
 from zoneinfo import ZoneInfo
 
@@ -48,8 +49,14 @@ class EvidenceLimit(ResearchError):
     """A bounded filing read cannot verify this accession's share units."""
 
 
+class FilingUnavailable(ResearchError):
+    """SEC did not return usable bytes for a required document."""
+
+
 MAX_FILING_BYTES = 96 * 1024 * 1024
 SEC_REQUEST_INTERVAL = 0.125
+FILING_RETRY_DELAYS = (1, 2, 4, 8)
+FILING_MAX_RETRY_WAIT = 30
 LOG = logging.getLogger(__name__)
 
 
@@ -93,6 +100,28 @@ class Provider:
                 time.sleep(delay)
             self._sec_gate["next"] = time.monotonic() + SEC_REQUEST_INTERVAL
 
+    def _retry_filing(self, response, attempt):
+        if attempt >= len(FILING_RETRY_DELAYS):
+            return False
+        retry_after = response.headers.get("Retry-After", "")
+        delay = FILING_RETRY_DELAYS[attempt]
+        try:
+            if retry_after.isdecimal():
+                delay = max(delay, int(retry_after))
+            elif retry_after:
+                retry_time = parsedate_to_datetime(retry_after)
+                if retry_time.tzinfo is not None:
+                    delay = max(delay, (retry_time - datetime.now(UTC)).total_seconds())
+        except (ValueError, OverflowError):
+            pass  # Use the bounded retry delay for a malformed header.
+        if delay > FILING_MAX_RETRY_WAIT:
+            return False
+        with self._sec_gate["lock"]:
+            self._sec_gate["next"] = max(
+                self._sec_gate["next"], time.monotonic() + delay
+            )
+        return True
+
     def close(self):
         if self.owned:
             self.client.close()
@@ -125,7 +154,7 @@ class Provider:
             raise EvidenceLimit(
                 "Filed evidence exceeds the supported bounded document size; EPS remains unverified."
             )
-        for attempt in range(3):
+        for attempt in range(len(FILING_RETRY_DELAYS) + 1):
             try:
                 self._wait_sec()
                 with (
@@ -140,17 +169,19 @@ class Provider:
                         },
                     ) as response,
                 ):
-                    if (
-                        response.status_code in (429, 500, 502, 503, 504)
-                        and attempt < 2
-                    ):
-                        time.sleep(0.5 * (attempt + 1))
+                    if response.status_code in (
+                        429,
+                        500,
+                        502,
+                        503,
+                        504,
+                    ) and self._retry_filing(response, attempt):
                         continue
                     if response.status_code == 404:
                         raise ResourceMissing("SEC filing document was not found.")
                     if not response.is_success:
-                        raise ResearchError(
-                            f"SEC filing evidence returned HTTP {response.status_code}. Retry acquisition; no unverified EPS was substituted."
+                        raise FilingUnavailable(
+                            f"SEC filing evidence returned HTTP {response.status_code} for {url}."
                         )
                     body = bytearray()
                     for chunk in response.iter_bytes(chunk_size=65536):
@@ -171,7 +202,7 @@ class Provider:
                     raw = bytes(body)
             except httpx.RequestError as error:
                 LOG.warning(
-                    "SEC filing transport attempt %s/3: %s for %s",
+                    "SEC filing request %s hit a transport error (%s) for %s",
                     attempt + 1,
                     type(error).__name__,
                     url,
@@ -179,8 +210,8 @@ class Provider:
                 if attempt < 2:
                     time.sleep(0.3 * (attempt + 1))
                     continue
-                raise ResearchError(
-                    "SEC filed share-class evidence could not be reached. Retry; earlier snapshots remain unchanged."
+                raise FilingUnavailable(
+                    f"SEC filing evidence could not be reached for {url}."
                 ) from None
             self.observations.append(
                 self.store.observe(
