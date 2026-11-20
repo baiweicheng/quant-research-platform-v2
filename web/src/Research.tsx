@@ -45,6 +45,7 @@ export default function Research({
   onInfo: (s: Strategy) => void;
   onData: () => void;
 }) {
+  const families = state.strategies.filter((strategy) => !strategy.variant_of);
   const location = useLocation();
   const requestedRun = new URLSearchParams(location.search).get("run") ?? "";
   const [section, setSection] = useState<"library" | "results" | "validation">(
@@ -114,7 +115,7 @@ export default function Research({
           aria-selected={section === "library"}
           onClick={() => setSection("library")}
         >
-          Strategy library <span>{state.strategies.length}</span>
+          Strategy library <span>{families.length}</span>
         </button>
         <button
           role="tab"
@@ -143,7 +144,7 @@ export default function Research({
             </p>
           </div>
           <div className="strategy-grid">
-            {state.strategies.map((s, i) => (
+            {families.map((s, i) => (
               <article
                 className={`card strategy-card ${!s.implemented ? "planned" : ""}`}
                 key={s.id}
@@ -174,14 +175,29 @@ export default function Research({
                     How it works <Info size={14} />
                   </button>
                   {s.implemented && (
-                    <button
-                      className="button small secondary"
-                      onClick={() =>
-                        state.datasets.length ? onRun(s.id) : onData()
-                      }
-                    >
-                      Backtest <ArrowRight size={14} />
-                    </button>
+                    <div className="inline">
+                      {[
+                        s,
+                        ...state.strategies.filter(
+                          (v) => v.variant_of === s.id,
+                        ),
+                      ].map((version) => (
+                        <button
+                          className="button small secondary"
+                          key={version.id}
+                          onClick={() =>
+                            state.datasets.length ? onRun(version.id) : onData()
+                          }
+                        >
+                          {version.variant_of
+                            ? "Backtest weekly"
+                            : version.frequency === "monthly"
+                              ? "Backtest month-end"
+                              : "Backtest"}
+                          <ArrowRight size={14} />
+                        </button>
+                      ))}
+                    </div>
                   )}
                 </div>
               </article>
@@ -332,9 +348,17 @@ export default function Research({
                 <>
                   <PeriodPicker value={period} onChange={setPeriod} />
                   {new Set(
-                    comparison.map(
-                      (r) =>
-                        `${r.dataset_id}/${r.windows[period].start}/${r.windows[period].end}/${r.capital}/${JSON.stringify(r.policy)}/${r.dividend_model}/${JSON.stringify(r.coverage)}/${r.engine_version}`,
+                    comparison.map((r) =>
+                      JSON.stringify([
+                        r.dataset_id,
+                        r.windows[period].start,
+                        r.windows[period].end,
+                        r.capital,
+                        r.policy,
+                        r.dividend_model,
+                        r.coverage && { ...r.coverage, frequency: undefined },
+                        r.engine_version,
+                      ]),
                     ),
                   ).size > 1 && (
                     <Notice>
@@ -722,7 +746,7 @@ export function RunDetail({
       <SignalAudit
         decisions={run.decisions || []}
         auditPath={run.audit_path}
-        strategyId={run.strategy.id}
+        strategyId={run.strategy.variant_of ?? run.strategy.id}
         fundamental={["quality", "quality_value", "value_momentum"].includes(
           run.strategy.id,
         )}

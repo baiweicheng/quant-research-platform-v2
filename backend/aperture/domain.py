@@ -313,6 +313,28 @@ STRATEGIES = [
     },
 ]
 
+STRATEGIES.extend(
+    {
+        **recipe,
+        "id": f"{recipe['id']}_weekly",
+        "name": f"{recipe['name']} · Weekly",
+        "version": "1.0.0",
+        "variant_of": recipe["id"],
+        "frequency": "weekly",
+        "risk": recipe["risk"].replace("month-end rebalances", "weekly rebalances"),
+        "definition": recipe["definition"]
+        .replace("At month end", "After the final trading session of the week")
+        .replace("after month end", "after the final trading session of the week"),
+    }
+    for recipe in tuple(STRATEGIES)
+    if recipe["id"]
+    in {
+        "profitable_liquidity_leaders",
+        "session_strength_liquidity",
+        "earnings_market_regime",
+    }
+)
+
 
 ARCHIVED_STRATEGIES = frozenset({"quality", "quality_value"})
 

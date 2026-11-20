@@ -375,7 +375,7 @@ def create_app(
                     "Save your paper strategy, universe and risk settings first."
                 )
             recipe = paper_strategy(cfg["strategy_id"])
-            if recipe.get("frequency") == "monthly":
+            if recipe.get("frequency"):
                 payload["decision_session"] = str(preparation_session(recipe))
         settings().headers()
         if kind == "cancel":

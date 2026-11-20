@@ -72,7 +72,7 @@ def test_archived_strategy_is_unavailable_to_research_and_queued_jobs(
     }
     with TestClient(create_app(store.path, None), headers=HEADER) as client:
         state = client.get("/api/state").json()
-        assert {s["id"] for s in state["strategies"]} == {
+        assert {s["id"] for s in state["strategies"] if "variant_of" not in s} == {
             "momentum",
             "low_volatility",
             "value_momentum",
@@ -80,6 +80,13 @@ def test_archived_strategy_is_unavailable_to_research_and_queued_jobs(
             "profitable_liquidity_leaders",
             "session_strength_liquidity",
             "earnings_market_regime",
+        }
+        assert {
+            s["id"]: s["variant_of"] for s in state["strategies"] if "variant_of" in s
+        } == {
+            "profitable_liquidity_leaders_weekly": "profitable_liquidity_leaders",
+            "session_strength_liquidity_weekly": "session_strength_liquidity",
+            "earnings_market_regime_weekly": "earnings_market_regime",
         }
         registry = client.get("/api/research/protocols").json()
         assert registry["protocols"][0]["strategy"]["id"] == identifier

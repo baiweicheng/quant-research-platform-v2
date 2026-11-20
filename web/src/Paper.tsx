@@ -4,7 +4,7 @@ import { ArrowRight, Download, RefreshCw, ShieldCheck } from "lucide-react";
 import { api, download, money, percent, shortDate } from "./api";
 import { Badge, Empty, MetricStrip, Notice, PeriodPicker } from "./components";
 import { SignalAudit } from "./Fundamentals";
-import type { Decision, Period, Run, State } from "./types";
+import type { Decision, Period, Run, State, Strategy } from "./types";
 const Chart = lazy(() => import("./Chart"));
 export type PaperSnapshot = {
   account_key: string;
@@ -61,7 +61,7 @@ type Plan = {
   decision_session: string;
   execute_session: string;
   last_execution_session: string;
-  strategy: { id: string; name: string; version: string };
+  strategy: Pick<Strategy, "id" | "name" | "version" | "variant_of">;
   cash_weight: string;
   account: PaperSnapshot;
   targets: { symbol: string; weight: string; sector: string }[];
@@ -353,6 +353,9 @@ export default function PaperWorkspace({ state }: { state: State }) {
   const action = useAction();
   const data = query.data;
   const cfg = data?.config;
+  const selectedStrategy = state.strategies.find(
+    (s) => s.id === cfg?.strategy_id,
+  );
   const monthly = data?.frequency === "monthly";
   const archivedStrategy = data?.archived_strategy;
   const canResume = cfg?.paused && !archivedStrategy;
@@ -830,10 +833,8 @@ export default function PaperWorkspace({ state }: { state: State }) {
               </p>
               <p>
                 <strong>
-                  {archivedStrategy ??
-                    state.strategies.find((s) => s.id === cfg.strategy_id)
-                      ?.name}{" "}
-                  · v{cfg.strategy_version}
+                  {archivedStrategy ?? selectedStrategy?.name} · v
+                  {cfg.strategy_version}
                 </strong>
               </p>
               <p>
@@ -850,11 +851,13 @@ export default function PaperWorkspace({ state }: { state: State }) {
                 <p>
                   {monthly
                     ? "Prepare and approve after data is available for the final trading session of the month and before the next regular open. Automatic preparation uses the same window and requires separate approval."
-                    : cfg.execution_version === "paper-broker-market-day-v1"
-                      ? "Prepare and approve outside market hours. Keep Aperture open until every instruction is confirmed accepted at Alpaca, then you may close the app. Closing does not cancel broker-held orders. The next launch checks actual fills before another rebalance."
-                      : cfg.mode === "automatic"
-                        ? "Automatic weekly preparation runs after the week’s final market close and submits in the next regular session, only under explicit automatic paper approval. Keep the worker running through execution and any settlement wait."
-                        : "Manual mode: prepare after a completed close, inspect the plan and separately approve the following session’s paper orders. Keep Aperture running through fills and settlement."}
+                    : selectedStrategy?.variant_of
+                      ? "Prepare and approve after data is available for the final trading session of the week and before the next regular open. Automatic preparation uses the same window and requires separate approval."
+                      : cfg.execution_version === "paper-broker-market-day-v1"
+                        ? "Prepare and approve outside market hours. Keep Aperture open until every instruction is confirmed accepted at Alpaca, then you may close the app. Closing does not cancel broker-held orders. The next launch checks actual fills before another rebalance."
+                        : cfg.mode === "automatic"
+                          ? "Automatic weekly preparation runs after the week’s final market close and submits in the next regular session, only under explicit automatic paper approval. Keep the worker running through execution and any settlement wait."
+                          : "Manual mode: prepare after a completed close, inspect the plan and separately approve the following session’s paper orders. Keep Aperture running through fills and settlement."}
                 </p>
               )}
               {!!cfg.exit_symbols?.length && (
@@ -1148,6 +1151,7 @@ export default function PaperWorkspace({ state }: { state: State }) {
                 <details className="details">
                   <summary>Signals, filings & excluded stocks</summary>
                   <SignalAudit
+                    strategyId={p.strategy.variant_of ?? p.strategy.id}
                     fundamental={[
                       "quality",
                       "quality_value",

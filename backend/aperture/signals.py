@@ -136,6 +136,7 @@ def rank(
     factor_audit: dict | None = None,
 ) -> tuple[list[RankedStock], list[dict]]:
     recipe = strategy(identifier)
+    identifier = recipe.get("variant_of", identifier)
     fundamental = identifier in FUNDAMENTAL_STRATEGIES
     uses_income = recipe.get("requires_annual_income", False)
     if fundamental and not dataset.fundamentals:

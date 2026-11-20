@@ -987,6 +987,7 @@ function ReviewDetail({ review }: { review: Review }) {
           and cash checks.
         </p>
         <SignalAudit
+          strategyId={review.strategy.variant_of ?? review.strategy.id}
           fundamental={["quality", "quality_value", "value_momentum"].includes(
             review.strategy.id,
           )}

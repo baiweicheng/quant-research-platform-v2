@@ -75,13 +75,15 @@ def configuration(store):
 def preparation_session(recipe, expected=None):
     at = datetime.now(UTC)
     latest = calendar.latest_complete(at)
-    if recipe.get("frequency") == "monthly":
+    frequency = recipe.get("frequency")
+    if frequency:
         following = calendar.next_session(latest)
-        if calendar.rebalance_period(latest, "monthly") == calendar.rebalance_period(
-            following, "monthly"
+        if calendar.rebalance_period(latest, frequency) == calendar.rebalance_period(
+            following, frequency
         ) or at >= calendar.open_time(following):
+            period_end = "month-end" if frequency == "monthly" else "week-end"
             raise ResearchError(
-                "This strategy rebalances at month-end. Prepare after the final trading "
+                f"This strategy rebalances at {period_end}. Prepare after the final trading "
                 "session's data is available and before the next regular open."
             )
     if expected is not None and str(latest) != expected:
@@ -92,9 +94,8 @@ def preparation_session(recipe, expected=None):
 def execution_deadline(cfg, session):
     from .staged import VERSION
 
-    if (
-        cfg["execution_version"] == VERSION
-        or strategy(cfg["strategy_id"]).get("frequency") == "monthly"
+    if cfg["execution_version"] == VERSION or strategy(cfg["strategy_id"]).get(
+        "frequency"
     ):
         return calendar.open_time(session)
     return calendar.close_time(session)
@@ -812,7 +813,7 @@ def prepare(store, job, progress, broker):
         raise ResearchError(
             "Paper settings changed during preparation. No plan was published."
         )
-    if recipe.get("frequency") == "monthly" or job["payload"].get("automatic"):
+    if recipe.get("frequency") or job["payload"].get("automatic"):
         preparation_session(recipe, str(latest))
     stamp = now()
     with store.connect() as db:
@@ -855,9 +856,10 @@ def schedule(store, identifier):
 
     deadline = execution_deadline(cfg, date.fromisoformat(p["execute_session"]))
     if datetime.now(UTC) >= deadline:
-        if p["strategy"].get("frequency") == "monthly":
+        if frequency := p["strategy"].get("frequency"):
+            period_end = "month-end" if frequency == "monthly" else "week-end"
             raise ResearchError(
-                "This month-end review expired at the next regular open."
+                f"This {period_end} review expired at the next regular open."
             )
         raise ResearchError(
             "The staging deadline has passed. Prepare a current review for the next regular session."
@@ -1226,16 +1228,18 @@ def tick(store, at=None, broker=None):
     for saved in plans(store):
         if saved["state"] in FINAL:
             continue
+        frequency = saved.get("strategy", {}).get("frequency")
         if (
             saved["state"] == "prepared"
-            and saved.get("strategy", {}).get("frequency") == "monthly"
+            and frequency
             and at >= calendar.open_time(date.fromisoformat(saved["execute_session"]))
         ):
+            period_end = "month-end" if frequency == "monthly" else "week-end"
             set_state(
                 store,
                 saved["id"],
                 "expired",
-                "The month-end review expired at the next regular open.",
+                f"The {period_end} review expired at the next regular open.",
                 expected_state="prepared",
             )
             continue
@@ -1299,6 +1303,8 @@ def tick(store, at=None, broker=None):
             "paper_auto_status",
             "The month-end staging window was missed. Waiting for the next month-end."
             if frequency == "monthly"
+            else "The week-end staging window was missed. Waiting for the next week-end."
+            if recipe.get("frequency")
             else "The weekly execution session was missed. Prepare a manual current review; no stale catch-up order will be submitted.",
         )
         return

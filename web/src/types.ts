@@ -10,6 +10,7 @@ export type Strategy = {
   research_only?: boolean;
   requires_annual_income?: boolean;
   frequency?: "monthly" | "weekly";
+  variant_of?: string;
   definition?: string;
 };
 export type FundamentalCoverage = {

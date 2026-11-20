@@ -220,7 +220,10 @@ export function TaskDialog({
                   />
                   <span>
                     {s.name}
-                    <small>{s.category}</small>
+                    <small>
+                      {s.category}
+                      {s.frequency === "monthly" && " · Month-end"}
+                    </small>
                   </span>
                 </label>
               ))}
@@ -394,10 +397,10 @@ export function TaskDialog({
         <details className="details">
           <summary>How this calculation works</summary>
           <p>
-            Weekly decisions after the final session close; execution modeled at
-            the following session open. Up to 25 stocks, 5% per stock, 25% per
-            sector, at least 2% cash. When limits prevent investment, the
-            remainder stays in cash.
+            Backtests use each strategy's weekly or month-end decision schedule
+            and model execution at the following session open. Up to 25 stocks,
+            5% per stock, 25% per sector, at least 2% cash. When limits prevent
+            investment, the remainder stays in cash.
           </p>
           <p>
             Backtests estimate the liquidity adjustment from order size and

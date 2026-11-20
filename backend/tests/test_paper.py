@@ -576,6 +576,67 @@ def test_monthly_schedule_and_queued_review_enforce_month_end(paper, monkeypatch
     assert not broker.submissions and not public_state(store)["plans"]
 
 
+@pytest.mark.parametrize(
+    "identifier",
+    [
+        "profitable_liquidity_leaders",
+        "session_strength_liquidity",
+        "earnings_market_regime",
+    ],
+)
+def test_weekly_versions_bind_distinct_approval_and_holiday_session(
+    paper, monkeypatch, identifier
+):
+    store, broker, original = paper
+    broker.at = calendar.available_time(date(2026, 4, 1))
+    reconcile(store, broker)
+    data = {
+        **original["policy"],
+        "symbols": original["symbols"],
+        "data_start": original["data_start"],
+        "max_drift": original["max_drift"],
+        "mode": "automatic",
+        "execution": "broker_market",
+    }
+    monthly = save_configuration(store, {**data, "strategy_id": identifier})
+    assert allow(store, True)["strategy_id"] == identifier
+    weekly_id = f"{identifier}_weekly"
+    weekly = save_configuration(store, {**data, "strategy_id": weekly_id})
+    assert monthly["hash"] != weekly["hash"]
+    assert approval(store) is None
+    assert allow(store, True)["strategy_id"] == weekly_id
+    monkeypatch.setattr("aperture.api.settings", lambda: Settings("test", "test"))
+
+    with TestClient(
+        create_app(store.path, None), headers={"X-Aperture-Client": "1"}
+    ) as client:
+        tick(store, broker.at, broker)
+        midweek = client.post("/api/paper/actions/prepare")
+        assert midweek.status_code == 422 and "week-end" in midweek.text
+        assert not store.jobs()
+
+        # Good Friday closes the exchange. Thursday's data unlocks this week's
+        # decision, which is staged before Monday's regular open.
+        final_session = date(2026, 4, 2)
+        assert calendar.next_session(final_session) == date(2026, 4, 6)
+        broker.at = calendar.available_time(final_session)
+        tick(store, broker.at, broker)
+        tick(store, broker.at, broker)
+        (automatic,) = store.jobs()
+        assert automatic["kind"] == "paper_prepare"
+        manual = client.post("/api/paper/actions/prepare")
+        assert manual.status_code == 202
+        assert json.loads(manual.json()["payload"]) == {
+            "config_hash": weekly["hash"],
+            "decision_session": str(final_session),
+        }
+
+        broker.at = calendar.open_time(date(2026, 4, 6))
+        late = client.post("/api/paper/actions/prepare")
+        assert late.status_code == 422 and "week-end" in late.text
+        assert not broker.submissions
+
+
 def test_archived_paper_config_blocks_new_work_and_reconciles_accepted_order(
     paper, monkeypatch
 ):

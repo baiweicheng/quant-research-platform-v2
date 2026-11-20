@@ -66,7 +66,7 @@ def execute(store: Store, job: dict):
 
         if job["kind"] == "paper_prepare" and (cfg := configuration(store)):
             recipe = paper_strategy(cfg["strategy_id"])
-            if "decision_session" in payload or recipe.get("frequency") == "monthly":
+            if "decision_session" in payload or recipe.get("frequency"):
                 preparation_session(recipe, payload.get("decision_session"))
         broker = Broker()
         try:

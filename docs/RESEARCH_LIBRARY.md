@@ -38,7 +38,7 @@ New downloads and ordinary updates verify EPS share units against the source fil
 
 ## Run several strategies together
 
-Momentum, Low Volatility, Value + Momentum, Liquidity-Weighted Momentum, Profitable Liquidity Leaders, Session Strength and Liquidity, and Earnings and Market Regime Rotation are available for new research. The three month-end recipes require snapshots with comparable annual net income. In Data, add or refresh SEC financials to prepare them. All seven are selectable in Paper Settings and require separate paper approval. See the [price-only study](STRATEGY_RESEARCH_2026-11-18.md), [hybrid study](HYBRID_STRATEGY_RESEARCH_2026-11-18.md) and [paper execution contract](PAPER_TRADING.md).
+Momentum, Low Volatility, Value + Momentum, Liquidity-Weighted Momentum, Profitable Liquidity Leaders, Session Strength and Liquidity, and Earnings and Market Regime Rotation are available for new research. The last three cards offer **Backtest month-end** and **Backtest weekly**. Select both versions in one backtest batch to compare them with the same snapshot, dates, costs and capital. Both schedules require snapshots with comparable annual net income. Each version is separately selectable and approvable in Paper Settings. See the [price-only study](STRATEGY_RESEARCH_2026-11-18.md), [hybrid study](HYBRID_STRATEGY_RESEARCH_2026-11-18.md) and [paper execution contract](PAPER_TRADING.md).
 Profitability / Quality and Quality Value are archived because historical
 profitability coverage remains limited. Saved backtests, allocation reviews,
 validation trials and paper records remain available. Archived strategies
