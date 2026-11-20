@@ -1,4 +1,4 @@
-"""Version-approved, durable, cash-constrained weekly PAPER execution only."""
+"""Version-approved, durable PAPER execution on the strategy's cadence."""
 
 import hashlib
 import json
@@ -20,7 +20,7 @@ from .domain import (
     paper_strategy,
     strategy,
 )
-from .portfolio import target_weights
+from .portfolio import target_weights, uses_liquidity_weights
 from .signals import rank
 from .store import decode, encode, now
 
@@ -70,6 +70,34 @@ def policy_from(data):
 
 def configuration(store):
     return store.preference("paper_config")
+
+
+def preparation_session(recipe, expected=None):
+    at = datetime.now(UTC)
+    latest = calendar.latest_complete(at)
+    if recipe.get("frequency") == "monthly":
+        following = calendar.next_session(latest)
+        if calendar.rebalance_period(latest, "monthly") == calendar.rebalance_period(
+            following, "monthly"
+        ) or at >= calendar.open_time(following):
+            raise ResearchError(
+                "This strategy rebalances at month-end. Prepare after the final trading "
+                "session's data is available and before the next regular open."
+            )
+    if expected is not None and str(latest) != expected:
+        raise ResearchError("The decision session changed. Queue a fresh paper review.")
+    return latest
+
+
+def execution_deadline(cfg, session):
+    from .staged import VERSION
+
+    if (
+        cfg["execution_version"] == VERSION
+        or strategy(cfg["strategy_id"]).get("frequency") == "monthly"
+    ):
+        return calendar.open_time(session)
+    return calendar.close_time(session)
 
 
 def save_configuration(store, data):
@@ -341,18 +369,21 @@ def require_runnable_plan(p):
         paper_strategy(identifier)
 
 
-def set_state(store, identifier, state, message):
+def set_state(store, identifier, state, message, *, expected_state=None):
     with store.connect() as db:
         current = db.execute(
             "SELECT state,message FROM paper_plans WHERE id=?", (identifier,)
         ).fetchone()
         if current and current["state"] == state and current["message"] == message:
-            return
-        db.execute(
-            "UPDATE paper_plans SET state=?,message=?,updated_at=? WHERE id=?",
-            (state, message, now(), identifier),
+            return False
+        changed = db.execute(
+            "UPDATE paper_plans SET state=?,message=?,updated_at=? WHERE id=? "
+            "AND (? IS NULL OR state=?)",
+            (state, message, now(), identifier, expected_state, expected_state),
         )
-    event(store, message)
+    if changed.rowcount:
+        event(store, message)
+    return bool(changed.rowcount)
 
 
 def orders(store, identifier=None):
@@ -383,11 +414,11 @@ def orders(store, identifier=None):
 def public_state(store):
     cfg = configuration(store)
     snap = store.preference("paper_snapshot")
+    recipe = strategy(cfg["strategy_id"]) if cfg else None
     archived_strategy = (
-        strategy(cfg["strategy_id"])["name"]
-        if cfg and cfg["strategy_id"] in ARCHIVED_STRATEGIES
-        else None
+        recipe["name"] if recipe and recipe["id"] in ARCHIVED_STRATEGIES else None
     )
+    frequency = recipe.get("frequency", "weekly") if recipe else "weekly"
     with store.connect() as db:
         events = [
             dict(r)
@@ -395,6 +426,7 @@ def public_state(store):
         ]
     return {
         "config": cfg,
+        "frequency": frequency,
         "archived_strategy": archived_strategy,
         "snapshot": snap,
         "approval": approval(store),
@@ -408,8 +440,10 @@ def public_state(store):
         "automatic_status": (
             "Choose an available paper strategy in settings to prepare a new review."
             if archived_strategy
+            else f"Manual mode. Prepare a {frequency} review when ready."
+            if cfg and cfg["mode"] == "manual"
             else store.preference(
-                "paper_auto_status", "Manual mode. Prepare a weekly review when ready."
+                "paper_auto_status", "Waiting for the next rebalance window."
             )
         ),
         "fill_check": store.preference("paper_fill_check"),
@@ -522,6 +556,7 @@ def prepare(store, job, progress, broker):
         )
     if cfg["hash"] != job["payload"].get("config_hash"):
         raise ResearchError("Paper settings changed after this preparation was queued.")
+    latest = preparation_session(recipe, job["payload"].get("decision_session"))
     if any(p["state"] not in FINAL for p in plans(store)):
         raise ResearchError(
             "Review or stop the current paper plan before preparing another."
@@ -535,7 +570,6 @@ def prepare(store, job, progress, broker):
     progress(10, "Paper account reconciled; updating completed-session market data")
     from .bundles import download as download_market
 
-    latest = calendar.latest_complete()
     # Current signals need a bounded rolling window, not a repeated ten-year
     # research download. New-member backfills still use the full saved start.
     current_start = (
@@ -645,12 +679,15 @@ def prepare(store, job, progress, broker):
     ranked, excluded = (
         rank(*arguments, factor_audit=factor_audit)
         if cfg["strategy_id"] in {"quality", "quality_value", "value_momentum"}
+        or recipe.get("requires_annual_income")
         else rank(*arguments)
     )
     policy = policy_from(
         {**cfg["policy"], "positions": int(cfg["policy"]["positions"])}
     )
-    targets, notes = target_weights(ranked, policy)
+    targets, notes = target_weights(
+        ranked, policy, weight_by_liquidity=uses_liquidity_weights(recipe, ranked)
+    )
     if cfg["strategy_id"] in {"quality_value", "value_momentum"} and ds.metadata.get(
         "fundamentals", {}
     ).get("eps_policy"):
@@ -775,6 +812,8 @@ def prepare(store, job, progress, broker):
         raise ResearchError(
             "Paper settings changed during preparation. No plan was published."
         )
+    if recipe.get("frequency") == "monthly" or job["payload"].get("automatic"):
+        preparation_session(recipe, str(latest))
     stamp = now()
     with store.connect() as db:
         db.execute(
@@ -814,25 +853,28 @@ def schedule(store, identifier):
         raise ResearchError("The paper account changed. Prepare a new review.")
     from .staged import VERSION
 
-    deadline = (
-        calendar.open_time
-        if cfg["execution_version"] == VERSION
-        else calendar.close_time
-    )
-    if datetime.now(UTC) >= deadline(date.fromisoformat(p["execute_session"])):
+    deadline = execution_deadline(cfg, date.fromisoformat(p["execute_session"]))
+    if datetime.now(UTC) >= deadline:
+        if p["strategy"].get("frequency") == "monthly":
+            raise ResearchError(
+                "This month-end review expired at the next regular open."
+            )
         raise ResearchError(
             "The staging deadline has passed. Prepare a current review for the next regular session."
             if cfg["execution_version"] == VERSION
             else "The intended execution session has closed. Prepare a new review with current data."
         )
-    set_state(
+    scheduled = set_state(
         store,
         identifier,
         "scheduled",
         "Rebalance approved. Keep Aperture open until all orders are confirmed accepted at Alpaca."
         if cfg["execution_version"] == VERSION
         else "Rebalance approved for the following regular session; worker must remain running.",
+        expected_state="prepared",
     )
+    if not scheduled:
+        raise ResearchError("The paper review changed. Reopen its current status.")
     return plan(store, identifier)
 
 
@@ -1180,14 +1222,25 @@ def tick(store, at=None, broker=None):
     cfg = configuration(store)
     if not cfg:
         return
-    active = next(
-        (
-            p
-            for p in plans(store)
-            if p["state"] not in FINAL and p["state"] != "prepared"
-        ),
-        None,
-    )
+    pending = []
+    for saved in plans(store):
+        if saved["state"] in FINAL:
+            continue
+        if (
+            saved["state"] == "prepared"
+            and saved.get("strategy", {}).get("frequency") == "monthly"
+            and at >= calendar.open_time(date.fromisoformat(saved["execute_session"]))
+        ):
+            set_state(
+                store,
+                saved["id"],
+                "expired",
+                "The month-end review expired at the next regular open.",
+                expected_state="prepared",
+            )
+            continue
+        pending.append(saved)
+    active = next((p for p in pending if p["state"] != "prepared"), None)
     if active:
         b = broker
         try:
@@ -1214,9 +1267,10 @@ def tick(store, at=None, broker=None):
             if broker is None:
                 b.close()
         return
+    recipe = strategy(cfg["strategy_id"])
     if (
         cfg["strategy_id"] in ARCHIVED_STRATEGIES
-        or strategy(cfg["strategy_id"]).get("research_only")
+        or recipe.get("research_only")
         or cfg["mode"] != "automatic"
         or cfg["paused"]
     ):
@@ -1230,29 +1284,41 @@ def tick(store, at=None, broker=None):
         return
     latest = calendar.latest_complete(at)
     following = calendar.next_session(latest)
-    if latest.isocalendar()[:2] == following.isocalendar()[:2]:
+    frequency = recipe.get("frequency", "weekly")
+    if calendar.rebalance_period(latest, frequency) == calendar.rebalance_period(
+        following, frequency
+    ):
+        if frequency == "monthly":
+            store.set_preference(
+                "paper_auto_status",
+                "Waiting for the final trading session of the month.",
+            )
         return
-    deadline = (
-        calendar.open_time(following)
-        if cfg["execution_version"] == "paper-broker-market-day-v1"
-        else calendar.close_time(following)
-    )
-    if at >= deadline:
+    if at >= execution_deadline(cfg, following):
         store.set_preference(
             "paper_auto_status",
-            "The weekly execution session was missed. Prepare a manual current review; no stale catch-up order will be submitted.",
+            "The month-end staging window was missed. Waiting for the next month-end."
+            if frequency == "monthly"
+            else "The weekly execution session was missed. Prepare a manual current review; no stale catch-up order will be submitted.",
         )
         return
     key = "paper_auto_" + cfg["hash"] + "_" + str(latest)
     if store.preference(key):
         return
-    if any(p["state"] not in FINAL for p in plans(store)):
+    if pending:
         return
     store.set_preference(key, now())
-    store.enqueue("paper_prepare", {"config_hash": cfg["hash"], "automatic": True})
+    store.enqueue(
+        "paper_prepare",
+        {
+            "config_hash": cfg["hash"],
+            "automatic": True,
+            "decision_session": str(latest),
+        },
+    )
     store.set_preference(
         "paper_auto_status",
-        f"Weekly preparation queued after {latest}. Keep Aperture running until all orders are confirmed accepted at Alpaca."
+        f"{frequency.capitalize()} preparation queued after {latest}. Keep Aperture running until all orders are confirmed accepted at Alpaca."
         if cfg["execution_version"] == "paper-broker-market-day-v1"
-        else f"Weekly preparation queued after {latest}. Worker must remain running for next-session execution.",
+        else f"{frequency.capitalize()} preparation queued after {latest}. Worker must remain running for next-session execution.",
     )

@@ -1,6 +1,8 @@
 """Independent broker contracts and execution failure paths. Never contacts Alpaca."""
 
+import json
 from copy import deepcopy
+from dataclasses import replace
 from datetime import UTC, date, datetime
 from decimal import Decimal as D
 
@@ -439,6 +441,139 @@ def test_auto_only_week_end_once_and_explicit_automatic_approval(paper):
     tick(store, friday, broker)
     tick(store, friday, broker)
     assert len(store.jobs()) == 1 and store.jobs()[0]["kind"] == "paper_prepare"
+
+
+@pytest.mark.parametrize(
+    "identifier,market_state,monthly",
+    [
+        ("liquidity_weighted_momentum", None, False),
+        ("profitable_liquidity_leaders", None, True),
+        ("session_strength_liquidity", None, True),
+        ("earnings_market_regime", "strong", True),
+        ("earnings_market_regime", "weak", True),
+    ],
+)
+def test_new_paper_recipes_preserve_strategy_weights_and_approval(
+    paper, monkeypatch, identifier, market_state, monthly
+):
+    store, broker, old = paper
+    broker.at = datetime(2026, 11, 2, 13, tzinfo=UTC)
+    decision = date(2026, 10, 30)
+    original = store.dataset(store.datasets()[0]["id"])
+    summary = store.save_dataset(
+        replace(
+            original,
+            id="october-close-fixture",
+            digest="october-close-fixture",
+            bars={
+                symbol: tuple(bar for bar in bars if bar.session <= decision)
+                for symbol, bars in original.bars.items()
+            },
+        ),
+        b"October close",
+        [],
+    )
+    monkeypatch.setattr("aperture.bundles.download", lambda *a, **kw: summary)
+
+    def ranked(dataset, strategy_id, session, *, factor_audit=None):
+        assert (strategy_id, session) == (identifier, decision)
+        assert (factor_audit is not None) == monthly
+        return [
+            RankedStock(
+                symbol,
+                score,
+                "Technology",
+                {"median_dollar_volume": volume, "market_state": market_state},
+            )
+            for symbol, score, volume in (("AAPL", 1, "900"), ("MSFT", 0.5, "100"))
+        ], []
+
+    monkeypatch.setattr("aperture.paper.rank", ranked)
+    cfg = save_configuration(
+        store,
+        {
+            **old["policy"],
+            "strategy_id": identifier,
+            "symbols": old["symbols"],
+            "data_start": old["data_start"],
+            "max_drift": old["max_drift"],
+            "mode": "manual",
+            "execution": "broker_market",
+            "max_weight": ".6",
+            "sector_cap": ".4",
+        },
+    )
+    draft = prepared((store, broker, cfg))
+    assert draft["execute_session"] == "2026-11-02"
+    assert draft["state"] == "prepared" and not broker.submissions
+    assert public_state(store)["frequency"] == ("monthly" if monthly else "weekly")
+    expected = {"AAPL": D(".3"), "MSFT": D(".1")}
+    if market_state == "weak":
+        expected = {"AAPL": D(".2"), "MSFT": D(".2")}
+    assert {t["symbol"]: D(t["weight"]) for t in draft["targets"]} == expected
+    with pytest.raises(ResearchError, match="matching paper strategy"):
+        schedule(store, draft["id"])
+    assert allow(store)["strategy_id"] == identifier
+    if monthly:
+        broker.at = calendar.open_time(date(2026, 11, 2))
+        with pytest.raises(ResearchError, match="expired at the next regular open"):
+            schedule(store, draft["id"])
+        tick(store, broker.at, broker)
+        assert plan(store, draft["id"])["state"] == "expired"
+    else:
+        assert schedule(store, draft["id"])["state"] == "scheduled"
+    assert not broker.submissions
+
+
+def test_monthly_schedule_and_queued_review_enforce_month_end(paper, monkeypatch):
+    store, broker, old = paper
+    cfg = save_configuration(
+        store,
+        {
+            **old["policy"],
+            "strategy_id": "earnings_market_regime",
+            "symbols": old["symbols"],
+            "data_start": old["data_start"],
+            "max_drift": old["max_drift"],
+            "mode": "automatic",
+            "execution": "broker_market",
+        },
+    )
+    allow(store, True)
+    with TestClient(
+        create_app(store.path, None), headers={"X-Aperture-Client": "1"}
+    ) as client:
+        midmonth_friday = datetime(2026, 11, 6, 21, 20, tzinfo=UTC)
+        tick(store, midmonth_friday, broker)
+        response = client.post("/api/paper/actions/prepare")
+        assert response.status_code == 422 and "month-end" in response.text
+        assert not store.jobs()
+
+    # Nov 30 is a Monday. A month-end order goes out on Tuesday morning.
+    month_end = date(2026, 11, 30)
+    decisive_close = calendar.available_time(month_end)
+    tick(store, decisive_close, broker)
+    tick(store, decisive_close, broker)
+    (queued,) = store.jobs()
+    assert queued["kind"] == "paper_prepare"
+    with store.connect() as db:
+        payload = json.loads(
+            db.execute(
+                "SELECT payload FROM jobs WHERE id=?", (queued["id"],)
+            ).fetchone()[0]
+        )
+    assert payload["decision_session"] == str(month_end)
+    assert payload["config_hash"] == cfg["hash"]
+
+    def no_broker():
+        pytest.fail("Expired preparation must not connect to the broker")
+
+    monkeypatch.setattr("aperture.paper.Broker", no_broker)
+    broker.at = calendar.open_time(date(2026, 12, 1))
+    assert process_one(store)
+    (failed,) = store.jobs()
+    assert failed["state"] == "failed" and "month-end" in failed["message"]
+    assert not broker.submissions and not public_state(store)["plans"]
 
 
 def test_archived_paper_config_blocks_new_work_and_reconciles_accepted_order(

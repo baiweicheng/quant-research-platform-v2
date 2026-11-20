@@ -126,6 +126,7 @@ type Performance = {
 };
 type PaperState = {
   config?: Config | null;
+  frequency?: "monthly" | "weekly";
   archived_strategy?: string | null;
   snapshot?: PaperSnapshot | null;
   approval?: {
@@ -271,6 +272,7 @@ export function PaperWeekly({ onPortfolio }: { onPortfolio: () => void }) {
   const act = useAction();
   const data = q.data;
   const cfg = data?.config;
+  const monthly = data?.frequency === "monthly";
   const latest = data?.plans?.[0];
   const reviewExisting = data?.plans.some(
     (p) =>
@@ -281,7 +283,9 @@ export function PaperWeekly({ onPortfolio }: { onPortfolio: () => void }) {
   return (
     <section className="weekly-card">
       <div className="weekly-overline">
-        <span className="eyebrow">YOUR PAPER WEEK</span>
+        <span className="eyebrow">
+          {monthly ? "YOUR PAPER MONTH" : "YOUR PAPER WEEK"}
+        </span>
         <Badge tone="light">
           {data?.archived_strategy
             ? "Archived strategy"
@@ -294,6 +298,7 @@ export function PaperWeekly({ onPortfolio }: { onPortfolio: () => void }) {
       <p>
         Reconcile the account, update prices and filings, validate inputs and
         save an allocation with proposed paper orders.
+        {monthly && " Prepare after the final trading close of the month."}
       </p>
       <div className="weekly-steps">
         <span>Reconcile</span>
@@ -322,7 +327,9 @@ export function PaperWeekly({ onPortfolio }: { onPortfolio: () => void }) {
             : data?.archived_strategy
               ? "Choose a paper strategy"
               : cfg
-                ? "Prepare weekly paper review"
+                ? monthly
+                  ? "Prepare month-end paper review"
+                  : "Prepare weekly paper review"
                 : "Set up paper trading"}
           <ArrowRight size={16} />
         </button>
@@ -346,6 +353,7 @@ export default function PaperWorkspace({ state }: { state: State }) {
   const action = useAction();
   const data = query.data;
   const cfg = data?.config;
+  const monthly = data?.frequency === "monthly";
   const archivedStrategy = data?.archived_strategy;
   const canResume = cfg?.paused && !archivedStrategy;
   const snap = data?.snapshot;
@@ -680,6 +688,7 @@ export default function PaperWorkspace({ state }: { state: State }) {
                     .map((s) => (
                       <option key={s.id} value={s.id}>
                         {s.name} · v{s.version}
+                        {s.frequency === "monthly" && " · Month-end"}
                       </option>
                     ))}
                 </select>
@@ -828,6 +837,7 @@ export default function PaperWorkspace({ state }: { state: State }) {
                 </strong>
               </p>
               <p>
+                {monthly && "Month-end · "}
                 {cfg.symbols.length - 1} stocks · up to {cfg.policy.positions}{" "}
                 positions · {percent(Number(cfg.policy.max_weight))} stock cap ·{" "}
                 {percent(Number(cfg.policy.sector_cap))} sector cap ·{" "}
@@ -838,11 +848,13 @@ export default function PaperWorkspace({ state }: { state: State }) {
               </p>
               {!archivedStrategy && (
                 <p>
-                  {cfg.execution_version === "paper-broker-market-day-v1"
-                    ? "Prepare and approve outside market hours. Keep Aperture open until every instruction is confirmed accepted at Alpaca, then you may close the app. Closing does not cancel broker-held orders. The next launch checks actual fills before another rebalance."
-                    : cfg.mode === "automatic"
-                      ? "Automatic weekly preparation runs after the week’s final market close and submits in the next regular session, only under explicit automatic paper approval. Keep the worker running through execution and any settlement wait."
-                      : "Manual mode: prepare after a completed close, inspect the plan and separately approve the following session’s paper orders. Keep Aperture running through fills and settlement."}
+                  {monthly
+                    ? "Prepare and approve after data is available for the final trading session of the month and before the next regular open. Automatic preparation uses the same window and requires separate approval."
+                    : cfg.execution_version === "paper-broker-market-day-v1"
+                      ? "Prepare and approve outside market hours. Keep Aperture open until every instruction is confirmed accepted at Alpaca, then you may close the app. Closing does not cancel broker-held orders. The next launch checks actual fills before another rebalance."
+                      : cfg.mode === "automatic"
+                        ? "Automatic weekly preparation runs after the week’s final market close and submits in the next regular session, only under explicit automatic paper approval. Keep the worker running through execution and any settlement wait."
+                        : "Manual mode: prepare after a completed close, inspect the plan and separately approve the following session’s paper orders. Keep Aperture running through fills and settlement."}
                 </p>
               )}
               {!!cfg.exit_symbols?.length && (
@@ -897,6 +909,7 @@ export default function PaperWorkspace({ state }: { state: State }) {
           connected={!!snap}
           onApprove={(body) => action.mutate({ path: "/approval", body })}
           busy={action.isPending}
+          monthly={monthly}
         />
       )}
       {data?.approval && (
@@ -915,7 +928,9 @@ export default function PaperWorkspace({ state }: { state: State }) {
         <section className="card">
           <div className="card-header">
             <div>
-              <h2>Your weekly review</h2>
+              <h2>
+                {monthly ? "Your month-end review" : "Your weekly review"}
+              </h2>
               <p>
                 Preparation reconciles fills, refreshes membership and market
                 inputs, and saves a review. Approval confirms broker acceptance
@@ -931,7 +946,9 @@ export default function PaperWorkspace({ state }: { state: State }) {
                 }
                 onClick={() => action.mutate({ path: "/actions/prepare" })}
               >
-                Prepare weekly paper review
+                {monthly
+                  ? "Prepare month-end paper review"
+                  : "Prepare weekly paper review"}
                 <ArrowRight size={16} />
               </button>
             )}
@@ -1345,11 +1362,13 @@ function Approval({
   connected,
   onApprove,
   busy,
+  monthly,
 }: {
   cfg: Config;
   connected: boolean;
   onApprove: (body: unknown) => void;
   busy: boolean;
+  monthly: boolean;
 }) {
   const [ack, setAck] = useState(false);
   const phrase = `APPROVE PAPER ${cfg.strategy_id} ${cfg.strategy_version}`;
@@ -1422,8 +1441,9 @@ function Approval({
         </label>
         <label className="check-label">
           <input type="checkbox" name="allow_automatic" />
-          Also permit automatic weekly PAPER preparation and staging under this
-          exact policy while Aperture is open.
+          Also permit automatic {monthly ? "month-end" : "weekly"} PAPER
+          preparation and staging under this exact policy while Aperture is
+          open.
         </label>
         <button className="button" disabled={!connected || !ack || busy}>
           Record paper strategy approval

@@ -756,12 +756,12 @@ function DataPage({
         <div className="card education">
           <h3>What about automatic downloads?</h3>
           <p>
-            Weekly paper preparation refreshes S&P membership, backfills new
-            members and updates prices and required SEC filings. Ordinary weekly
-            use needs no separate Data download. Membership changes pause for
-            your review and new approval. Keep Aperture open through preparation
-            and confirmed order acceptance; Alpaca then holds the orders while
-            your Mac is off.
+            Paper preparation refreshes S&P membership, backfills new members
+            and updates prices and required SEC filings. Ordinary paper use
+            needs no separate Data download. Membership changes pause for your
+            review and new approval. Keep Aperture open through preparation and
+            confirmed order acceptance; Alpaca then holds the orders while your
+            Mac is off.
           </p>
         </div>
       </div>
@@ -1091,7 +1091,7 @@ function ActivityPage({
                         review: "Prepare allocation review",
                         validation: "Evaluate frozen research protocol",
                         paper_sync: "Reconcile paper account",
-                        paper_prepare: "Prepare weekly paper review",
+                        paper_prepare: "Prepare paper review",
                         paper_cancel: "Cancel Aperture paper orders",
                       }[job.kind] ?? job.kind}
                       {job.strategy_id &&

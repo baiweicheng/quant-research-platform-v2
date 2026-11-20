@@ -360,7 +360,7 @@ def create_app(
 
     @app.post("/api/paper/actions/{kind}", status_code=202)
     def paper_action(kind: Literal["sync", "prepare", "cancel", "stop", "resume"]):
-        from .paper import configuration, stop, resume
+        from .paper import configuration, preparation_session, stop, resume
 
         if kind == "stop":
             stop(store)
@@ -368,18 +368,19 @@ def create_app(
         if kind == "resume":
             return resume(store)
         cfg = configuration(store)
+        payload = {"config_hash": cfg["hash"] if cfg else None}
         if kind == "prepare":
             if not cfg:
                 raise ResearchError(
                     "Save your paper strategy, universe and risk settings first."
                 )
-            paper_strategy(cfg["strategy_id"])
+            recipe = paper_strategy(cfg["strategy_id"])
+            if recipe.get("frequency") == "monthly":
+                payload["decision_session"] = str(preparation_session(recipe))
         settings().headers()
         if kind == "cancel":
             stop(store)
-        return store.enqueue(
-            "paper_" + kind, {"config_hash": cfg["hash"] if cfg else None}
-        )
+        return store.enqueue("paper_" + kind, payload)
 
     @app.post("/api/paper/plans/{identifier}/approve")
     def approve_rebalance(identifier: str, payload: RebalanceApprovalRequest):

@@ -54,6 +54,12 @@ def latest_complete(now: datetime | None = None) -> date:
     )
 
 
+def rebalance_period(session: date, frequency: str) -> tuple[int, int]:
+    if frequency == "weekly":
+        return session.isocalendar()[:2]
+    return session.year, session.month
+
+
 def decision_sessions(days: list[date], frequency: str) -> set[date]:
     """Initial decision, then the last actual session in each calendar period."""
     if not days:
@@ -62,8 +68,7 @@ def decision_sessions(days: list[date], frequency: str) -> set[date]:
         return set(days)
     groups: dict[tuple[int, ...], date] = {}
     for day in days:
-        key = day.isocalendar()[:2] if frequency == "weekly" else (day.year, day.month)
-        groups[key] = day
+        groups[rebalance_period(day, frequency)] = day
     return {days[0], *groups.values()}
 
 

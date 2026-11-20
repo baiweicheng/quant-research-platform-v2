@@ -1,6 +1,6 @@
 # Aperture
 
-A local research and paper-trading workspace for weekly, long-only US equity strategies. Built from scratch with a React/TypeScript interface and a Python calculation worker.
+A local research and paper-trading workspace for weekly and monthly long-only US equity strategies. Built from scratch with a React/TypeScript interface and a Python calculation worker.
 
 Includes captured market/SEC inputs, reproducible backtests and research validation, and version-approved manual/automatic **Alpaca paper trading**. Live trading is unavailable. Each strategy, policy and account needs explicit approval; building or backtesting a strategy never activates it.
 
@@ -44,7 +44,7 @@ The app opens empty. Practice data is never silently loaded. Account metrics rem
 - Saved backtests, comparison, SPY benchmark, common chart periods, and read-only current allocation reviews.
 - Searchable research management with previewed individual/bulk deletion of backtests, allocation reviews, validation outputs, task history and datasets; linked inputs and paper audit records are protected. See [research cleanup](docs/RESEARCH_LIBRARY.md).
 - Frozen research protocols, forward windows, cost/allocation/frequency sensitivity, trial audits, exposure labels and once-only final-test release.
-- Paper account reconciliation, immutable reviews and explicit strategy/policy approvals; manual and automatic weekly modes.
+- Paper account reconciliation, immutable reviews and explicit strategy and policy approvals. Manual and automatic modes follow the selected strategy's cadence.
 - Broker-staged Market DAY orders with explicit paper-margin funding, durable client references, partial/rejected/uncertain-order handling, stop/cancel controls and restart reconciliation.
 - Actual broker holdings/equity, daily cash-flow-adjusted estimates and SPY comparison with explicit simulator limits.
 - Approved Weekly Focus layout, responsive top navigation, empty/error states and explanations.
@@ -68,9 +68,9 @@ AI-assisted discovery and broader operational reliability/automation remain futu
 ## Start paper trading deliberately
 
 1. Configure paper keys/contact below, then **Portfolio → Paper portfolio → Refresh paper account**. The app reads the actual account; it never resets its balance. Use a dedicated long-only USD paper account.
-2. Save the strategy, stock universe, history start, risk policy and mode. Manual is selected initially. Suggested limits remain proposals until explicitly approved.
+2. Save the strategy, stock universe, history start, risk policy and mode. All seven active strategies are selectable. Manual is selected initially. Suggested limits remain proposals until explicitly approved.
 3. Review research, validation and data limits. Record explicit paper approval with the exact displayed strategy/version phrase and a rationale. Automatic operation needs its separate permission checkbox.
-4. Select **Prepare weekly paper review**. This single task reconciles the account, refreshes membership, backfills new members and updates prices/required SEC filings before freezing proposed targets/orders. A changed index list requires adoption and new approval.
+4. Select **Prepare weekly paper review** or **Prepare month-end paper review**, as shown for the strategy. This task reconciles the account, refreshes membership, backfills new members and updates prices and SEC filings before freezing proposed targets and orders. Month-end reviews must be prepared and approved after the month's final exchange session becomes available and before the next regular open. A changed index list requires adoption and new approval.
 5. In manual mode, inspect the specific review and separately approve its following-session paper rebalance. Keep Aperture running until all Market DAY instructions are confirmed accepted at Alpaca. You may then close it; the next launch checks fills, cash and positions. Actual fill prices may differ, and paper margin can bridge sale proceeds under an explicitly approved policy. A simulated debit can remain overnight; new settings default to a 5% cash reserve.
 6. Use **Stop future submissions**, **Stop & cancel Aperture orders**, account refresh and the order lifecycle table when anything needs attention. Cancellation can race fills and never reverses a fill.
 7. A new paper account has a separate identity/baseline and inherits no strategy approval. Update its keys privately and refresh/reapprove before use.
