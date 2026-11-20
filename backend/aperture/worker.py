@@ -57,7 +57,7 @@ def execute(store: Store, job: dict):
         from .paper import (
             Broker,
             prepare,
-            preparation_session,
+            preparation_window,
             cancel_pending,
             schedule,
             configuration,
@@ -66,8 +66,12 @@ def execute(store: Store, job: dict):
 
         if job["kind"] == "paper_prepare" and (cfg := configuration(store)):
             recipe = paper_strategy(cfg["strategy_id"])
-            if "decision_session" in payload or recipe.get("frequency"):
-                preparation_session(recipe, payload.get("decision_session"))
+            if (
+                "decision_session" in payload
+                or recipe.get("frequency")
+                or payload.get("catch_up")
+            ):
+                preparation_window(recipe, payload)
         broker = Broker()
         try:
             if job["kind"] == "paper_sync":

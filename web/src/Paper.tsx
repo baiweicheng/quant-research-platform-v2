@@ -60,6 +60,7 @@ type Plan = {
   source_digest: string;
   decision_session: string;
   execute_session: string;
+  catch_up?: { original_execution_session: string; reference_session: string };
   last_execution_session: string;
   strategy: Pick<Strategy, "id" | "name" | "version" | "variant_of">;
   cash_weight: string;
@@ -127,6 +128,7 @@ type Performance = {
 type PaperState = {
   config?: Config | null;
   frequency?: "monthly" | "weekly";
+  catch_up?: { decision_session: string; execute_session: string } | null;
   archived_strategy?: string | null;
   snapshot?: PaperSnapshot | null;
   approval?: {
@@ -273,6 +275,7 @@ export function PaperWeekly({ onPortfolio }: { onPortfolio: () => void }) {
   const data = q.data;
   const cfg = data?.config;
   const monthly = data?.frequency === "monthly";
+  const catchUp = data?.catch_up;
   const latest = data?.plans?.[0];
   const reviewExisting = data?.plans.some(
     (p) =>
@@ -298,7 +301,8 @@ export function PaperWeekly({ onPortfolio }: { onPortfolio: () => void }) {
       <p>
         Reconcile the account, update prices and filings, validate inputs and
         save an allocation with proposed paper orders.
-        {monthly && " Prepare after the final trading close of the month."}
+        {monthly &&
+          " Aim to rebalance at month-end. Manual catch-up is available for up to seven calendar days after the scheduled open."}
       </p>
       <div className="weekly-steps">
         <span>Reconcile</span>
@@ -318,7 +322,9 @@ export function PaperWeekly({ onPortfolio }: { onPortfolio: () => void }) {
           disabled={act.isPending}
           onClick={() =>
             cfg && !data?.archived_strategy && !reviewExisting
-              ? act.mutate({ path: "/actions/prepare" })
+              ? act.mutate({
+                  path: catchUp ? "/actions/catch-up" : "/actions/prepare",
+                })
               : onPortfolio()
           }
         >
@@ -327,9 +333,11 @@ export function PaperWeekly({ onPortfolio }: { onPortfolio: () => void }) {
             : data?.archived_strategy
               ? "Choose a paper strategy"
               : cfg
-                ? monthly
-                  ? "Prepare month-end paper review"
-                  : "Prepare weekly paper review"
+                ? catchUp
+                  ? "Prepare month-end catch-up"
+                  : monthly
+                    ? "Prepare month-end paper review"
+                    : "Prepare weekly paper review"
                 : "Set up paper trading"}
           <ArrowRight size={16} />
         </button>
@@ -357,6 +365,7 @@ export default function PaperWorkspace({ state }: { state: State }) {
     (s) => s.id === cfg?.strategy_id,
   );
   const monthly = data?.frequency === "monthly";
+  const catchUp = data?.catch_up;
   const archivedStrategy = data?.archived_strategy;
   const canResume = cfg?.paused && !archivedStrategy;
   const snap = data?.snapshot;
@@ -850,7 +859,7 @@ export default function PaperWorkspace({ state }: { state: State }) {
               {!archivedStrategy && (
                 <p>
                   {monthly
-                    ? "Prepare and approve after data is available for the final trading session of the month and before the next regular open. Automatic preparation uses the same window and requires separate approval."
+                    ? "Ideally, prepare at month-end after the final session’s data is available and stage before the next regular open. If you miss it, prepare a manual catch-up after a later session’s data is available, for an open within seven calendar days of the originally scheduled open."
                     : selectedStrategy?.variant_of
                       ? "Prepare and approve after data is available for the final trading session of the week and before the next regular open. Automatic preparation uses the same window and requires separate approval."
                       : cfg.execution_version === "paper-broker-market-day-v1"
@@ -947,17 +956,30 @@ export default function PaperWorkspace({ state }: { state: State }) {
                 disabled={
                   action.isPending || data?.fill_check?.status === "checking"
                 }
-                onClick={() => action.mutate({ path: "/actions/prepare" })}
+                onClick={() =>
+                  action.mutate({
+                    path: catchUp ? "/actions/catch-up" : "/actions/prepare",
+                  })
+                }
               >
-                {monthly
-                  ? "Prepare month-end paper review"
-                  : "Prepare weekly paper review"}
+                {catchUp
+                  ? "Prepare month-end catch-up"
+                  : monthly
+                    ? "Prepare month-end paper review"
+                    : "Prepare weekly paper review"}
                 <ArrowRight size={16} />
               </button>
             )}
           </div>
           <div className="card-body">
             <p>{data?.automatic_status}</p>
+            {catchUp && (
+              <p>
+                Manual catch-up is available for the {catchUp.decision_session}{" "}
+                month-end signal and targets the {catchUp.execute_session}{" "}
+                regular open.
+              </p>
+            )}
             {p &&
               data?.quote_waits?.plan_id === p.id &&
               data.quote_waits.reasons.length > 0 && (
@@ -1001,6 +1023,14 @@ export default function PaperWorkspace({ state }: { state: State }) {
                   execution {p.execute_session}. Target cash{" "}
                   {percent(Number(p.cash_weight))}.
                 </p>
+                {p.catch_up && (
+                  <Notice>
+                    Manual catch-up for the missed{" "}
+                    {p.catch_up.original_execution_session} open. Orders use
+                    reconciled holdings and {p.catch_up.reference_session}{" "}
+                    closing prices. Aim to rebalance at month-end.
+                  </Notice>
+                )}
                 <p>
                   Frozen account value {money(p.account.equity)} ·{" "}
                   {p.dataset_name}

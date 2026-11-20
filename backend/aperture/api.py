@@ -359,8 +359,10 @@ def create_app(
         return apply_membership_update(store)
 
     @app.post("/api/paper/actions/{kind}", status_code=202)
-    def paper_action(kind: Literal["sync", "prepare", "cancel", "stop", "resume"]):
-        from .paper import configuration, preparation_session, stop, resume
+    def paper_action(
+        kind: Literal["sync", "prepare", "catch-up", "cancel", "stop", "resume"],
+    ):
+        from .paper import configuration, preparation_window, stop, resume
 
         if kind == "stop":
             stop(store)
@@ -369,18 +371,25 @@ def create_app(
             return resume(store)
         cfg = configuration(store)
         payload = {"config_hash": cfg["hash"] if cfg else None}
-        if kind == "prepare":
+        if kind in {"prepare", "catch-up"}:
             if not cfg:
                 raise ResearchError(
                     "Save your paper strategy, universe and risk settings first."
                 )
             recipe = paper_strategy(cfg["strategy_id"])
-            if recipe.get("frequency"):
-                payload["decision_session"] = str(preparation_session(recipe))
+            if kind == "catch-up":
+                payload["catch_up"] = True
+            if recipe.get("frequency") or payload.get("catch_up"):
+                window = preparation_window(recipe, payload)
+                payload["decision_session"] = str(window.decision)
+                if window.original_execution:
+                    payload["reference_session"] = str(window.reference)
         settings().headers()
         if kind == "cancel":
             stop(store)
-        return store.enqueue("paper_" + kind, payload)
+        return store.enqueue(
+            "paper_prepare" if kind == "catch-up" else "paper_" + kind, payload
+        )
 
     @app.post("/api/paper/plans/{identifier}/approve")
     def approve_rebalance(identifier: str, payload: RebalanceApprovalRequest):

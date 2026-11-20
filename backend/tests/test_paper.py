@@ -18,6 +18,8 @@ from aperture.paper import (
     approve_strategy,
     cancel_pending,
     configuration,
+    month_end_catch_up,
+    month_end_used,
     orders,
     plan,
     prepare,
@@ -26,6 +28,7 @@ from aperture.paper import (
     revoke,
     save_configuration,
     schedule,
+    set_state,
     stop,
     tick,
 )
@@ -635,6 +638,292 @@ def test_weekly_versions_bind_distinct_approval_and_holiday_session(
         late = client.post("/api/paper/actions/prepare")
         assert late.status_code == 422 and "week-end" in late.text
         assert not broker.submissions
+
+
+def test_month_end_catch_up_includes_seventh_day_and_respects_exchange_calendar():
+    october = date(2026, 10, 30)
+    original = date(2026, 11, 2)
+    assert month_end_catch_up(calendar.available_time(october)) is None
+    assert month_end_catch_up(calendar.open_time(original)) is None
+    first = month_end_catch_up(calendar.available_time(original))
+    assert (first.decision, first.reference, first.execution) == (
+        october,
+        original,
+        date(2026, 11, 3),
+    )
+    last = month_end_catch_up(calendar.available_time(date(2026, 11, 6)))
+    assert last.original_execution == original and last.execution == date(2026, 11, 9)
+    assert month_end_catch_up(calendar.open_time(last.execution)) is None
+    assert month_end_catch_up(calendar.available_time(last.execution)) is None
+    january = month_end_catch_up(calendar.available_time(date(2027, 1, 4)))
+    assert (january.decision, january.original_execution, january.execution) == (
+        date(2026, 12, 31),
+        date(2027, 1, 4),
+        date(2027, 1, 5),
+    )
+
+
+def test_month_end_catch_up_distinguishes_canceled_order_from_partial_fill():
+    review = {
+        "id": "month-end",
+        "account_key": "one",
+        "state": "blocked",
+        "strategy": {"frequency": "monthly"},
+        "decision_session": "2026-10-30",
+    }
+    canceled = {
+        "plan_id": "month-end",
+        "state": "canceled",
+        "broker": {"filled_qty": "0"},
+    }
+    assert not month_end_used([review], [canceled], "one", "2026-10-30")
+    partially_filled = {**canceled, "broker": {"filled_qty": "0.25"}}
+    assert month_end_used([review], [partially_filled], "one", "2026-10-30")
+    assert not month_end_used(
+        [review], [partially_filled], "different account", "2026-10-30"
+    )
+
+
+def test_paper_worker_rejects_catch_up_if_reference_session_advanced(
+    paper, monkeypatch
+):
+    store, broker, old = paper
+    cfg = save_configuration(
+        store,
+        {
+            **old["policy"],
+            "strategy_id": "profitable_liquidity_leaders",
+            "mode": "manual",
+            "execution": "broker_market",
+            "symbols": old["symbols"],
+            "max_drift": old["max_drift"],
+            "data_start": old["data_start"],
+        },
+    )
+    store.enqueue(
+        "paper_prepare",
+        {
+            "config_hash": cfg["hash"],
+            "catch_up": True,
+            "decision_session": "2026-10-30",
+            "reference_session": "2026-11-02",
+        },
+    )
+    broker.at = calendar.available_time(date(2026, 11, 3))
+    monkeypatch.setattr(
+        "aperture.paper.Broker", lambda: pytest.fail("Stale job contacted broker")
+    )
+    assert process_one(store)
+    (job,) = store.jobs()
+    assert job["state"] == "failed" and "catch-up session changed" in job["message"]
+
+
+@pytest.mark.parametrize("reuse_saved", [False, True])
+def test_manual_catch_up_keeps_month_end_signal_and_rebuilds_orders(
+    paper, monkeypatch, reuse_saved
+):
+    store, broker, old = paper
+    decision = date(2026, 10, 30)
+    reference = date(2026, 11, 2)
+    cfg = save_configuration(
+        store,
+        {
+            **old["policy"],
+            "strategy_id": "earnings_market_regime",
+            "mode": "automatic",
+            "execution": "broker_market",
+            "max_drift": old["max_drift"],
+            "symbols": old["symbols"],
+            "data_start": old["data_start"],
+        },
+    )
+    source = store.dataset("prices")
+    first = store.save_dataset(
+        replace(
+            source,
+            id="first",
+            digest="month-end",
+            bars={
+                s: tuple(b for b in bars if b.session <= decision)
+                for s, bars in source.bars.items()
+            },
+        ),
+        b"month end",
+        [],
+    )
+    second = store.save_dataset(
+        replace(
+            source,
+            id="second",
+            digest="later",
+            bars={
+                **source.bars,
+                "AAPL": (
+                    *source.bars["AAPL"][:-1],
+                    replace(
+                        source.bars["AAPL"][-1],
+                        open=D(125),
+                        high=D(125),
+                        low=D(125),
+                        close=D(125),
+                    ),
+                ),
+            },
+        ),
+        b"later close",
+        [],
+    )
+    signal_calls = []
+
+    def month_end_rank(ds, identifier, as_of, *, factor_audit):
+        assert as_of == decision
+        signal_calls.append(ds.id)
+        factor_audit["market_regime"] = {"state": "weak"}
+        return [RankedStock("AAPL", 1, "Technology", {"market_state": "weak"})], []
+
+    monkeypatch.setattr("aperture.paper.rank", month_end_rank)
+    if reuse_saved:
+        broker.at = calendar.available_time(decision)
+        monkeypatch.setattr("aperture.bundles.download", lambda *a, **kw: first)
+        earlier = prepared((store, broker, cfg))
+    else:
+        earlier = None
+    broker.at = calendar.available_time(reference)
+    broker.held["AAPL"] = D(7)
+    reconcile(store, broker)
+    allow(store, True)
+    tick(store, broker.at, broker)
+    assert not store.jobs(), "Automatic execution must never queue a catch-up"
+    assert public_state(store)["catch_up"] == {
+        "decision_session": "2026-10-30",
+        "execute_session": "2026-11-03",
+    }
+    monkeypatch.setattr("aperture.bundles.download", lambda *a, **kw: second)
+    monkeypatch.setattr("aperture.api.settings", lambda: Settings("test", "test"))
+    monkeypatch.setattr("aperture.paper.Broker", lambda: broker)
+    with TestClient(
+        create_app(store.path, None), headers={"X-Aperture-Client": "1"}
+    ) as client:
+        assert client.post("/api/paper/actions/prepare").status_code == 422
+        response = client.post("/api/paper/actions/catch-up")
+        assert response.status_code == 202
+        assert json.loads(response.json()["payload"]) == {
+            "catch_up": True,
+            "config_hash": cfg["hash"],
+            "decision_session": "2026-10-30",
+            "reference_session": "2026-11-02",
+        }
+    assert process_one(store)
+    catch = public_state(store)["plans"][0]
+    assert catch["state"] == "prepared" and not broker.submissions
+    assert catch["dataset_id"] == second["id"]
+    assert catch["catch_up"] == {
+        "original_execution_session": "2026-11-02",
+        "reference_session": "2026-11-02",
+        "signal_dataset_id": (first if reuse_saved else second)["id"],
+    }
+    assert catch["execute_session"] == catch["last_execution_session"] == "2026-11-03"
+    assert catch["factor_coverage"]["market_regime"]["state"] == "weak"
+    assert signal_calls == [first["id"] if reuse_saved else second["id"]]
+    assert catch["changes"][0]["reference_price"] == "125"
+    assert catch["account"]["positions"][0]["qty"] == "7"
+    if earlier:
+        assert plan(store, earlier["id"])["state"] == "expired"
+        assert catch["targets"] == earlier["targets"]
+    set_state(store, catch["id"], "complete", "Fixture execution complete")
+    assert public_state(store)["catch_up"] is None
+    with pytest.raises(ResearchError, match="already rebalanced"):
+        prepare(
+            store,
+            {"payload": {"config_hash": cfg["hash"], "catch_up": True}},
+            lambda *a: None,
+            broker,
+        )
+
+
+def test_catch_up_ranks_historical_sp500_and_rechecks_current_eligibility(
+    paper, monkeypatch
+):
+    from aperture import membership
+
+    store, broker, old = paper
+    broker.at = calendar.available_time(date(2026, 11, 2))
+    current = {
+        "id": "nov-roster",
+        "members": [{"symbol": "AAPL", "sector": "Technology"}],
+    }
+    history = {
+        "coverage_start": "2026-10-30",
+        "coverage_end": "2026-11-02",
+        "rosters": [
+            {"effective": "2026-10-30", "symbols": ["AAPL", "MSFT"]},
+            {"effective": "2026-11-02", "symbols": ["AAPL"]},
+        ],
+    }
+    monkeypatch.setattr(membership, "fresh", lambda *a, **kw: current)
+    monkeypatch.setattr(
+        membership,
+        "refresh_all",
+        lambda *_: {"current": current, "historical": history},
+    )
+    cfg = save_configuration(
+        store,
+        {
+            **old["policy"],
+            "strategy_id": "profitable_liquidity_leaders",
+            "mode": "manual",
+            "execution": "broker_market",
+            "universe": "sp500",
+            "symbols": [],
+            "max_drift": old["max_drift"],
+            "data_start": old["data_start"],
+        },
+    )
+    summary = store.save_dataset(
+        replace(
+            store.dataset("prices"),
+            id="combined-catch-up",
+            digest="combined",
+            metadata={
+                "provider": "alpaca",
+                "membership": {
+                    "kind": "combined",
+                    "current": current,
+                    "historical": history,
+                    "additional_symbols": [],
+                },
+            },
+        ),
+        b"combined",
+        [],
+    )
+
+    def prices(_store, payload, _progress):
+        assert payload["universe"] == "sp500"
+        assert payload["end"] == "2026-11-02"
+        return summary
+
+    def rank_at_month_end(ds, _recipe, decision, *, factor_audit):
+        assert membership.eligible(ds, decision) == {"AAPL", "MSFT"}
+        return [
+            RankedStock(s, 1, "Technology", {"median_dollar_volume": "100"})
+            for s in ("AAPL", "MSFT")
+        ], []
+
+    monkeypatch.setattr("aperture.bundles.download", prices)
+    monkeypatch.setattr("aperture.paper.rank", rank_at_month_end)
+    outcome = prepare(
+        store,
+        {"payload": {"config_hash": cfg["hash"], "catch_up": True}},
+        lambda *a: None,
+        broker,
+    )
+    view = plan(store, outcome["plan_id"])
+    assert [(t["symbol"], D(t["weight"])) for t in view["targets"]] == [
+        ("AAPL", D(".05"))
+    ]
+    assert D(view["cash_weight"]) == D(".95")
+    assert view["excluded"][0]["symbol"] == "MSFT"
 
 
 def test_archived_paper_config_blocks_new_work_and_reconciles_accepted_order(

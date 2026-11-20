@@ -2,6 +2,7 @@
 
 import hashlib
 import json
+from dataclasses import dataclass, replace
 from datetime import UTC, date, datetime, timedelta
 from decimal import ROUND_DOWN
 from uuid import uuid4
@@ -25,6 +26,15 @@ from .signals import rank
 from .store import decode, encode, now
 
 FINAL = {"complete", "blocked", "stopped", "expired", "superseded"}
+CATCH_UP_DAYS = 7
+
+
+@dataclass(frozen=True)
+class ReviewWindow:
+    decision: date
+    reference: date
+    execution: date
+    original_execution: date | None = None
 
 
 def digest(value):
@@ -89,6 +99,47 @@ def preparation_session(recipe, expected=None):
     if expected is not None and str(latest) != expected:
         raise ResearchError("The decision session changed. Queue a fresh paper review.")
     return latest
+
+
+def month_end_catch_up(at):
+    latest = calendar.latest_complete(at)
+    execution = calendar.next_session(latest)
+    if latest.month != execution.month:
+        return None  # The ordinary month-end decision is now due.
+    month_start = latest.replace(day=1)
+    decision = calendar.sessions(
+        month_start - timedelta(days=10), month_start - timedelta(days=1)
+    )[-1]
+    original = calendar.next_session(decision)
+    if execution <= original + timedelta(days=CATCH_UP_DAYS) and calendar.open_time(
+        original
+    ) <= at < calendar.open_time(execution):
+        return ReviewWindow(decision, latest, execution, original)
+    return None
+
+
+def preparation_window(recipe, payload):
+    if payload.get("catch_up"):
+        if recipe.get("frequency") != "monthly" or payload.get("automatic"):
+            raise ResearchError(
+                "Month-end catch-up is available only for manual monthly reviews."
+            )
+        window = month_end_catch_up(datetime.now(UTC))
+        if not window:
+            raise ResearchError(
+                "Prepare a catch-up after session data is available and before an open within seven calendar days of the original month-end execution."
+            )
+        if payload.get("decision_session", str(window.decision)) != str(
+            window.decision
+        ) or payload.get("reference_session", str(window.reference)) != str(
+            window.reference
+        ):
+            raise ResearchError(
+                "The catch-up session changed. Prepare a fresh catch-up review."
+            )
+        return window
+    latest = preparation_session(recipe, payload.get("decision_session"))
+    return ReviewWindow(latest, latest, calendar.next_session(latest))
 
 
 def execution_deadline(cfg, session):
@@ -412,6 +463,52 @@ def orders(store, identifier=None):
     ]
 
 
+def month_end_used(saved_plans, saved_orders, account_key, decision):
+    batch = {
+        p["id"]
+        for p in saved_plans
+        if p.get("account_key") == account_key
+        and p.get("strategy", {}).get("frequency") == "monthly"
+        and p.get("decision_session") == str(decision)
+    }
+    return any(
+        p["id"] in batch and p["state"] == "complete" for p in saved_plans
+    ) or any(
+        o["plan_id"] in batch
+        and (
+            o["state"] == "filled"
+            or decimal((o.get("broker") or {}).get("filled_qty") or "0") > ZERO
+        )
+        for o in saved_orders
+    )
+
+
+def pending_plans(store, saved_plans, at):
+    pending = []
+    for saved in saved_plans:
+        if saved["state"] in FINAL:
+            continue
+        frequency = saved.get("strategy", {}).get("frequency")
+        if (
+            saved["state"] == "prepared"
+            and frequency
+            and at >= calendar.open_time(date.fromisoformat(saved["execute_session"]))
+        ):
+            period_end = "month-end" if frequency == "monthly" else "week-end"
+            if set_state(
+                store,
+                saved["id"],
+                "expired",
+                f"The {period_end} review expired at the next regular open.",
+                expected_state="prepared",
+            ):
+                continue
+            saved = plan(store, saved["id"])
+        if saved["state"] not in FINAL:
+            pending.append(saved)
+    return pending
+
+
 def public_state(store):
     cfg = configuration(store)
     snap = store.preference("paper_snapshot")
@@ -420,6 +517,16 @@ def public_state(store):
         recipe["name"] if recipe and recipe["id"] in ARCHIVED_STRATEGIES else None
     )
     frequency = recipe.get("frequency", "weekly") if recipe else "weekly"
+    saved_plans, saved_orders = plans(store), orders(store)
+    catch_up = month_end_catch_up(datetime.now(UTC)) if frequency == "monthly" else None
+    if (
+        catch_up
+        and snap
+        and month_end_used(
+            saved_plans, saved_orders, snap["account_key"], catch_up.decision
+        )
+    ):
+        catch_up = None
     with store.connect() as db:
         events = [
             dict(r)
@@ -428,11 +535,17 @@ def public_state(store):
     return {
         "config": cfg,
         "frequency": frequency,
+        "catch_up": {
+            "decision_session": str(catch_up.decision),
+            "execute_session": str(catch_up.execution),
+        }
+        if catch_up
+        else None,
         "archived_strategy": archived_strategy,
         "snapshot": snap,
         "approval": approval(store),
-        "plans": plans(store),
-        "orders": orders(store),
+        "plans": saved_plans,
+        "orders": saved_orders,
         "events": events,
         "quote_waits": store.preference("paper_quote_waits"),
         "performance": store.preference("paper_performance"),
@@ -555,29 +668,59 @@ def prepare(store, job, progress, broker):
         raise ResearchError(
             "The strategy implementation version changed. Save new settings and obtain fresh approval."
         )
-    if cfg["hash"] != job["payload"].get("config_hash"):
+    payload = job["payload"]
+    if cfg["hash"] != payload.get("config_hash"):
         raise ResearchError("Paper settings changed after this preparation was queued.")
-    latest = preparation_session(recipe, job["payload"].get("decision_session"))
-    if any(p["state"] not in FINAL for p in plans(store)):
+    window = preparation_window(recipe, payload)
+    decision, latest = window.decision, window.reference
+    catch_up = window.original_execution is not None
+    saved_plans = plans(store)
+    if pending_plans(store, saved_plans, datetime.now(UTC)):
         raise ResearchError(
             "Review or stop the current paper plan before preparing another."
         )
     snap = reconcile(store, broker)
-    if any(o["state"] not in TERMINAL for o in orders(store)):
+    saved_orders = orders(store)
+    if any(o["state"] not in TERMINAL for o in saved_orders):
         raise ResearchError(
             "Unresolved Aperture orders remain. Reconcile their client IDs or cancel pending orders before preparing another plan."
         )
     ensure_account(snap, cfg)
+    previous = None
+    if catch_up:
+        if month_end_used(saved_plans, saved_orders, snap["account_key"], decision):
+            raise ResearchError(
+                "This account has already rebalanced for that month-end."
+            )
+        previous = next(
+            (
+                p
+                for p in saved_plans
+                if p.get("decision_session") == str(decision)
+                and p.get("account_key") == snap["account_key"]
+                and p.get("config_hash") == cfg["hash"]
+                and not p.get("catch_up")
+            ),
+            None,
+        )
     progress(10, "Paper account reconciled; updating completed-session market data")
     from .bundles import download as download_market
 
     # Current signals need a bounded rolling window, not a repeated ten-year
     # research download. New-member backfills still use the full saved start.
     current_start = (
-        max(date.fromisoformat(cfg["data_start"]), latest - timedelta(days=740))
+        max(date.fromisoformat(cfg["data_start"]), decision - timedelta(days=740))
         if cfg["execution_version"] == "paper-broker-market-day-v1"
         else date.fromisoformat(cfg["data_start"])
     )
+    if (
+        catch_up
+        and not previous
+        and len(calendar.sessions(current_start, decision)) < 253
+    ):
+        raise ResearchError(
+            "The saved backfill start must allow 253 trading sessions through month-end for a catch-up."
+        )
     index = cfg.get("universe") == "sp500"
     if index:
         from . import membership
@@ -641,6 +784,8 @@ def prepare(store, job, progress, broker):
                 "membership_update": pending,
             }
         store.set_preference("paper_membership_update", None)
+        if catch_up and not previous:
+            membership.historical_names(captures["historical"], decision)
     saved = download_market(
         store,
         {
@@ -650,7 +795,9 @@ def prepare(store, job, progress, broker):
             "end": str(latest),
             **(
                 {
-                    "universe": "sp500_current",
+                    "universe": "sp500"
+                    if catch_up and not previous
+                    else "sp500_current",
                     "symbols": cfg.get("supplements", [])
                     + [
                         s
@@ -666,39 +813,105 @@ def prepare(store, job, progress, broker):
     )
     ds = store.dataset(saved["id"])
     if cfg.get("exit_sectors"):
-        from dataclasses import replace
-
         ds = replace(ds, sectors={**ds.sectors, **cfg["exit_sectors"]})
     if ds.kind == "synthetic" or ds.metadata.get("provider") != "alpaca":
         raise ResearchError("Paper preparation requires captured actual Alpaca prices.")
     if max(b.session for rows in ds.bars.values() for b in rows) != latest:
         raise ResearchError("Data is not current through the latest completed session.")
+    if catch_up and index:
+        audit = ds.metadata.get("membership") or {}
+        captured_current = audit.get("current", audit)
+        current_symbols = (
+            {m["symbol"] for m in captured_current.get("members", [])}
+            | set(cfg["supplements"])
+            | {"SPY"}
+        )
+        if current_symbols != old_eligible:
+            raise ResearchError(
+                "S&P membership changed during catch-up preparation. Prepare a new membership review before placing paper orders."
+            )
     factor_audit = {}
-    arguments = (ds, cfg["strategy_id"], latest)
-    if cfg.get("exit_symbols"):
-        arguments += (set(cfg["exit_symbols"]),)
-    ranked, excluded = (
-        rank(*arguments, factor_audit=factor_audit)
-        if cfg["strategy_id"] in {"quality", "quality_value", "value_momentum"}
-        or recipe.get("requires_annual_income")
-        else rank(*arguments)
-    )
-    policy = policy_from(
-        {**cfg["policy"], "positions": int(cfg["policy"]["positions"])}
-    )
-    targets, notes = target_weights(
-        ranked, policy, weight_by_liquidity=uses_liquidity_weights(recipe, ranked)
-    )
+    if previous:
+        targets = {t["symbol"]: decimal(t["weight"]) for t in previous["targets"]}
+        signals = previous["signals"]
+        excluded = list(previous["excluded"])
+        factor_audit = previous.get("factor_coverage", {})
+        notes = []
+    else:
+        signal_data = ds
+        if catch_up and index:
+            # A freshly captured current roster cannot stand in for month-end.
+            membership.historical_names(audit.get("historical"), decision)
+            signal_data = replace(
+                ds,
+                metadata={
+                    **ds.metadata,
+                    "membership": {**audit, "additional_symbols": cfg["supplements"]},
+                },
+            )
+        arguments = (signal_data, cfg["strategy_id"], decision)
+        if cfg.get("exit_symbols") and not (catch_up and index):
+            arguments += (set(cfg["exit_symbols"]),)
+        ranked, excluded = (
+            rank(*arguments, factor_audit=factor_audit)
+            if cfg["strategy_id"] in {"quality", "quality_value", "value_momentum"}
+            or recipe.get("requires_annual_income")
+            else rank(*arguments)
+        )
+        policy = policy_from(cfg["policy"])
+        targets, notes = target_weights(
+            ranked, policy, weight_by_liquidity=uses_liquidity_weights(recipe, ranked)
+        )
+        signals = [
+            {"symbol": s.symbol, "score": s.score, "components": s.components}
+            for s in ranked
+        ]
     if cfg["strategy_id"] in {"quality_value", "value_momentum"} and ds.metadata.get(
         "fundamentals", {}
     ).get("eps_policy"):
         notes.append(ds.metadata["fundamentals"]["share_basis"])
-    for symbol in targets:
-        broker.asset(symbol)
     snap = reconcile(store, broker, performance=True, dataset=ds)
     ensure_account(snap, cfg)
+    if catch_up and month_end_used(
+        saved_plans, orders(store), snap["account_key"], decision
+    ):
+        raise ResearchError("This account has already rebalanced for that month-end.")
+    if previous and previous["account_key"] != snap["account_key"]:
+        raise ResearchError(
+            "The paper account changed. Prepare a fresh catch-up review."
+        )
     equity = decimal(snap["equity"])
     held = {p["symbol"]: decimal(p["qty"]) for p in snap["positions"]}
+    if catch_up:
+        from .lifecycles import closed_names
+        from .research_data import blocked_inputs
+
+        approved = (
+            set(cfg["symbols"])
+            - set(cfg.get("exit_symbols", []))
+            - closed_names(ds, latest)
+        )
+        for symbol in sorted(targets.keys() - approved):
+            del targets[symbol]
+            excluded.append(
+                {
+                    "symbol": symbol,
+                    "reason": "Month-end target is no longer eligible for paper buys. Its weight stays in cash.",
+                }
+            )
+        blocked = blocked_inputs(
+            ds, targets.keys() | held.keys(), decision, latest, "signals"
+        )
+        if blocked:
+            raise ResearchError(
+                "Catch-up prices or actions need verification for: "
+                + ", ".join(sorted(blocked))
+            )
+        notes.append(
+            f"Manual catch-up uses {decision} signals and {latest} reference prices. Prefer to prepare at month-end for the originally scheduled open."
+        )
+    for symbol in sorted(targets.keys() | held.keys()):
+        broker.asset(symbol)
     prices = {
         s: next((b.close for b in reversed(rows) if b.session == latest), None)
         for s, rows in ds.bars.items()
@@ -707,9 +920,7 @@ def prepare(store, job, progress, broker):
     for symbol in sorted(set(held) | set(targets)):
         price = prices.get(symbol)
         if price is None:
-            raise ResearchError(
-                f"{symbol}: the latest held-stock close is unavailable."
-            )
+            raise ResearchError(f"{symbol}: the latest closing price is unavailable.")
         weight = targets.get(symbol, ZERO)
         # A small sizing cushion protects target caps and cash against fees.
         target_qty = (equity * weight * decimal(".999") / price).quantize(
@@ -733,9 +944,6 @@ def prepare(store, job, progress, broker):
                 "reason": "Move toward the approved target; excluded names reduce toward zero.",
             }
         )
-    # Broker eligibility also applies to reductions and holdings.
-    for symbol in held:
-        broker.asset(symbol)
     identifier = str(uuid4())
     body = {
         "id": identifier,
@@ -749,10 +957,21 @@ def prepare(store, job, progress, broker):
         "dataset_name": ds.name,
         "source_digest": ds.digest,
         "strategy": recipe,
-        "decision_session": str(latest),
-        "execute_session": str(calendar.next_session(latest)),
+        "decision_session": str(decision),
+        "execute_session": str(window.execution),
         "last_execution_session": str(
-            calendar.next_session(calendar.next_session(latest))
+            window.execution if catch_up else calendar.next_session(window.execution)
+        ),
+        **(
+            {
+                "catch_up": {
+                    "original_execution_session": str(window.original_execution),
+                    "reference_session": str(latest),
+                    "signal_dataset_id": previous["dataset_id"] if previous else ds.id,
+                }
+            }
+            if catch_up
+            else {}
         ),
         "targets": [
             {"symbol": s, "weight": str(w), "sector": ds.sectors.get(s, "Unknown")}
@@ -761,10 +980,7 @@ def prepare(store, job, progress, broker):
         "changes": changes,
         "cash_weight": str(ONE - sum(targets.values(), ZERO)),
         **({"factor_coverage": factor_audit} if factor_audit else {}),
-        "signals": [
-            {"symbol": s.symbol, "score": s.score, "components": s.components}
-            for s in ranked
-        ],
+        "signals": signals,
         "excluded": excluded,
         "notes": notes
         + [
@@ -813,8 +1029,15 @@ def prepare(store, job, progress, broker):
         raise ResearchError(
             "Paper settings changed during preparation. No plan was published."
         )
-    if recipe.get("frequency") or job["payload"].get("automatic"):
-        preparation_session(recipe, str(latest))
+    if recipe.get("frequency") or payload.get("automatic"):
+        preparation_window(
+            recipe,
+            {
+                **payload,
+                "decision_session": str(decision),
+                "reference_session": str(latest),
+            },
+        )
     stamp = now()
     with store.connect() as db:
         db.execute(
@@ -852,6 +1075,10 @@ def schedule(store, identifier):
         )
     if a["account_key"] != p["account_key"]:
         raise ResearchError("The paper account changed. Prepare a new review.")
+    if p.get("catch_up") and month_end_used(
+        plans(store), orders(store), p["account_key"], p["decision_session"]
+    ):
+        raise ResearchError("This account has already rebalanced for that month-end.")
     from .staged import VERSION
 
     deadline = execution_deadline(cfg, date.fromisoformat(p["execute_session"]))
@@ -1224,26 +1451,7 @@ def tick(store, at=None, broker=None):
     cfg = configuration(store)
     if not cfg:
         return
-    pending = []
-    for saved in plans(store):
-        if saved["state"] in FINAL:
-            continue
-        frequency = saved.get("strategy", {}).get("frequency")
-        if (
-            saved["state"] == "prepared"
-            and frequency
-            and at >= calendar.open_time(date.fromisoformat(saved["execute_session"]))
-        ):
-            period_end = "month-end" if frequency == "monthly" else "week-end"
-            set_state(
-                store,
-                saved["id"],
-                "expired",
-                f"The {period_end} review expired at the next regular open.",
-                expected_state="prepared",
-            )
-            continue
-        pending.append(saved)
+    pending = pending_plans(store, plans(store), at)
     active = next((p for p in pending if p["state"] != "prepared"), None)
     if active:
         b = broker
@@ -1301,7 +1509,7 @@ def tick(store, at=None, broker=None):
     if at >= execution_deadline(cfg, following):
         store.set_preference(
             "paper_auto_status",
-            "The month-end staging window was missed. Waiting for the next month-end."
+            "The month-end staging window was missed. Prepare a catch-up manually if one is available."
             if frequency == "monthly"
             else "The week-end staging window was missed. Waiting for the next week-end."
             if recipe.get("frequency")
