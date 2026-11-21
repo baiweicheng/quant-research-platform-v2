@@ -272,6 +272,15 @@ export type Run = Omit<RunSummary, "metrics"> & {
       start_index: number;
       limited: boolean;
       metrics: Metrics;
+      return_attribution?: {
+        stock_gain: string;
+        trading_cost_impact: string;
+        net_change: string;
+        stock_return: number;
+        trading_cost_contribution: number;
+        net_return: number;
+        benchmark_gross_return?: number;
+      };
     }
   >;
   trades: {

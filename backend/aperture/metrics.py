@@ -10,6 +10,85 @@ from statistics import stdev
 PERIODS = ("1W", "1M", "3M", "6M", "YTD", "1Y", "All")
 
 
+def costs_by_session(
+    trades: list[dict], fixed_slippage: Decimal | None
+) -> dict[str, Decimal] | None:
+    costs: dict[str, Decimal] = {}
+    for fill in trades:
+        if "slippage_cost" in fill:
+            slippage = Decimal(fill["slippage_cost"])
+        else:
+            # Older fixed-cost results save the execution price after slippage.
+            if fixed_slippage is None:
+                return None
+            price = Decimal(fill["price"])
+            multiplier = 1 + (
+                fixed_slippage if fill["side"] == "Buy" else -fixed_slippage
+            )
+            slippage = Decimal(fill["quantity"]) * abs(price - price / multiplier)
+        session = fill["session"]
+        costs[session] = (
+            costs.get(session, Decimal(0)) + Decimal(fill["fee"]) + slippage
+        )
+    return costs
+
+
+def windows_with_attribution(result: dict) -> dict:
+    """Add back the direct debits on the saved holdings path for each period."""
+    policy = result.get("policy", {})
+    fixed_slippage = (
+        Decimal(policy["slippage_bps"]) / 10_000
+        if policy.get("cost_model", "fixed") == "fixed" and "slippage_bps" in policy
+        else None
+    )
+    strategy_costs = costs_by_session(result["trades"], fixed_slippage)
+    if strategy_costs is None:
+        return result["windows"]
+    benchmark_costs = (
+        costs_by_session(result["benchmark_trades"], fixed_slippage)
+        if "benchmark_trades" in result
+        else None
+    )
+    curve = result["curve"]
+    last = curve[-1]
+    output = {}
+    for period, window in result["windows"].items():
+        first = curve[window["start_index"]]
+        if first["session"] == last["session"]:
+            output[period] = window
+            continue
+        start, end = first["session"], last["session"]
+        initial = Decimal(first["equity"])
+        net = Decimal(last["equity"]) - initial
+        # The starting close already reflects that session's trades.
+        cost = sum(
+            (value for day, value in strategy_costs.items() if start < day <= end),
+            Decimal(0),
+        )
+        gross = net + cost
+        attribution = {
+            "stock_gain": str(gross),
+            "trading_cost_impact": str(-cost),
+            "net_change": str(net),
+            "stock_return": float(gross / initial),
+            "trading_cost_contribution": float(-cost / initial),
+            "net_return": float(net / initial),
+        }
+        if (
+            benchmark_costs is not None
+            and window["metrics"]["benchmark_return"] is not None
+        ):
+            spy_initial = Decimal(first["benchmark"])
+            spy_cost = sum(
+                value for day, value in benchmark_costs.items() if start < day <= end
+            )
+            attribution["benchmark_gross_return"] = float(
+                (Decimal(last["benchmark"]) - spy_initial + spy_cost) / spy_initial
+            )
+        output[period] = {**window, "return_attribution": attribution}
+    return output
+
+
 def subtract_months(day: date, months: int) -> date:
     index = day.year * 12 + day.month - 1 - months
     year, month = divmod(index, 12)

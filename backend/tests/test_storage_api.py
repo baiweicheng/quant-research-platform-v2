@@ -5,6 +5,7 @@ from aperture import __version__
 from aperture.api import create_app
 from aperture.domain import ResearchError
 from aperture.ingest import parse_csv
+from aperture.metrics import windows
 from aperture.store import Store
 from aperture.worker import process_one
 
@@ -230,6 +231,81 @@ def test_screen_projections_preserve_full_export_and_dated_audit(tmp_path):
     export = client.get(f"/api/results/{identifier}?download=true")
     assert "attachment" in export.headers["content-disposition"]
     assert export.json() == full
+
+
+@pytest.mark.parametrize("legacy", [False, True])
+def test_result_view_attributes_saved_fills_before_truncation(tmp_path, legacy):
+    client = TestClient(create_app(tmp_path / "test.sqlite"))
+    store = client.app.state.store
+    curve = [
+        {
+            "session": day,
+            "equity": equity,
+            "cash": "0",
+            "receivable": "0",
+            "benchmark": spy,
+        }
+        for day, equity, spy in [
+            ("2025-01-03", "1000", "1000"),
+            ("2025-01-06", "1050", "1040"),
+            ("2025-01-13", "1090", "1060"),
+        ]
+    ]
+    buy = {
+        "session": "2025-01-06",
+        "side": "Buy",
+        "price": "101",
+        "quantity": "1",
+        "fee": "1",
+    }
+    sell = {
+        "session": "2025-01-13",
+        "side": "Sell",
+        "price": "99",
+        "quantity": "2",
+        "fee": "1",
+    }
+    body = {
+        "curve": curve,
+        "windows": windows(curve),
+        "trades": [buy] * 51 + [sell],
+        "policy": {"slippage_bps": "100"},
+    }
+    if not legacy:
+        buy["slippage_cost"] = "0.75"
+        sell["slippage_cost"] = "2.25"
+        body["policy"]["cost_model"] = "liquidity-v1"
+        body["benchmark_trades"] = [buy, sell]
+    job = store.enqueue("download", {})
+    store.finish(job, body)
+    path = f"/api/results/{store.jobs()[0]['result_id']}"
+
+    view = client.get(path + "?view=true").json()
+    all_time = view["windows"]["All"]["return_attribution"]
+    week = view["windows"]["1W"]["return_attribution"]
+    total_cost = 105 if legacy else 92.50
+    week_cost = 3 if legacy else 3.25
+    assert len(view["trades"]) == 50
+    assert float(all_time["trading_cost_impact"]) == -total_cost
+    assert float(all_time["stock_gain"]) == 90 + total_cost
+    assert week == {
+        "stock_gain": str(40 + week_cost) if not legacy else "43",
+        "trading_cost_impact": str(-week_cost),
+        "net_change": "40",
+        "stock_return": pytest.approx((40 + week_cost) / 1050),
+        "trading_cost_contribution": pytest.approx(-week_cost / 1050),
+        "net_return": pytest.approx(40 / 1050),
+        **(
+            {"benchmark_gross_return": pytest.approx(23.25 / 1040)}
+            if not legacy
+            else {}
+        ),
+    }
+    if legacy:
+        assert "benchmark_gross_return" not in all_time
+    else:
+        assert all_time["benchmark_gross_return"] == pytest.approx(65 / 1000)
+    assert client.get(path + "?download=true").json()["windows"] == body["windows"]
 
 
 def test_queuing_sec_refresh_uses_summary_without_loading_full_price_history(

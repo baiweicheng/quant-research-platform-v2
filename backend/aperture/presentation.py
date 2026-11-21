@@ -1,6 +1,7 @@
 """Bound screen payloads without changing persisted research or full exports."""
 
 from .domain import ResearchError
+from .metrics import windows_with_attribution
 
 
 def dataset_view(dataset: dict) -> dict:
@@ -50,6 +51,11 @@ def result_view(result: dict, path: str) -> dict:
 
     return {
         **{k: v for k, v in result.items() if k != "input_audit"},
+        **(
+            {"windows": windows_with_attribution(result)}
+            if result.get("windows")
+            else {}
+        ),
         "exposure": result.get("exposure") or summarize(result),
         "audit_path": path,
         "trades": result["trades"][-50:],

@@ -462,6 +462,7 @@ export function RunDetail({
   setPeriod: (p: Period) => void;
 }) {
   const window = run.windows[period];
+  const attribution = window.return_attribution;
   const exposure = displayedExposure(run, period);
   return (
     <>
@@ -593,6 +594,58 @@ export function RunDetail({
           <span>After modeled fees & slippage</span>
         </div>
       </section>
+      {attribution && (
+        <section className="card" aria-labelledby="return-attribution-title">
+          <div className="card-header">
+            <div>
+              <h2 id="return-attribution-title">What drove the return</h2>
+              <p>
+                {shortDate(window.start)} – {shortDate(window.end)}
+              </p>
+            </div>
+          </div>
+          <div className="card-body">
+            <dl className="facts">
+              <div>
+                <dt>Stock gain/loss before costs</dt>
+                <dd>
+                  {money(attribution.stock_gain)} ·{" "}
+                  {percent(attribution.stock_return, true)}
+                </dd>
+              </div>
+              <div>
+                <dt>Trading costs · fees and slippage</dt>
+                <dd>
+                  {money(attribution.trading_cost_impact)} ·{" "}
+                  {points(attribution.trading_cost_contribution)}
+                </dd>
+              </div>
+              <div>
+                <dt>
+                  <strong>Net portfolio change</strong>
+                </dt>
+                <dd>
+                  <strong>
+                    {money(attribution.net_change)} ·{" "}
+                    {percent(attribution.net_return, true)}
+                  </strong>
+                </dd>
+              </div>
+              {attribution.benchmark_gross_return != null && (
+                <div>
+                  <dt>SPY return before costs</dt>
+                  <dd>{percent(attribution.benchmark_gross_return, true)}</dd>
+                </div>
+              )}
+            </dl>
+            <p className="field-hint">
+              Stock gain/loss includes dividends and uses the holdings from this
+              backtest. Position sizes and cash exposure still reflect the
+              original cost assumptions.
+            </p>
+          </div>
+        </section>
+      )}
       {!!run.calendar_year_returns?.length && (
         <section className="card">
           <div className="card-header">
