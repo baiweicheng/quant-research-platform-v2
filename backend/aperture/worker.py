@@ -8,7 +8,7 @@ from datetime import date, datetime, timezone
 from pathlib import Path
 
 from . import __version__, calendar
-from .backtest import run
+from .backtest import run, weekly_model
 from .domain import (
     Policy,
     ResearchError,
@@ -18,7 +18,6 @@ from .domain import (
     runnable_strategy,
 )
 from .ingest import practice_dataset
-from .market_capture import weekly_income_model
 from .periodic_income import research_dataset
 from .portfolio import target_weights, uses_liquidity_weights
 from .signals import rank
@@ -274,9 +273,10 @@ def execute(store: Store, job: dict):
                 f"Dataset ends {end}; the latest completed session is {latest}. Import updated data before preparing a current review."
             )
         factor_coverage = None
-        if recipe.get("requires_periodic_income"):
+        model = weekly_model(dataset, recipe)
+        if model is not None:
             latest, (ranked, excluded, targets, notes, factor_coverage) = (
-                weekly_income_model(dataset, identifier).weekly_review(latest, policy)
+                model.weekly_review(latest, policy)
             )
             notes.append(
                 "Incumbents follow the weekly model selections from the snapshot's default start through its latest completed exchange week."

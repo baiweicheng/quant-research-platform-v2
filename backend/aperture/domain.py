@@ -347,6 +347,20 @@ STRATEGIES = [
         "calendar_year_comparison": True,
         "research_only": True,
     },
+    {
+        "id": "liquidity_breadth",
+        "name": "Liquidity and Breadth",
+        "version": "1.0.0",
+        "category": "Technical",
+        "description": "Favor consistently liquid stocks with steadier intermediate trends. Tilt toward resilient sectors and lower market sensitivity when fewer stocks are in uptrends.",
+        "definition": "Each week, consider the 48 stocks with the highest 126-session median dollar volume. Score liquidity, intermediate total return and recent volatility compression. In weak markets, increase the weight of sector participation above 200-session averages. Select up to 25 stocks with a tracking-risk penalty and an incumbency preference. As market breadth falls, give more weight to stocks with lower 126-session beta to SPY. Apply the shared portfolio caps and trade at the next open.",
+        "inputs": "253 complete daily stock and SPY bars, share volume, corporate actions, and dated universe and sector classifications. All investment signals come from market data.",
+        "risk": "The rule was selected on the default historical window. Its calendar-year results can change with costs, dates and portfolio construction.",
+        "implemented": True,
+        "frequency": "weekly",
+        "calendar_year_comparison": True,
+        "research_only": True,
+    },
 ]
 
 STRATEGIES.extend(

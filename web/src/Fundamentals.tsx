@@ -306,9 +306,11 @@ export function SignalAudit({
   strategyId?: string;
 }) {
   const marketCapture = strategyId === "earnings_market_capture";
+  const liquidityBreadth = strategyId === "liquidity_breadth";
   const available =
     fundamental ||
     marketCapture ||
+    liquidityBreadth ||
     strategyId === "earnings_reaction_tracker" ||
     decisions.some(
       (d) =>
@@ -352,7 +354,7 @@ export function SignalAudit({
           <h2>Why these stocks?</h2>
           <p>Inspect the inputs that were available at each decision.</p>
         </div>
-        <Badge>Filing audit</Badge>
+        <Badge>{liquidityBreadth ? "Technical signals" : "Filing audit"}</Badge>
       </div>
       <div className="card-body form">
         <label>
@@ -371,17 +373,19 @@ export function SignalAudit({
         <p className="field-hint">
           Decided {shortDate(decision.session)} after close · Intended execution{" "}
           {shortDate(decision.execute_session)}.{" "}
-          {marketCapture
-            ? "The strategy combines filed earnings with average daily returns relative to SPY on its weakest and strongest days. It screens by income and liquidity and limits tracking risk when selecting stocks."
-            : trackerAudit
-              ? "The tracker selects from the largest profitable filers using earnings growth, the three-session log return relative to SPY around filing, and portfolio tracking risk."
-              : sessionStrength
-                ? "The ranking combines liquidity and both session signals for liquid stocks with positive filed income."
-                : regime
-                  ? `Market state is ${regime.state}. SPY is ${percent(regime.average_gap, true)} versus its 100-session average, with a ${percent(regime.short_return, true)} 21-session return.`
-                  : incomeAudit
-                    ? "Positive annual net income and a positive trend qualify a stock for the liquidity ranking."
-                    : "Positive factors are required. Blends use average percentile ranks within the jointly eligible stocks. Ties share a rank."}
+          {liquidityBreadth
+            ? "Sector breadth is the share of qualifying stocks above their 200-session averages. Lower market breadth favors smaller SPY betas when sizing positions."
+            : marketCapture
+              ? "The strategy combines filed earnings with average daily returns relative to SPY on its weakest and strongest days. It screens by income and liquidity and limits tracking risk when selecting stocks."
+              : trackerAudit
+                ? "The tracker selects from the largest profitable filers using earnings growth, the three-session log return relative to SPY around filing, and portfolio tracking risk."
+                : sessionStrength
+                  ? "The ranking combines liquidity and both session signals for liquid stocks with positive filed income."
+                  : regime
+                    ? `Market state is ${regime.state}. SPY is ${percent(regime.average_gap, true)} versus its 100-session average, with a ${percent(regime.short_return, true)} 21-session return.`
+                    : incomeAudit
+                      ? "Positive annual net income and a positive trend qualify a stock for the liquidity ranking."
+                      : "Positive factors are required. Blends use average percentile ranks within the jointly eligible stocks. Ties share a rank."}
         </p>
       </div>
       {decision.factor_coverage && (
@@ -421,35 +425,63 @@ export function SignalAudit({
                 {incomeAudit || trackerAudit ? "Stock" : "Stock / rank score"}
               </th>
               <th>
-                {trackerAudit
-                  ? "Filed net income"
-                  : incomeAudit
-                    ? "Annual net income"
-                    : "Gross profit / assets"}
-              </th>
-              <th>
-                {trackerAudit
-                  ? "Scaled income change"
-                  : incomeAudit
-                    ? incomeSignalLabel
-                    : "Annual earnings yield"}
-              </th>
-              <th>
-                {marketCapture
-                  ? "Average daily return vs SPY (log)"
+                {liquidityBreadth
+                  ? "126-session median dollar volume"
                   : trackerAudit
-                    ? "Filing return vs SPY (log)"
+                    ? "Filed net income"
                     : incomeAudit
-                      ? "Median daily dollar volume"
-                      : "12–1 momentum"}
+                      ? "Annual net income"
+                      : "Gross profit / assets"}
               </th>
-              <th>Statement & availability</th>
+              <th>
+                {liquidityBreadth
+                  ? "Intermediate return (log)"
+                  : trackerAudit
+                    ? "Scaled income change"
+                    : incomeAudit
+                      ? incomeSignalLabel
+                      : "Annual earnings yield"}
+              </th>
+              <th>
+                {liquidityBreadth
+                  ? "Volatility ratio"
+                  : marketCapture
+                    ? "Average daily return vs SPY (log)"
+                    : trackerAudit
+                      ? "Filing return vs SPY (log)"
+                      : incomeAudit
+                        ? "Median daily dollar volume"
+                        : "12–1 momentum"}
+              </th>
+              <th>
+                {liquidityBreadth
+                  ? "Sector breadth"
+                  : "Statement & availability"}
+              </th>
+              {liquidityBreadth && <th>Beta to SPY</th>}
             </tr>
           </thead>
           <tbody>
             {decision.signals?.map((stock) => {
               const f = stock.components.filing;
               const income = stock.components.annual_income;
+              if (liquidityBreadth) {
+                const c = stock.components;
+                return (
+                  <tr key={stock.symbol}>
+                    <td>
+                      <strong>{stock.symbol}</strong>
+                      <br />
+                      {stock.score.toFixed(4)}
+                    </td>
+                    <td>{money(Number(c.median_dollar_volume_126))}</td>
+                    <td>{percent(c.intermediate_log_return, true)}</td>
+                    <td>{c.relative_volatility_ratio?.toFixed(2) ?? "—"}</td>
+                    <td>{percent(c.sector_breadth)}</td>
+                    <td>{c.beta_to_spy?.toFixed(2) ?? "—"}</td>
+                  </tr>
+                );
+              }
               if (trackerAudit) {
                 const c = stock.components;
                 return (

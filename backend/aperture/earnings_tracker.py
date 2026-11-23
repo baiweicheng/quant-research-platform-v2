@@ -2,7 +2,7 @@
 
 from bisect import bisect_left, bisect_right
 from collections import Counter
-from datetime import date, timedelta
+from datetime import timedelta
 from decimal import ROUND_DOWN, Decimal
 
 import numpy as np
@@ -159,27 +159,11 @@ class WeeklyIncomeResearch:
                 previous = bar
 
     def weekly_review(self, latest, policy):
-        last = self.dates[latest]
-        while (
-            last >= 0
-            and self.days[last].isocalendar()[:2]
-            == calendar.next_session(self.days[last]).isocalendar()[:2]
-        ):
-            last -= 1
-        first = self.days[0]
-        default_start = (
-            date(first.year + 1, 1, 1)
-            if (first.month, first.day) <= (1, 7)
-            else first + timedelta(days=370)
-        )
-        start = max(252, bisect_left(self.days, default_start))
-        if last < start:
+        decisions = calendar.weekly_review_sessions(self.days, latest, 253)
+        if not decisions:
             raise ResearchError(
                 "A weekly review needs 253 complete sessions and a completed exchange week."
             )
-        decisions = sorted(
-            calendar.decision_sessions(self.days[start : last + 1], "weekly")
-        )
         prior = {}
         for day in decisions[:-1]:
             _, _, prior, _, _ = self.decision(day, policy, prior)

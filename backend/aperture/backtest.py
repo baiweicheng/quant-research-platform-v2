@@ -18,6 +18,7 @@ from .domain import (
 )
 from .ledger import apply_actions, buy, rebalance, reinvest_research_income
 from .lifecycles import recipients
+from .liquidity_breadth import STRATEGY_ID as LIQUIDITY_BREADTH, LiquidityBreadth
 from .market_capture import weekly_income_model
 from .membership import HISTORY_NOTE, validate_coverage
 from .metrics import calendar_year_returns, windows
@@ -26,6 +27,14 @@ from .research_data import blocked_inputs, indexed_issues, security_events
 from .sector_evidence import GICS_SCHEDULE
 from .sectors import HISTORICAL_NOTE, has_sector_history
 from .signals import median_dollar_volume, rank
+
+
+def weekly_model(dataset, recipe):
+    if recipe["id"] == LIQUIDITY_BREADTH:
+        return LiquidityBreadth(dataset)
+    if recipe.get("requires_periodic_income"):
+        return weekly_income_model(dataset, recipe["id"])
+    return None
 
 
 def trailing_dollar_volume(rows, sessions, cutoff):
@@ -230,11 +239,7 @@ def run(
             for symbol in symbols
         }
 
-    tracker = (
-        weekly_income_model(dataset, identifier)
-        if recipe.get("requires_periodic_income")
-        else None
-    )
+    tracker = weekly_model(dataset, recipe)
     previous_targets = {}
     for index, day in enumerate(days):
         today = {

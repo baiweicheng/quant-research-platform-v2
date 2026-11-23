@@ -1,6 +1,7 @@
 """One target-construction policy shared by backtests and weekly reviews."""
 
 from collections import defaultdict
+from collections.abc import Mapping
 from decimal import ROUND_DOWN, Decimal
 
 from .domain import ONE, ZERO, Policy, RankedStock
@@ -18,13 +19,17 @@ def target_weights(
     *,
     weight_by_liquidity: bool = False,
     liquidity_power: Decimal | None = None,
+    weight_scales: Mapping[str, Decimal] | None = None,
 ) -> tuple[dict[str, Decimal], list[str]]:
     selected = ranked[: policy.positions]
     weights = {stock.symbol: ZERO for stock in selected}
     sectors = {stock.symbol: stock.sector or "Unknown" for stock in selected}
     remaining = ONE - policy.cash_reserve
     active = set(weights)
-    scales = {symbol: ONE for symbol in weights}
+    scales = {
+        symbol: ONE if weight_scales is None else weight_scales[symbol]
+        for symbol in weights
+    }
     if weight_by_liquidity and selected:
         volume = {
             stock.symbol: Decimal(stock.components["median_dollar_volume"])

@@ -72,6 +72,23 @@ def decision_sessions(days: list[date], frequency: str) -> set[date]:
     return {days[0], *groups.values()}
 
 
+def weekly_review_sessions(days: list[date], latest: date, warmup: int) -> list[date]:
+    """Replay from the default research start through the last completed week."""
+    last = bisect_right(days, latest) - 1
+    while last >= 0 and rebalance_period(days[last], "weekly") == rebalance_period(
+        next_session(days[last]), "weekly"
+    ):
+        last -= 1
+    first = days[0]
+    default_start = (
+        date(first.year + 1, 1, 1)
+        if (first.month, first.day) <= (1, 7)
+        else first + timedelta(days=370)
+    )
+    start = max(warmup - 1, bisect_left(days, default_start))
+    return sorted(decision_sessions(days[start : last + 1], "weekly"))
+
+
 @lru_cache(maxsize=16)
 def federal_bank_holidays(year: int) -> frozenset[date]:
     """Conservative funding calendar: federal holidays in addition to XNYS closes."""

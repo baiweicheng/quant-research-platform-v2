@@ -49,6 +49,11 @@ export type Signal = {
     momentum?: number;
     eps_asof?: string;
     median_dollar_volume?: string;
+    median_dollar_volume_126?: string;
+    intermediate_log_return?: number;
+    relative_volatility_ratio?: number;
+    sector_breadth?: number;
+    beta_to_spy?: number;
     above_200_session_average?: number;
     income_growth?: number;
     cik?: string;

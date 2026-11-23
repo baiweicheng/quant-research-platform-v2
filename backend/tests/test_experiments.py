@@ -90,6 +90,7 @@ def test_archived_strategy_is_unavailable_to_research_and_queued_jobs(
             "earnings_market_regime",
             "earnings_reaction_tracker",
             "earnings_market_capture",
+            "liquidity_breadth",
         }
         registry = client.get("/api/research/protocols").json()
         if identifier in HIDDEN_STRATEGIES:
