@@ -169,7 +169,10 @@ export default function Research({
                 </div>
                 <span className="eyebrow">{s.category}</span>
                 <h3>{s.name}</h3>
-                <p>{s.description}</p>
+                <p>
+                  {s.description}
+                  {s.frequency === "monthly" && " Rebalances at month-end."}
+                </p>
                 <div className="strategy-foot">
                   <button className="text-link" onClick={() => onInfo(s)}>
                     How it works <Info size={14} />
@@ -189,11 +192,7 @@ export default function Research({
                             state.datasets.length ? onRun(version.id) : onData()
                           }
                         >
-                          {version.variant_of
-                            ? "Backtest weekly"
-                            : version.frequency === "monthly"
-                              ? "Backtest month-end"
-                              : "Backtest"}
+                          {version.variant_of ? "Backtest weekly" : "Backtest"}
                           <ArrowRight size={14} />
                         </button>
                       ))}
