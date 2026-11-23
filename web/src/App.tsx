@@ -409,7 +409,7 @@ function Overview({
               detail={
                 state.runs.length
                   ? `${state.runs.length} reproducible experiments saved`
-                  : "Five strategies, with clear input requirements"
+                  : "Explore strategies and their input requirements"
               }
             />
             <Step

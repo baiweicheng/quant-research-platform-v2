@@ -17,7 +17,7 @@ def batch(tmp_path):
     app.state.store.save_dataset(dataset, raw, warnings)
     payload = {
         "dataset_id": dataset.id,
-        "strategy_ids": ["momentum", "low_volatility"],
+        "strategy_ids": ["momentum", "liquidity_weighted_momentum"],
         "start": "2025-01-06",
         "end": "2025-01-07",
         "capital": "123456",
@@ -43,7 +43,10 @@ def test_one_submission_keeps_common_inputs_and_saves_independent_results(batch)
         }
     repeated = client.post(
         "/api/tasks/backtests",
-        json={**payload, "strategy_ids": ["low_volatility", "momentum", "momentum"]},
+        json={
+            **payload,
+            "strategy_ids": ["liquidity_weighted_momentum", "momentum", "momentum"],
+        },
         headers=HEADER,
     ).json()
     assert {j["id"] for j in repeated["jobs"]} == {j["id"] for j in accepted["jobs"]}

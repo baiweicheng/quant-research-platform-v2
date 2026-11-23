@@ -15,6 +15,7 @@ from . import __version__, annual_income
 
 from .domain import (
     ARCHIVED_STRATEGIES,
+    HIDDEN_STRATEGIES,
     STRATEGIES,
     ResearchError,
     decimal,
@@ -177,9 +178,9 @@ def create_app(
             "version": __version__,
             "datasets": [dataset_view(d) for d in store.datasets()],
             "strategies": [s for s in STRATEGIES if s["id"] not in ARCHIVED_STRATEGIES],
-            "jobs": store.jobs(),
-            "runs": store.results("backtest"),
-            "reviews": store.results("review"),
+            "jobs": store.jobs(exclude_strategies=HIDDEN_STRATEGIES),
+            "runs": store.results("backtest", exclude_strategies=HIDDEN_STRATEGIES),
+            "reviews": store.results("review", exclude_strategies=HIDDEN_STRATEGIES),
             "account": {
                 "connected": bool(snapshot),
                 "planning_capital": "100000",
@@ -275,13 +276,20 @@ def create_app(
     def research_protocols():
         from .experiments import protocols, history
 
+        saved = protocols(store)
+        hidden = {p["id"] for p in saved if p["strategy_id"] in HIDDEN_STRATEGIES}
         with store.connect() as db:
             attempts = db.execute(
                 "SELECT count(*) FROM (SELECT id FROM jobs WHERE kind IN ('backtest','validation') UNION SELECT id FROM research_exposures WHERE kind IN ('backtest','validation'))"
             ).fetchone()[0]
         return {
-            "protocols": protocols(store),
-            "trials": history(store),
+            "protocols": [p for p in saved if p["id"] not in hidden],
+            "hidden_holdouts": [
+                {k: p[k] for k in ("id", "holdout_start", "end")}
+                for p in saved
+                if p["id"] in hidden and p["holdout_state"] == "locked"
+            ],
+            "trials": [t for t in history(store) if t["protocol_id"] not in hidden],
             "workspace_attempts": attempts,
         }
 

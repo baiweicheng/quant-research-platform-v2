@@ -11,6 +11,7 @@ from . import __version__, annual_income, calendar
 from .backtest import run
 from .domain import (
     ARCHIVED_STRATEGIES,
+    HIDDEN_STRATEGIES,
     ResearchError,
     backtest_policy,
     decimal,
@@ -40,8 +41,13 @@ def guard(db, start: str, end: str):
         p = json.loads(row[0])
         if start <= p["end"] and end >= p["holdout_start"]:
             if p["strategy_id"] in ARCHIVED_STRATEGIES:
+                name = (
+                    "a hidden strategy protocol"
+                    if p["strategy_id"] in HIDDEN_STRATEGIES
+                    else p["name"]
+                )
                 raise ResearchError(
-                    f"This period overlaps the locked holdout for {p['name']}. Use its development dates or retire the archived protocol to lift the reservation."
+                    f"This period overlaps the locked holdout for {name}. Use its development dates or retire the archived protocol to lift the reservation."
                 )
             raise ResearchError(
                 f"This period overlaps the locked holdout for {p['name']}. Use its development dates or release its final test once."

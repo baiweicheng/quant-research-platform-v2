@@ -4,7 +4,7 @@ import hashlib
 import json
 import gzip
 
-from .domain import ResearchError
+from .domain import HIDDEN_STRATEGIES, ResearchError
 from .store import decode
 
 KINDS = {"dataset", "result", "protocol", "job"}
@@ -21,12 +21,15 @@ def inventory(store):
     with store.connect() as db:
         items = []
         protocol_names = {}
+        hidden_protocols = set()
         for row in db.execute(
             "SELECT id,kind,created_at,summary FROM results ORDER BY created_at DESC"
         ):
             if row["kind"] not in {"backtest", "review"}:
                 continue
             s = json.loads(row["summary"])
+            if s.get("strategy", {}).get("id") in HIDDEN_STRATEGIES:
+                continue
             items.append(
                 {
                     "kind": "result",
@@ -56,6 +59,9 @@ def inventory(store):
             "SELECT id,body,created_at FROM protocols ORDER BY created_at DESC"
         ):
             p = json.loads(row["body"])
+            if p["strategy_id"] in HIDDEN_STRATEGIES:
+                hidden_protocols.add(row["id"])
+                continue
             protocol_names[row["id"]] = p["name"]
             items.append(
                 {
@@ -73,6 +79,11 @@ def inventory(store):
             if row["kind"].startswith("paper_") or row["kind"] == "connection":
                 continue
             payload = json.loads(row["payload"])
+            if (
+                payload.get("strategy_id") in HIDDEN_STRATEGIES
+                or payload.get("protocol_id") in hidden_protocols
+            ):
+                continue
             items.append(
                 {
                     "kind": "job",
@@ -211,13 +222,23 @@ def _plan(db, targets):
             if kind == "dataset":
                 name = datasets[identifier]["name"]
             elif kind == "protocol":
-                name = protocols[identifier]["name"]
+                p = protocols[identifier]
+                name = (
+                    "Hidden strategy protocol"
+                    if p["strategy_id"] in HIDDEN_STRATEGIES
+                    else p["name"]
+                )
             elif kind == "result":
                 r = results.get(identifier)
                 if not r:
                     continue
                 s = json.loads(r["summary"])
-                name = s.get("strategy", {}).get("name", r["kind"].replace("_", " "))
+                recipe = s.get("strategy", {})
+                name = (
+                    f"Hidden strategy {r['kind']}"
+                    if recipe.get("id") in HIDDEN_STRATEGIES
+                    else recipe.get("name", r["kind"].replace("_", " "))
+                )
             elif kind == "trial":
                 name = trials[identifier]["label"]
             else:

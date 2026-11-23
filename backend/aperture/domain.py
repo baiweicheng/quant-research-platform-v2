@@ -357,7 +357,15 @@ STRATEGIES.extend(
 )
 
 
-ARCHIVED_STRATEGIES = frozenset({"quality", "quality_value"})
+HIDDEN_STRATEGIES = frozenset(
+    {
+        "low_volatility",
+        "profitable_liquidity_leaders_weekly",
+        "session_strength_liquidity_weekly",
+        "earnings_market_regime_weekly",
+    }
+)
+ARCHIVED_STRATEGIES = frozenset({"quality", "quality_value"}) | HIDDEN_STRATEGIES
 
 
 def strategy(identifier: str) -> dict:
@@ -374,8 +382,9 @@ def strategy(identifier: str) -> dict:
 def runnable_strategy(identifier: str) -> dict:
     recipe = strategy(identifier)
     if identifier in ARCHIVED_STRATEGIES:
+        name = "This strategy" if identifier in HIDDEN_STRATEGIES else recipe["name"]
         raise ResearchError(
-            f"{recipe['name']} is archived. Choose an available strategy for new research or paper trading."
+            f"{name} is archived. Choose an available strategy for new research or paper trading."
         )
     return recipe
 

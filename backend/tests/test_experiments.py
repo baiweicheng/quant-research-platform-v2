@@ -7,7 +7,14 @@ import pytest
 from aperture import calendar
 from aperture.api import create_app
 from aperture.backtest import run
-from aperture.domain import Bar, Dataset, Policy, ResearchError, strategy
+from aperture.domain import (
+    HIDDEN_STRATEGIES,
+    Bar,
+    Dataset,
+    Policy,
+    ResearchError,
+    strategy,
+)
 from aperture.experiments import create, enqueue, history, protocol, trial
 from aperture.store import Store
 from aperture.worker import process_one
@@ -54,7 +61,9 @@ def experiment(tmp_path):
     return store, ds, payload
 
 
-@pytest.mark.parametrize("identifier", ["quality", "quality_value"])
+@pytest.mark.parametrize(
+    "identifier", ["quality", "quality_value", *sorted(HIDDEN_STRATEGIES)]
+)
 def test_archived_strategy_is_unavailable_to_research_and_queued_jobs(
     experiment, identifier
 ):
@@ -72,9 +81,8 @@ def test_archived_strategy_is_unavailable_to_research_and_queued_jobs(
     }
     with TestClient(create_app(store.path, None), headers=HEADER) as client:
         state = client.get("/api/state").json()
-        assert {s["id"] for s in state["strategies"] if "variant_of" not in s} == {
+        assert {s["id"] for s in state["strategies"]} == {
             "momentum",
-            "low_volatility",
             "value_momentum",
             "liquidity_weighted_momentum",
             "profitable_liquidity_leaders",
@@ -82,15 +90,12 @@ def test_archived_strategy_is_unavailable_to_research_and_queued_jobs(
             "earnings_market_regime",
             "earnings_reaction_tracker",
         }
-        assert {
-            s["id"]: s["variant_of"] for s in state["strategies"] if "variant_of" in s
-        } == {
-            "profitable_liquidity_leaders_weekly": "profitable_liquidity_leaders",
-            "session_strength_liquidity_weekly": "session_strength_liquidity",
-            "earnings_market_regime_weekly": "earnings_market_regime",
-        }
         registry = client.get("/api/research/protocols").json()
-        assert registry["protocols"][0]["strategy"]["id"] == identifier
+        if identifier in HIDDEN_STRATEGIES:
+            assert not registry["protocols"]
+            assert registry["hidden_holdouts"][0]["id"] == p["id"]
+        else:
+            assert registry["protocols"][0]["strategy"]["id"] == identifier
         for path, body in (
             ("/api/tasks/backtest", task),
             ("/api/tasks/review", task),
@@ -123,6 +128,72 @@ def test_archived_strategy_is_unavailable_to_research_and_queued_jobs(
     assert protocol(store, p["id"])["holdout_state"] == "locked"
 
 
+def test_hidden_research_history_stays_saved_and_holds_reserved_dates(experiment):
+    store, _, data = experiment
+    hidden_id = "low_volatility"
+    p = create(store, data)
+    with store.connect() as db:
+        db.execute(
+            "UPDATE protocols SET body=? WHERE id=?",
+            (
+                json.dumps(
+                    {**p, "strategy_id": hidden_id, "strategy": strategy(hidden_id)}
+                ),
+                p["id"],
+            ),
+        )
+    for kind in ("backtest", "review"):
+        job = store.enqueue(
+            kind,
+            {
+                "strategy_id": hidden_id,
+                "dataset_id": data["dataset_id"],
+                "start": p["start"],
+                "end": p["development_end"],
+            },
+        )
+        store.finish(job, {"strategy": strategy(hidden_id), "exposure": {}})
+    validation = store.enqueue("validation", {"protocol_id": p["id"]})
+    store.fail(validation["id"], "Old validation failure")
+    with store.connect() as db:
+        db.execute(
+            "INSERT INTO trials VALUES (?,?,?,?,?,?,?,'{}',NULL)",
+            (
+                "saved-trial",
+                p["id"],
+                validation["id"],
+                "Baseline",
+                "development",
+                "failed",
+                p["created_at"],
+            ),
+        )
+    backtest = store.results("backtest")[0]
+
+    with TestClient(create_app(store.path, None), headers=HEADER) as client:
+        state = client.get("/api/state").json()
+        assert not state["runs"] and not state["reviews"] and not state["jobs"]
+        registry = client.get("/api/research/protocols").json()
+        assert not registry["trials"]
+        assert not registry["protocols"]
+        assert registry["hidden_holdouts"] == [
+            {"id": p["id"], "holdout_start": p["holdout_start"], "end": p["end"]}
+        ]
+        library = client.get("/api/research/library").json()
+        assert {item["kind"] for item in library["items"]} == {"dataset"}
+        report = client.get(f"/api/results/{backtest['id']}?download=true")
+        assert report.json()["strategy"] == strategy(hidden_id)
+        task = {k: data[k] for k in ("strategy_id", "dataset_id", "start", "end")}
+        blocked = client.post("/api/tasks/backtest", json=task)
+        assert blocked.status_code == 422 and "hidden strategy protocol" in blocked.text
+        assert client.post(f"/api/research/protocols/{p['id']}/retire").is_success
+        assert not client.get("/api/research/protocols").json()["hidden_holdouts"]
+
+    assert store.results("backtest") == [backtest]
+    assert store.results("review")[0]["strategy"]["id"] == hidden_id
+    assert history(store, p["id"])[0]["id"] == "saved-trial"
+
+
 def test_protocol_dates_frozen_disjoint_folds_and_fingerprint(experiment):
     store, ds, data = experiment
     p = create(store, data)
@@ -143,7 +214,7 @@ def test_holdout_guards_other_snapshots_and_all_api_backtests(experiment):
             "backtest",
             {
                 "dataset_id": "different",
-                "strategy_id": "low_volatility",
+                "strategy_id": "liquidity_weighted_momentum",
                 "start": "2024-09-01",
                 "end": "2024-10-01",
             },
@@ -160,7 +231,7 @@ def test_holdout_guards_other_snapshots_and_all_api_backtests(experiment):
             "/api/tasks/backtests",
             json={
                 "dataset_id": data["dataset_id"],
-                "strategy_ids": ["momentum", "low_volatility"],
+                "strategy_ids": ["momentum", "liquidity_weighted_momentum"],
                 "start": data["start"],
                 "end": data["end"],
             },

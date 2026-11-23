@@ -44,6 +44,7 @@ type Trial = {
 };
 type Registry = {
   protocols: Protocol[];
+  hidden_holdouts?: Pick<Protocol, "id" | "holdout_start" | "end">[];
   trials: Trial[];
   workspace_attempts: number;
 };
@@ -109,7 +110,7 @@ export default function Validation({ state }: { state: State }) {
     },
   });
   const retire = useMutation({
-    mutationFn: () => api(`/research/protocols/${protocol?.id}/retire`, {}),
+    mutationFn: (id: string) => api(`/research/protocols/${id}/retire`, {}),
     onSuccess: async () => {
       await client.invalidateQueries({ queryKey: ["protocols"] });
     },
@@ -243,12 +244,25 @@ export default function Validation({ state }: { state: State }) {
         </div>
       </section>
       {registry.error && <Notice error>{registry.error.message}</Notice>}
+      {registry.data?.hidden_holdouts?.map((p) => (
+        <Notice key={p.id}>
+          A hidden strategy reserved the final-test dates from {p.holdout_start}{" "}
+          through {p.end}.{" "}
+          <button
+            className="text-link"
+            disabled={retire.isPending}
+            onClick={() => retire.mutate(p.id)}
+          >
+            Retire protocol and lift its date reservation
+          </button>
+        </Notice>
+      ))}
       {protocol && (
         <section className="card">
           <div className="card-header">
             <div>
               <h2>Your validation record</h2>
-              <p>All attempts and failed trials remain visible.</p>
+              <p>Review saved protocols and their trials.</p>
             </div>
             <button
               className="button small secondary"
@@ -425,18 +439,18 @@ export default function Validation({ state }: { state: State }) {
               <button
                 className="text-link"
                 disabled={retire.isPending}
-                onClick={() => retire.mutate()}
+                onClick={() => retire.mutate(protocol.id)}
               >
                 Retire protocol and lift its date reservation
               </button>
             )}
-            {retire.error && <Notice error>{retire.error.message}</Notice>}
             <p className="digest">
               Protocol fingerprint: {protocol.fingerprint}
             </p>
           </div>
         </section>
       )}
+      {retire.error && <Notice error>{retire.error.message}</Notice>}
       {result.error && <Notice error>{result.error.message}</Notice>}
       {result.data && (
         <RunDetail run={result.data} period={period} setPeriod={setPeriod} />

@@ -12,6 +12,7 @@ from .broker import NY, TERMINAL, Broker, ReconciliationPending
 from .domain import (
     ARCHIVED_STRATEGIES,
     CENT,
+    HIDDEN_STRATEGIES,
     ONE,
     SHARE,
     ZERO,
@@ -513,8 +514,13 @@ def public_state(store):
     cfg = configuration(store)
     snap = store.preference("paper_snapshot")
     recipe = strategy(cfg["strategy_id"]) if cfg else None
+    hidden = bool(recipe and recipe["id"] in HIDDEN_STRATEGIES)
     archived_strategy = (
-        recipe["name"] if recipe and recipe["id"] in ARCHIVED_STRATEGIES else None
+        "The previously selected strategy"
+        if hidden
+        else recipe["name"]
+        if recipe and recipe["id"] in ARCHIVED_STRATEGIES
+        else None
     )
     frequency = recipe.get("frequency", "weekly") if recipe else "weekly"
     saved_plans, saved_orders = plans(store), orders(store)
@@ -542,9 +548,15 @@ def public_state(store):
         if catch_up
         else None,
         "archived_strategy": archived_strategy,
+        "hidden_strategy": hidden,
         "snapshot": snap,
         "approval": approval(store),
-        "plans": saved_plans,
+        "plans": [
+            {**p, "hidden_strategy": True}
+            if p.get("strategy", {}).get("id") in HIDDEN_STRATEGIES
+            else p
+            for p in saved_plans
+        ],
         "orders": saved_orders,
         "events": events,
         "quote_waits": store.preference("paper_quote_waits"),

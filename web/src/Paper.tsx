@@ -63,6 +63,7 @@ type Plan = {
   catch_up?: { original_execution_session: string; reference_session: string };
   last_execution_session: string;
   strategy: Pick<Strategy, "id" | "name" | "version" | "variant_of">;
+  hidden_strategy?: boolean;
   cash_weight: string;
   account: PaperSnapshot;
   targets: { symbol: string; weight: string; sector: string }[];
@@ -130,6 +131,7 @@ type PaperState = {
   frequency?: "monthly" | "weekly";
   catch_up?: { decision_session: string; execute_session: string } | null;
   archived_strategy?: string | null;
+  hidden_strategy?: boolean;
   snapshot?: PaperSnapshot | null;
   approval?: {
     id: string;
@@ -933,7 +935,7 @@ export default function PaperWorkspace({ state }: { state: State }) {
           {new Date(data.approval.created_at).toLocaleString()}.{" "}
           {!archivedStrategy &&
             `Automatic execution: ${data.approval.allow_automatic ? "permitted" : "not permitted"}. `}
-          {data.approval.rationale}
+          {!data.hidden_strategy && data.approval.rationale}
         </Notice>
       )}
       {cfg && (
@@ -1001,7 +1003,10 @@ export default function PaperWorkspace({ state }: { state: State }) {
                   >
                     {data?.plans?.map((p) => (
                       <option key={p.id} value={p.id}>
-                        {p.strategy.name} · {p.decision_session} · {p.state}
+                        {p.hidden_strategy
+                          ? "Hidden strategy"
+                          : p.strategy.name}{" "}
+                        · {p.decision_session} · {p.state}
                       </option>
                     ))}
                   </select>
@@ -1014,8 +1019,8 @@ export default function PaperWorkspace({ state }: { state: State }) {
                 </div>
                 {planArchived && (
                   <Notice>
-                    {p.strategy.name} is archived. This saved plan remains
-                    available for review.
+                    {p.hidden_strategy ? "This strategy" : p.strategy.name} is
+                    archived. This saved plan remains available for review.
                   </Notice>
                 )}
                 <p>
@@ -1178,27 +1183,29 @@ export default function PaperWorkspace({ state }: { state: State }) {
                       </button>
                     </div>
                   )}
-                <details className="details">
-                  <summary>Signals, filings & excluded stocks</summary>
-                  <SignalAudit
-                    strategyId={p.strategy.variant_of ?? p.strategy.id}
-                    fundamental={[
-                      "quality",
-                      "quality_value",
-                      "value_momentum",
-                    ].includes(p.strategy.id)}
-                    decisions={[
-                      {
-                        session: p.decision_session,
-                        execute_session: p.execute_session,
-                        eligible: p.signals?.length ?? 0,
-                        factor_coverage: p.factor_coverage,
-                        signals: p.signals,
-                        exclusions: p.excluded,
-                      },
-                    ]}
-                  />
-                </details>
+                {!p.hidden_strategy && (
+                  <details className="details">
+                    <summary>Signals, filings & excluded stocks</summary>
+                    <SignalAudit
+                      strategyId={p.strategy.variant_of ?? p.strategy.id}
+                      fundamental={[
+                        "quality",
+                        "quality_value",
+                        "value_momentum",
+                      ].includes(p.strategy.id)}
+                      decisions={[
+                        {
+                          session: p.decision_session,
+                          execute_session: p.execute_session,
+                          eligible: p.signals?.length ?? 0,
+                          factor_coverage: p.factor_coverage,
+                          signals: p.signals,
+                          exclusions: p.excluded,
+                        },
+                      ]}
+                    />
+                  </details>
+                )}
                 <button
                   className="button small secondary"
                   onClick={() => download(`paper-plan-${p.id}.json`, p)}

@@ -590,6 +590,14 @@ def test_monthly_schedule_and_queued_review_enforce_month_end(paper, monkeypatch
 def test_weekly_versions_bind_distinct_approval_and_holiday_session(
     paper, monkeypatch, identifier
 ):
+    # Exercise the retained recipes as they would run after re-enabling them.
+    from aperture.domain import ARCHIVED_STRATEGIES, HIDDEN_STRATEGIES
+
+    for module in ("domain", "paper"):
+        monkeypatch.setattr(
+            f"aperture.{module}.ARCHIVED_STRATEGIES",
+            ARCHIVED_STRATEGIES - HIDDEN_STRATEGIES,
+        )
     store, broker, original = paper
     broker.at = calendar.available_time(date(2026, 4, 1))
     reconcile(store, broker)
@@ -926,12 +934,13 @@ def test_catch_up_ranks_historical_sp500_and_rechecks_current_eligibility(
     assert view["excluded"][0]["symbol"] == "MSFT"
 
 
+@pytest.mark.parametrize("strategy_id", ["quality", "low_volatility"])
 def test_archived_paper_config_blocks_new_work_and_reconciles_accepted_order(
-    paper, monkeypatch
+    paper, monkeypatch, strategy_id
 ):
     store, broker, cfg = paper
     data = {
-        "strategy_id": "quality",
+        "strategy_id": strategy_id,
         "mode": "automatic",
         "execution": "local_limit",
         "universe": "custom",
@@ -958,7 +967,11 @@ def test_archived_paper_config_blocks_new_work_and_reconciles_accepted_order(
     with TestClient(
         create_app(store.path, None), headers={"X-Aperture-Client": "1"}
     ) as client:
-        assert client.get("/api/paper").json()["approval"] == recorded_approval
+        state = client.get("/api/paper").json()
+        assert state["approval"] == recorded_approval
+        if strategy_id == "low_volatility":
+            assert state["archived_strategy"] == "The previously selected strategy"
+            assert state["plans"][0]["hidden_strategy"] is True
         for path, body in (
             ("/api/paper/config", data),
             ("/api/paper/actions/prepare", {}),

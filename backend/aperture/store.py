@@ -620,11 +620,19 @@ class Store:
             db.execute("SELECT * FROM jobs WHERE id=?", (identifier,)).fetchone()
         )
 
-    def jobs(self) -> list[dict]:
+    def jobs(self, *, exclude_strategies: frozenset[str] = frozenset()) -> list[dict]:
         with self.connect() as db:
             rows = db.execute(
-                "SELECT id,kind,state,progress,message,created_at,updated_at,result_id,payload FROM jobs ORDER BY created_at DESC LIMIT 50"
-            ).fetchall()
+                """SELECT j.id,j.kind,j.state,j.progress,j.message,j.created_at,
+                          j.updated_at,j.result_id,j.payload
+                   FROM jobs AS j LEFT JOIN protocols AS p
+                     ON j.kind='validation' AND p.id=json_extract(j.payload, '$.protocol_id')
+                   WHERE coalesce(json_extract(j.payload, '$.strategy_id'),
+                                  json_extract(p.body, '$.strategy_id'), '')
+                         NOT IN (SELECT value FROM json_each(?))
+                   ORDER BY j.created_at DESC LIMIT 50""",
+                (json.dumps(sorted(exclude_strategies)),),
+            )
             jobs = []
             for row in rows:
                 job = dict(row)
@@ -723,13 +731,18 @@ class Store:
                     (body["completion_message"], job["id"]),
                 )
 
-    def results(self, kind: str) -> list[dict]:
+    def results(
+        self, kind: str, *, exclude_strategies: frozenset[str] = frozenset()
+    ) -> list[dict]:
         with self.connect() as db:
             summaries = [
                 json.loads(row[0])
                 for row in db.execute(
-                    "SELECT summary FROM results WHERE kind=? ORDER BY created_at DESC",
-                    (kind,),
+                    """SELECT summary FROM results
+                       WHERE kind=? AND coalesce(json_extract(summary, '$.strategy.id'), '')
+                         NOT IN (SELECT value FROM json_each(?))
+                       ORDER BY created_at DESC""",
+                    (kind, json.dumps(sorted(exclude_strategies))),
                 )
             ]
             if kind == "backtest":
