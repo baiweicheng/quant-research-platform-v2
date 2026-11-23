@@ -4,7 +4,6 @@ from decimal import Decimal
 
 import numpy as np
 import pytest
-
 from aperture import calendar, periodic_income
 from aperture.domain import (
     Bar,
@@ -15,6 +14,7 @@ from aperture.domain import (
     paper_strategy,
 )
 from aperture.earnings_tracker import EarningsTracker, _select, _weights
+from aperture.market_capture import EarningsMarketCapture, market_capture
 
 
 def test_periodic_pairs_use_one_original_accession_and_override_stale_income():
@@ -54,7 +54,16 @@ def test_periodic_pairs_use_one_original_accession_and_override_stale_income():
     assert all(r.income is None for r in periodic_income.normalize(company, subs))
 
 
-def test_tracker_uses_only_completed_prices_and_public_comparable_filings():
+@pytest.mark.parametrize(
+    ("strategy_id", "model"),
+    [
+        ("earnings_reaction_tracker", EarningsTracker),
+        ("earnings_market_capture", EarningsMarketCapture),
+    ],
+)
+def test_weekly_income_uses_only_completed_prices_and_public_filings(
+    strategy_id, model
+):
     days = calendar.sessions(date(2023, 1, 3), date(2024, 2, 2))
     day = days[-1]
     prev = days[-2]
@@ -96,7 +105,7 @@ def test_tracker_uses_only_completed_prices_and_public_comparable_filings():
         },
         periodic_income={"1": [report, filed_today]},
     )
-    tracker = EarningsTracker(ds)
+    tracker = model(ds)
     ranked, _, targets, _, audit = tracker.decision(day, Policy())
     assert ranked[0].components["accession"] == "old" and targets == {
         "A": Decimal(".05")
@@ -106,10 +115,21 @@ def test_tracker_uses_only_completed_prices_and_public_comparable_filings():
         bars["A"][-2], available_at=calendar.available_time(day) + timedelta(days=1)
     )
     ds = replace(ds, bars={**bars, "A": (*bars["A"][:-2], unavailable, bars["A"][-1])})
-    assert not EarningsTracker(ds).decision(prev, Policy())[2]
-    assert not EarningsTracker(ds).decision(day, Policy())[2]
+    assert not model(ds).decision(prev, Policy())[2]
+    assert not model(ds).decision(day, Policy())[2]
     with pytest.raises(ResearchError, match="research only"):
-        paper_strategy("earnings_reaction_tracker")
+        paper_strategy(strategy_id)
+
+
+def test_market_capture_measures_relative_returns_in_both_benchmark_tails():
+    market = np.array([-0.045, -0.035, -0.025, -0.015, 0.015, 0.025, 0.035, 0.045])
+    resilient = np.array([0.01, 0.03, 0.1, 0.1, 0.1, 0.1, -0.03, -0.01])
+    offensive = np.array([-0.01, -0.03, -0.1, -0.1, -0.1, -0.1, 0.03, 0.01])
+    weak, strong = market_capture(
+        market, market[:, None] + np.column_stack((resilient, offensive))
+    )
+    assert weak == pytest.approx([0.02, -0.02])
+    assert strong == pytest.approx([-0.02, 0.02])
 
 
 def test_tracking_selection_and_weights_respect_identity_and_binding_caps():

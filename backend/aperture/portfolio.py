@@ -1,7 +1,7 @@
 """One target-construction policy shared by backtests and weekly reviews."""
 
 from collections import defaultdict
-from decimal import Decimal, ROUND_DOWN
+from decimal import ROUND_DOWN, Decimal
 
 from .domain import ONE, ZERO, Policy, RankedStock
 
@@ -13,7 +13,11 @@ def uses_liquidity_weights(recipe: dict, ranked: list[RankedStock]) -> bool:
 
 
 def target_weights(
-    ranked: list[RankedStock], policy: Policy, *, weight_by_liquidity: bool = False
+    ranked: list[RankedStock],
+    policy: Policy,
+    *,
+    weight_by_liquidity: bool = False,
+    liquidity_power: Decimal | None = None,
 ) -> tuple[dict[str, Decimal], list[str]]:
     selected = ranked[: policy.positions]
     weights = {stock.symbol: ZERO for stock in selected}
@@ -22,9 +26,13 @@ def target_weights(
     active = set(weights)
     scales = {symbol: ONE for symbol in weights}
     if weight_by_liquidity and selected:
-        liquidity = {
-            stock.symbol: Decimal(stock.components["median_dollar_volume"]).sqrt()
+        volume = {
+            stock.symbol: Decimal(stock.components["median_dollar_volume"])
             for stock in selected
+        }
+        liquidity = {
+            symbol: value.sqrt() if liquidity_power is None else value**liquidity_power
+            for symbol, value in volume.items()
         }
         largest = max(liquidity.values())
         scales = {symbol: value / largest for symbol, value in liquidity.items()}

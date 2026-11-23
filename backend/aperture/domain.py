@@ -332,6 +332,21 @@ STRATEGIES = [
         "calendar_year_comparison": True,
         "research_only": True,
     },
+    {
+        "id": "earnings_market_capture",
+        "name": "Earnings and Market Capture",
+        "version": "1.0.0",
+        "category": "Technical + fundamental",
+        "description": "Each week, favor liquid, profitable stocks that held up on weak SPY days and participated on strong days.",
+        "definition": "Screen profitable filers by annualized reported income and recent dollar volume. Combine income size and year-over-year growth with each stock’s relative returns on the weakest and strongest 25% of SPY sessions over the past 126 sessions. Select up to 25 stocks, taking tracking risk and existing positions into account. Weight by dollar volume raised to 0.75, subject to the portfolio limits. Decisions execute at the following open.",
+        "inputs": "Comparable original SEC 10-Q or 10-K income, dated issuer evidence, and 253 complete daily bars for stocks and SPY including volume and corporate actions.",
+        "risk": "The rule was selected on the default historical window. Narrow calendar-year leads can change with costs, dates and portfolio construction.",
+        "implemented": True,
+        "requires_periodic_income": True,
+        "frequency": "weekly",
+        "calendar_year_comparison": True,
+        "research_only": True,
+    },
 ]
 
 STRATEGIES.extend(

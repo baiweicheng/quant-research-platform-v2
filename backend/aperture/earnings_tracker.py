@@ -3,7 +3,7 @@
 from bisect import bisect_left, bisect_right
 from collections import Counter
 from datetime import date, timedelta
-from decimal import Decimal, ROUND_DOWN
+from decimal import ROUND_DOWN, Decimal
 
 import numpy as np
 
@@ -16,18 +16,27 @@ from .sectors import sectors_on
 from .signals import percentile_ranks
 
 
-def _select(residual, forecast, sectors, issuers, incumbents, count):
+def _select(
+    residual,
+    forecast,
+    sectors,
+    issuers,
+    incumbents,
+    count,
+    *,
+    risk_aversion=10,
+    incumbent_advantage=0.0132,
+):
     allowed = np.ones(len(forecast), dtype=bool)
     total = np.zeros((len(residual), 1))
     selected = []
     counts = Counter()
-    # Annualized return tilt plus the estimated round-trip debit amortized over a quarter.
-    benefit = forecast + 0.0132 * incumbents
+    benefit = forecast + incumbent_advantage * incumbents
     for size in range(1, count + 1):
         if not np.any(allowed):
             break
         loss = np.mean((total + residual) ** 2, axis=0)
-        utility = benefit - 10 * 252 / (2 * size) * loss
+        utility = benefit - risk_aversion * 252 / (2 * size) * loss
         best = int(np.argmax(np.where(allowed, utility, -np.inf)))
         selected.append(best)
         total += residual[:, best, None]
@@ -75,7 +84,34 @@ def _weights(ranked, residual, forecast, policy):
     }, notes
 
 
-class EarningsTracker:
+def ordinal_percentiles(values):
+    size = len(values)
+    return {
+        symbol: (percentile * (size - 1) + 1) / size
+        for symbol, percentile in percentile_ranks(values).items()
+    }
+
+
+def filing_components(cik, report):
+    return {
+        "cik": cik,
+        "accession": report.accession,
+        "form": report.form,
+        "filed": str(report.filed),
+        "period_end": str(report.end),
+        "period_start": str(report.start),
+        "comparative_start": str(report.prior_start),
+        "comparative_end": str(report.prior_end),
+        "concept": report.concept,
+        **({"source_url": report.source_url} if report.source_url else {}),
+        "income": str(report.income),
+        "prior_income": str(report.previous),
+        "annualized_income": report.scale,
+        "earnings_growth": report.growth,
+    }
+
+
+class WeeklyIncomeResearch:
     def __init__(self, dataset):
         if (
             not dataset.periodic_income
@@ -166,7 +202,7 @@ class EarningsTracker:
         index = bisect_left(dates, day) - 1
         return cik, reports[index] if index >= 0 else None
 
-    def decision(self, day, policy, incumbents=()):
+    def _candidates(self, day):
         ds = self.dataset
         t = self.dates[day]
         cutoff = calendar.available_time(day)
@@ -183,7 +219,7 @@ class EarningsTracker:
         )
         if blocked:
             raise ResearchError(
-                "Unverified earnings-tracker price inputs for "
+                "Unverified weekly income strategy price inputs for "
                 + ", ".join(sorted(blocked)[:12])
                 + "."
             )
@@ -193,10 +229,9 @@ class EarningsTracker:
         )
         if t < 252 or not available[market]:
             raise ResearchError(
-                "Choose a dataset with 253 complete SPY sessions before the first earnings-tracker decision, including the decision close."
+                "Choose a dataset with 253 complete SPY sessions before the first weekly income decision, including the decision close."
             )
         volume = self.traded[t - 19 : t + 1].sum(axis=0) >= 10
-        labels = sectors_on(ds, day)
         candidates = {}
         excluded = []
         stats = {"positive": 0, "nonpositive": 0, "unavailable": 0}
@@ -233,31 +268,34 @@ class EarningsTracker:
                 )
                 continue
             stats["positive"] += 1
-            event = bisect_right(self.days, report.filed)
-            # The three returns end at the first full session after filing.
-            reaction = (
-                self.returns[event - 2 : event + 1, j]
-                - self.returns[event - 2 : event + 1, market]
-            ).sum()
-            candidates[symbol] = (cik, report, float(reaction))
+            candidates[symbol] = (cik, report)
         audit = {
             "members": len(members),
             "assessed": assessed,
             "factors": {"periodic_net_income": stats},
         }
+        return candidates, excluded, audit
+
+
+class EarningsTracker(WeeklyIncomeResearch):
+    def decision(self, day, policy, incumbents=()):
+        candidates, excluded, audit = self._candidates(day)
         if not candidates or policy.cash_reserve == 1:
             return [], excluded, {}, [], audit
-        growth = {s: r.growth for s, (_, r, _) in candidates.items()}
-        news = {s: x for s, (_, _, x) in candidates.items()}
-
-        # Use average ordinal percentiles (ranks 1..N divided by N).
-        def ranks(values):
-            n = len(values)
-            return {
-                s: (p * (n - 1) + 1) / n for s, p in percentile_ranks(values).items()
-            }
-
-        growth_rank, news_rank = ranks(growth), ranks(news)
+        t = self.dates[day]
+        market = self.index["SPY"]
+        labels = sectors_on(self.dataset, day)
+        growth = {s: report.growth for s, (_, report) in candidates.items()}
+        news = {}
+        for symbol, (_, report) in candidates.items():
+            event = bisect_right(self.days, report.filed)
+            # The three returns end at the first full session after filing.
+            interval = self.returns[event - 2 : event + 1]
+            news[symbol] = float(
+                (interval[:, self.index[symbol]] - interval[:, market]).sum()
+            )
+        growth_rank = ordinal_percentiles(growth)
+        news_rank = ordinal_percentiles(news)
         pool = sorted(candidates, key=lambda s: -candidates[s][1].scale)[:50]
         js = [self.index[s] for s in pool]
         sectors = np.array([labels.get(s, "Unknown") for s in pool])
@@ -276,28 +314,15 @@ class EarningsTracker:
         ranked = []
         for k in choice:
             symbol = pool[k]
-            cik, r, reaction = candidates[symbol]
+            cik, report = candidates[symbol]
             ranked.append(
                 RankedStock(
                     symbol,
                     float(forecast[k]),
                     str(sectors[k]),
                     {
-                        "cik": cik,
-                        "accession": r.accession,
-                        "form": r.form,
-                        "filed": str(r.filed),
-                        "period_end": str(r.end),
-                        "period_start": str(r.start),
-                        "comparative_start": str(r.prior_start),
-                        "comparative_end": str(r.prior_end),
-                        "concept": r.concept,
-                        **({"source_url": r.source_url} if r.source_url else {}),
-                        "income": str(r.income),
-                        "prior_income": str(r.previous),
-                        "annualized_income": r.scale,
-                        "earnings_growth": r.growth,
-                        "filing_relative_return": reaction,
+                        **filing_components(cik, report),
+                        "filing_relative_return": news[symbol],
                         "incumbent": bool(held[k]),
                     },
                 )

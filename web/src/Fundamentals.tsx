@@ -305,8 +305,10 @@ export function SignalAudit({
   fundamental?: boolean;
   strategyId?: string;
 }) {
+  const marketCapture = strategyId === "earnings_market_capture";
   const available =
     fundamental ||
+    marketCapture ||
     strategyId === "earnings_reaction_tracker" ||
     decisions.some(
       (d) =>
@@ -328,6 +330,7 @@ export function SignalAudit({
   const decision = auditPath ? (details.data ?? brief) : brief;
   if (!decision) return null;
   const trackerAudit =
+    marketCapture ||
     strategyId === "earnings_reaction_tracker" ||
     !!decision.factor_coverage?.factors.periodic_net_income;
   const incomeAudit =
@@ -368,15 +371,17 @@ export function SignalAudit({
         <p className="field-hint">
           Decided {shortDate(decision.session)} after close · Intended execution{" "}
           {shortDate(decision.execute_session)}.{" "}
-          {trackerAudit
-            ? "The tracker selects from the largest profitable filers using earnings growth, the three-session log return relative to SPY around filing, and portfolio tracking risk."
-            : sessionStrength
-              ? "The ranking combines liquidity and both session signals for liquid stocks with positive filed income."
-              : regime
-                ? `Market state is ${regime.state}. SPY is ${percent(regime.average_gap, true)} versus its 100-session average, with a ${percent(regime.short_return, true)} 21-session return.`
-                : incomeAudit
-                  ? "Positive annual net income and a positive trend qualify a stock for the liquidity ranking."
-                  : "Positive factors are required. Blends use average percentile ranks within the jointly eligible stocks. Ties share a rank."}
+          {marketCapture
+            ? "The strategy combines filed earnings with average daily returns relative to SPY on its weakest and strongest days. It screens by income and liquidity and limits tracking risk when selecting stocks."
+            : trackerAudit
+              ? "The tracker selects from the largest profitable filers using earnings growth, the three-session log return relative to SPY around filing, and portfolio tracking risk."
+              : sessionStrength
+                ? "The ranking combines liquidity and both session signals for liquid stocks with positive filed income."
+                : regime
+                  ? `Market state is ${regime.state}. SPY is ${percent(regime.average_gap, true)} versus its 100-session average, with a ${percent(regime.short_return, true)} 21-session return.`
+                  : incomeAudit
+                    ? "Positive annual net income and a positive trend qualify a stock for the liquidity ranking."
+                    : "Positive factors are required. Blends use average percentile ranks within the jointly eligible stocks. Ties share a rank."}
         </p>
       </div>
       {decision.factor_coverage && (
@@ -430,11 +435,13 @@ export function SignalAudit({
                     : "Annual earnings yield"}
               </th>
               <th>
-                {trackerAudit
-                  ? "Filing return vs SPY (log)"
-                  : incomeAudit
-                    ? "Median daily dollar volume"
-                    : "12–1 momentum"}
+                {marketCapture
+                  ? "Average daily return vs SPY (log)"
+                  : trackerAudit
+                    ? "Filing return vs SPY (log)"
+                    : incomeAudit
+                      ? "Median daily dollar volume"
+                      : "12–1 momentum"}
               </th>
               <th>Statement & availability</th>
             </tr>
@@ -452,7 +459,19 @@ export function SignalAudit({
                     </td>
                     <td>{money(Number(c.income))}</td>
                     <td>{percent(c.earnings_growth, true)}</td>
-                    <td>{percent(c.filing_relative_return, true)}</td>
+                    <td>
+                      {marketCapture ? (
+                        <>
+                          {percent(c.weak_market_relative_return, true)} on weak
+                          days
+                          <br />
+                          {percent(c.strong_market_relative_return, true)} on
+                          strong days
+                        </>
+                      ) : (
+                        percent(c.filing_relative_return, true)
+                      )}
+                    </td>
                     <td>
                       <details>
                         <summary>

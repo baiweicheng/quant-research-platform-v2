@@ -7,25 +7,25 @@ from typing import Callable
 
 from . import __version__, calendar
 from .domain import (
-    Dataset,
     ONE,
     ZERO,
+    Dataset,
     Policy,
     Portfolio,
     ResearchError,
-    strategy,
     decimal,
+    strategy,
 )
-from .earnings_tracker import EarningsTracker
 from .ledger import apply_actions, buy, rebalance, reinvest_research_income
 from .lifecycles import recipients
-from .research_data import blocked_inputs, indexed_issues, security_events
+from .market_capture import weekly_income_model
+from .membership import HISTORY_NOTE, validate_coverage
 from .metrics import calendar_year_returns, windows
-from .membership import validate_coverage, HISTORY_NOTE
 from .portfolio import target_weights, uses_liquidity_weights
-from .signals import median_dollar_volume, rank
+from .research_data import blocked_inputs, indexed_issues, security_events
 from .sector_evidence import GICS_SCHEDULE
 from .sectors import HISTORICAL_NOTE, has_sector_history
+from .signals import median_dollar_volume, rank
 
 
 def trailing_dollar_volume(rows, sessions, cutoff):
@@ -231,7 +231,9 @@ def run(
         }
 
     tracker = (
-        EarningsTracker(dataset) if recipe.get("requires_periodic_income") else None
+        weekly_income_model(dataset, identifier)
+        if recipe.get("requires_periodic_income")
+        else None
     )
     previous_targets = {}
     for index, day in enumerate(days):

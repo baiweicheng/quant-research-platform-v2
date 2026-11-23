@@ -62,6 +62,8 @@ export type Signal = {
     prior_income?: string;
     earnings_growth?: number;
     filing_relative_return?: number;
+    weak_market_relative_return?: number;
+    strong_market_relative_return?: number;
     stock_return?: number;
     daytime_relative_log_return?: number;
     overnight_followthrough_log_return?: number;

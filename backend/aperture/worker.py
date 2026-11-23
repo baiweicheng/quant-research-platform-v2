@@ -18,7 +18,7 @@ from .domain import (
     runnable_strategy,
 )
 from .ingest import practice_dataset
-from .earnings_tracker import EarningsTracker
+from .market_capture import weekly_income_model
 from .periodic_income import research_dataset
 from .portfolio import target_weights, uses_liquidity_weights
 from .signals import rank
@@ -58,12 +58,12 @@ def execute(store: Store, job: dict):
     if job["kind"].startswith("paper_"):
         from .paper import (
             Broker,
-            prepare,
-            preparation_window,
-            cancel_pending,
-            schedule,
-            configuration,
             approval,
+            cancel_pending,
+            configuration,
+            preparation_window,
+            prepare,
+            schedule,
         )
 
         if job["kind"] == "paper_prepare" and (cfg := configuration(store)):
@@ -195,8 +195,8 @@ def execute(store: Store, job: dict):
         )
         return
     if job["kind"] == "connection":
+        from .config import DATA_URL, PAPER_URL
         from .providers import Provider
-        from .config import PAPER_URL, DATA_URL
 
         api = Provider(store)
         try:
@@ -276,7 +276,7 @@ def execute(store: Store, job: dict):
         factor_coverage = None
         if recipe.get("requires_periodic_income"):
             latest, (ranked, excluded, targets, notes, factor_coverage) = (
-                EarningsTracker(dataset).weekly_review(latest, policy)
+                weekly_income_model(dataset, identifier).weekly_review(latest, policy)
             )
             notes.append(
                 "Incumbents follow the weekly model selections from the snapshot's default start through its latest completed exchange week."
@@ -362,7 +362,7 @@ def process_one(store: Store) -> bool:
 
 def reconcile_on_startup(store, broker=None):
     """Read broker-held fills before work, even if approval is paused/revoked."""
-    from .paper import orders, Broker
+    from .paper import Broker, orders
     from .staged import fill_check
 
     if not orders(store):
