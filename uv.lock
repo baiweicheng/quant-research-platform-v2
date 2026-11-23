@@ -43,7 +43,7 @@ wheels = [
 
 [[package]]
 name = "aperture-research"
-version = "0.18.0"
+version = "0.19.0"
 source = { editable = "." }
 dependencies = [
     { name = "exchange-calendars" },

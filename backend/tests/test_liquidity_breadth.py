@@ -2,16 +2,13 @@ from dataclasses import replace
 from datetime import date, timedelta
 from decimal import Decimal
 
-import pytest
 from aperture import calendar
 from aperture.backtest import run
 from aperture.domain import (
     Bar,
     Dataset,
     Policy,
-    ResearchError,
     backtest_policy,
-    paper_strategy,
 )
 from aperture.liquidity_breadth import STRATEGY_ID, LiquidityBreadth
 
@@ -56,5 +53,3 @@ def test_price_only_backtest_matches_cutoff_and_portfolio_caps():
     late_bars = {**bars, name: (*bars[name][:-3], late, *bars[name][-2:])}
     without_late = LiquidityBreadth(replace(dataset, bars=late_bars))
     assert name not in without_late.decision(decision, Policy())[2]
-    with pytest.raises(ResearchError, match="research only"):
-        paper_strategy(STRATEGY_ID)

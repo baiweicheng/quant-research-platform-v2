@@ -84,7 +84,6 @@ def test_archived_strategy_is_unavailable_to_research_and_queued_jobs(
         assert {s["id"] for s in state["strategies"]} == {
             "momentum",
             "value_momentum",
-            "liquidity_weighted_momentum",
             "profitable_liquidity_leaders",
             "session_strength_liquidity",
             "earnings_market_regime",
@@ -133,7 +132,7 @@ def test_archived_strategy_is_unavailable_to_research_and_queued_jobs(
 
 def test_hidden_research_history_stays_saved_and_holds_reserved_dates(experiment):
     store, _, data = experiment
-    hidden_id = "low_volatility"
+    hidden_id = "liquidity_weighted_momentum"
     p = create(store, data)
     with store.connect() as db:
         db.execute(
@@ -217,7 +216,7 @@ def test_holdout_guards_other_snapshots_and_all_api_backtests(experiment):
             "backtest",
             {
                 "dataset_id": "different",
-                "strategy_id": "liquidity_weighted_momentum",
+                "strategy_id": "profitable_liquidity_leaders",
                 "start": "2024-09-01",
                 "end": "2024-10-01",
             },
@@ -234,7 +233,7 @@ def test_holdout_guards_other_snapshots_and_all_api_backtests(experiment):
             "/api/tasks/backtests",
             json={
                 "dataset_id": data["dataset_id"],
-                "strategy_ids": ["momentum", "liquidity_weighted_momentum"],
+                "strategy_ids": ["momentum"],
                 "start": data["start"],
                 "end": data["end"],
             },

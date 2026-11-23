@@ -38,9 +38,9 @@ New downloads and ordinary updates verify EPS share units against the source fil
 
 ## Run several strategies together
 
-12–1 Momentum, Value + Momentum, Liquidity-Weighted Momentum, Profitable Liquidity Leaders, Session Strength and Liquidity, Earnings and Market Regime Rotation, Weekly Earnings Reaction Tracker, and Earnings and Market Capture are available for new research. The three month-end recipes require snapshots with comparable annual net income. See the [price-only study](STRATEGY_RESEARCH_2026-11-18.md), [hybrid study](HYBRID_STRATEGY_RESEARCH_2026-11-18.md) and [paper execution contract](PAPER_TRADING.md).
+12–1 Momentum, Value + Momentum, Profitable Liquidity Leaders, Session Strength and Liquidity, Earnings and Market Regime Rotation, Weekly Earnings Reaction Tracker, Earnings and Market Capture, Liquidity and Breadth, and Earnings and Pullback Rotation are available for new research and paper selection. The three month-end recipes require snapshots with comparable annual net income. See the [hybrid study](HYBRID_STRATEGY_RESEARCH_2026-11-18.md) and [paper execution contract](PAPER_TRADING.md).
 
-Defensive Low Volatility and the weekly versions of the three month-end recipes are hidden. Aperture retains their implementations and saved reports and blocks new runs while they are hidden. A locked validation period can still be retired from **Research → Validation**.
+Liquidity-Weighted Momentum, Defensive Low Volatility, and the weekly versions of the three month-end recipes are hidden. Aperture retains their implementations and saved reports and blocks new runs while they are hidden. A locked validation period can still be retired from **Research → Validation**.
 
 Profitability / Quality and Quality Value are archived because historical
 profitability coverage remains limited. Saved backtests, allocation reviews,

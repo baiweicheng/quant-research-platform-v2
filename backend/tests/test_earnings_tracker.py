@@ -10,8 +10,6 @@ from aperture.domain import (
     Dataset,
     Policy,
     RankedStock,
-    ResearchError,
-    paper_strategy,
 )
 from aperture.earnings_tracker import EarningsTracker, _select, _weights
 from aperture.market_capture import EarningsMarketCapture, market_capture
@@ -129,8 +127,6 @@ def test_weekly_income_uses_only_completed_prices_and_public_filings(
     ds = replace(ds, bars={**bars, "A": (*bars["A"][:-2], unavailable, bars["A"][-1])})
     assert not model(ds).decision(prev, Policy())[2]
     assert not model(ds).decision(day, Policy())[2]
-    with pytest.raises(ResearchError, match="research only"):
-        paper_strategy(strategy_id)
 
 
 def test_market_capture_measures_relative_returns_in_both_benchmark_tails():

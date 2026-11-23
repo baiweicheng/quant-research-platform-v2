@@ -330,7 +330,6 @@ STRATEGIES = [
         "requires_periodic_income": True,
         "frequency": "weekly",
         "calendar_year_comparison": True,
-        "research_only": True,
     },
     {
         "id": "earnings_market_capture",
@@ -345,7 +344,6 @@ STRATEGIES = [
         "requires_periodic_income": True,
         "frequency": "weekly",
         "calendar_year_comparison": True,
-        "research_only": True,
     },
     {
         "id": "liquidity_breadth",
@@ -359,7 +357,6 @@ STRATEGIES = [
         "implemented": True,
         "frequency": "weekly",
         "calendar_year_comparison": True,
-        "research_only": True,
     },
     {
         "id": "earnings_pullback_rotation",
@@ -374,7 +371,6 @@ STRATEGIES = [
         "requires_periodic_income": True,
         "frequency": "weekly",
         "calendar_year_comparison": True,
-        "research_only": True,
     },
 ]
 
@@ -404,6 +400,7 @@ STRATEGIES.extend(
 HIDDEN_STRATEGIES = frozenset(
     {
         "low_volatility",
+        "liquidity_weighted_momentum",
         "profitable_liquidity_leaders_weekly",
         "session_strength_liquidity_weekly",
         "earnings_market_regime_weekly",

@@ -10,9 +10,10 @@ import httpx
 import pytest
 from aperture import calendar
 from aperture.api import create_app
+from aperture.backtest import weekly_model
 from aperture.broker import Broker, ReconciliationPending
 from aperture.config import PAPER_URL, Settings
-from aperture.domain import Bar, Dataset, RankedStock, ResearchError
+from aperture.domain import Bar, Dataset, Policy, RankedStock, ResearchError, strategy
 from aperture.paper import (
     approval,
     approve_strategy,
@@ -32,6 +33,7 @@ from aperture.paper import (
     stop,
     tick,
 )
+from aperture.periodic_income import load_reports
 from aperture.store import Store
 from aperture.worker import process_one
 from fastapi.testclient import TestClient
@@ -212,8 +214,8 @@ def paper(tmp_path, monkeypatch):
         "aperture.paper.rank",
         lambda *args, **kwargs: (
             [
-                RankedStock("AAPL", 1, "Technology"),
-                RankedStock("MSFT", 0.5, "Technology"),
+                RankedStock("AAPL", 1, "Technology", {"median_dollar_volume": "100"}),
+                RankedStock("MSFT", 0.5, "Technology", {"median_dollar_volume": "100"}),
             ],
             [],
         ),
@@ -447,17 +449,16 @@ def test_auto_only_week_end_once_and_explicit_automatic_approval(paper):
 
 
 @pytest.mark.parametrize(
-    "identifier,market_state,monthly",
+    "identifier,market_state",
     [
-        ("liquidity_weighted_momentum", None, False),
-        ("profitable_liquidity_leaders", None, True),
-        ("session_strength_liquidity", None, True),
-        ("earnings_market_regime", "strong", True),
-        ("earnings_market_regime", "weak", True),
+        ("profitable_liquidity_leaders", None),
+        ("session_strength_liquidity", None),
+        ("earnings_market_regime", "strong"),
+        ("earnings_market_regime", "weak"),
     ],
 )
 def test_new_paper_recipes_preserve_strategy_weights_and_approval(
-    paper, monkeypatch, identifier, market_state, monthly
+    paper, monkeypatch, identifier, market_state
 ):
     store, broker, old = paper
     broker.at = datetime(2026, 11, 2, 13, tzinfo=UTC)
@@ -480,7 +481,7 @@ def test_new_paper_recipes_preserve_strategy_weights_and_approval(
 
     def ranked(dataset, strategy_id, session, *, factor_audit=None):
         assert (strategy_id, session) == (identifier, decision)
-        assert (factor_audit is not None) == monthly
+        assert factor_audit is not None
         return [
             RankedStock(
                 symbol,
@@ -509,7 +510,7 @@ def test_new_paper_recipes_preserve_strategy_weights_and_approval(
     draft = prepared((store, broker, cfg))
     assert draft["execute_session"] == "2026-11-02"
     assert draft["state"] == "prepared" and not broker.submissions
-    assert public_state(store)["frequency"] == ("monthly" if monthly else "weekly")
+    assert public_state(store)["frequency"] == "monthly"
     expected = {"AAPL": D(".3"), "MSFT": D(".1")}
     if market_state == "weak":
         expected = {"AAPL": D(".2"), "MSFT": D(".2")}
@@ -517,14 +518,135 @@ def test_new_paper_recipes_preserve_strategy_weights_and_approval(
     with pytest.raises(ResearchError, match="matching paper strategy"):
         schedule(store, draft["id"])
     assert allow(store)["strategy_id"] == identifier
-    if monthly:
-        broker.at = calendar.open_time(date(2026, 11, 2))
-        with pytest.raises(ResearchError, match="expired at the next regular open"):
-            schedule(store, draft["id"])
-        tick(store, broker.at, broker)
-        assert plan(store, draft["id"])["state"] == "expired"
-    else:
-        assert schedule(store, draft["id"])["state"] == "scheduled"
+    broker.at = calendar.open_time(date(2026, 11, 2))
+    with pytest.raises(ResearchError, match="expired at the next regular open"):
+        schedule(store, draft["id"])
+    tick(store, broker.at, broker)
+    assert plan(store, draft["id"])["state"] == "expired"
+    assert not broker.submissions
+
+
+@pytest.mark.parametrize(
+    "identifier",
+    [
+        "earnings_reaction_tracker",
+        "earnings_market_capture",
+        "liquidity_breadth",
+        "earnings_pullback_rotation",
+    ],
+)
+def test_weekly_paper_review_uses_model_weights_and_pinned_filings(
+    paper, monkeypatch, identifier
+):
+    store, broker, old = paper
+    decision = date(2026, 10, 30)
+    broker.at = datetime(2026, 11, 1, 23, tzinfo=UTC)
+    broker.held = {"AAPL": D(1), "ORCL": D(2)}
+    source = store.dataset("prices")
+    stock_bars = source.bars["AAPL"]
+    bars = {
+        symbol: tuple(
+            replace(bar, symbol=symbol, volume=bar.volume * (index + 1))
+            for bar in stock_bars
+            if bar.session <= decision
+        )
+        for index, symbol in enumerate(("AAPL", "MSFT", "ORCL", "META", "SPY"))
+    }
+    observations, annual = [], {}
+    recipe = strategy(identifier)
+    if recipe.get("requires_periodic_income"):
+        for index, symbol in enumerate(("AAPL", "MSFT", "ORCL", "META"), 1):
+            cik = f"{index:010d}"
+            accession = f"{cik}-26-000001"
+            annual[symbol] = [
+                {
+                    "accession": "annual",
+                    "cik": cik,
+                    "available_at": "2026-02-01",
+                    "end": "2025-12-31",
+                }
+            ]
+            pair = [
+                {
+                    "accn": accession,
+                    "form": "10-Q",
+                    "filed": "2026-10-08",
+                    "start": f"{year}-07-01",
+                    "end": f"{year}-09-30",
+                    "val": value,
+                }
+                for year, value in ((2025, 100), (2026, 100 + index))
+            ]
+            for root, data in (
+                (
+                    "api/xbrl/companyfacts",
+                    {"facts": {"us-gaap": {"NetIncomeLoss": {"units": {"USD": pair}}}}},
+                ),
+                ("submissions", {}),
+            ):
+                observations.append(
+                    store.observe(
+                        "sec",
+                        f"https://data.sec.gov/{root}/CIK{cik}.json?{{}}",
+                        json.dumps({"cik": cik, **data}).encode(),
+                    )
+                )
+    ds = replace(
+        source,
+        id="weekly-paper",
+        digest="weekly-paper",
+        bars=bars,
+        annual_income=annual,
+        metadata={
+            **source.metadata,
+            "fundamentals": {"observation_ids": observations},
+        },
+    )
+    saved = store.save_dataset(ds, b"weekly paper inputs", [])
+    monkeypatch.setattr("aperture.bundles.download", lambda *a, **kw: saved)
+    cfg = save_configuration(
+        store,
+        {
+            **old["policy"],
+            "strategy_id": identifier,
+            "execution": "broker_market",
+            "mode": "manual",
+            "symbols": ["AAPL", "MSFT", "ORCL"],
+            "data_start": old["data_start"],
+            "max_drift": old["max_drift"],
+            "max_weight": ".65",
+            "sector_cap": ".8",
+        },
+    )
+    # Preserve an approved departure's prices for the sell without allowing it
+    # back into the selection. META was captured but never approved.
+    cfg = {**cfg, "exit_symbols": ["ORCL"]}
+    store.set_preference("paper_config", cfg)
+    monkeypatch.setattr(
+        "aperture.paper.rank", lambda *a, **kw: pytest.fail("Used legacy ranking")
+    )
+    draft = prepared((store, broker, cfg))
+    inputs = replace(
+        ds,
+        bars={s: bars[s] for s in ("AAPL", "MSFT", "SPY")},
+        periodic_income=load_reports(store, ds) if observations else {},
+    )
+    _, _, expected, _, audit = weekly_model(inputs, recipe).decision(
+        decision, Policy(max_weight=D(".65"), sector_cap=D(".8")), {"AAPL"}
+    )
+    assert len(expected) == 2
+    assert {t["symbol"]: D(t["weight"]) for t in draft["targets"]} == expected
+    assert draft.get("factor_coverage", {}) == audit
+    if observations:
+        assert audit["factors"]["periodic_net_income"]["positive"] == 2
+        assert all(s["components"]["filed"] == "2026-10-08" for s in draft["signals"])
+    assert draft["execute_session"] == "2026-11-02"
+    assert any(t["symbol"] == "ORCL" and t["side"] == "sell" for t in draft["changes"])
+    assert approval(store) is None
+    with pytest.raises(ResearchError, match="matching paper strategy"):
+        schedule(store, draft["id"])
+    assert allow(store)["strategy_id"] == identifier
+    assert schedule(store, draft["id"])["state"] == "scheduled"
     assert not broker.submissions
 
 
@@ -934,7 +1056,9 @@ def test_catch_up_ranks_historical_sp500_and_rechecks_current_eligibility(
     assert view["excluded"][0]["symbol"] == "MSFT"
 
 
-@pytest.mark.parametrize("strategy_id", ["quality", "low_volatility"])
+@pytest.mark.parametrize(
+    "strategy_id", ["quality", "low_volatility", "liquidity_weighted_momentum"]
+)
 def test_archived_paper_config_blocks_new_work_and_reconciles_accepted_order(
     paper, monkeypatch, strategy_id
 ):
@@ -969,7 +1093,7 @@ def test_archived_paper_config_blocks_new_work_and_reconciles_accepted_order(
     ) as client:
         state = client.get("/api/paper").json()
         assert state["approval"] == recorded_approval
-        if strategy_id == "low_volatility":
+        if strategy_id != "quality":
             assert state["archived_strategy"] == "The previously selected strategy"
             assert state["plans"][0]["hidden_strategy"] is True
         for path, body in (

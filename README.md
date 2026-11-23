@@ -38,7 +38,7 @@ The app opens empty. Practice data is never silently loaded. Account metrics rem
 - Immutable CSV datasets with source fingerprints, idempotent imports, validation, and retained submitted CSV content.
 - Authenticated Alpaca SIP history, split/dividend normalization, per-stock coverage and captured source responses through the Data interface.
 - A persisted background queue, visible progress, atomic saved results, duplicate task protection, and interrupted-task recovery.
-- 12–1 momentum and defensive low-volatility strategies; shared stock/sector/cash allocation rules.
+- Weekly 12–1 Momentum and Liquidity and Breadth strategies with shared stock, sector and cash allocation limits.
 - Filing-versioned SEC annual fundamentals, stock-level coverage/exclusions, profitability, quality value and technical/fundamental Value + Momentum strategies. Historical decision audits link back to original filings.
 - Calendar-aware after-close decisions and following-session opening-price simulation, fractional quantities, explicit costs, split/dividend accounting and no borrowing.
 - Saved backtests, comparison, SPY benchmark, common chart periods, and read-only current allocation reviews.
@@ -76,7 +76,7 @@ AI-assisted discovery and broader operational reliability/automation remain futu
 ## Start paper trading deliberately
 
 1. Configure paper keys/contact below, then **Portfolio → Paper portfolio → Refresh paper account**. The app reads the actual account; it never resets its balance. Use a dedicated long-only USD paper account.
-2. Save the strategy, stock universe, history start, risk policy and mode. Profitable Liquidity Leaders, Session Strength and Liquidity, and Earnings and Market Regime Rotation use month-end timing. Manual is selected initially. Suggested limits remain proposals until explicitly approved.
+2. Choose any visible Research strategy in Paper Settings, then save the stock universe, history start, risk policy and mode. Profitable Liquidity Leaders, Session Strength and Liquidity, and Earnings and Market Regime Rotation use month-end timing. Manual is selected initially. Suggested limits remain proposals until explicitly approved.
 3. Review research, validation and data limits. Record explicit paper approval with the exact displayed strategy/version phrase and a rationale. Automatic operation needs its separate permission checkbox.
 4. Select **Prepare weekly paper review** or **Prepare month-end paper review**, as shown for the strategy. This task reconciles the account, refreshes membership, backfills new members and updates prices and SEC filings before freezing proposed targets and orders. Aim to prepare and stage after the period's final session data is available and before the next regular open. If you miss month-end, **Prepare month-end catch-up** is available for a regular open within seven calendar days of the original open. A changed index list requires adoption and new approval.
 5. In manual mode, inspect the specific review and separately approve its following-session paper rebalance. Keep Aperture running until all Market DAY instructions are confirmed accepted at Alpaca. You may then close it; the next launch checks fills, cash and positions. Actual fill prices may differ, and paper margin can bridge sale proceeds under an explicitly approved policy. A simulated debit can remain overnight; new settings default to a 5% cash reserve.

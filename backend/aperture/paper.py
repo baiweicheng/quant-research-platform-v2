@@ -8,6 +8,7 @@ from decimal import ROUND_DOWN
 from uuid import uuid4
 
 from . import __version__, calendar
+from .backtest import weekly_model
 from .broker import NY, TERMINAL, Broker, ReconciliationPending
 from .domain import (
     ARCHIVED_STRATEGIES,
@@ -22,6 +23,7 @@ from .domain import (
     paper_strategy,
     strategy,
 )
+from .periodic_income import load_reports
 from .portfolio import target_weights, uses_liquidity_weights
 from .signals import rank
 from .store import decode, encode, now
@@ -698,6 +700,7 @@ def prepare(store, job, progress, broker):
             "Unresolved Aperture orders remain. Reconcile their client IDs or cancel pending orders before preparing another plan."
         )
     ensure_account(snap, cfg)
+    incumbents = {p["symbol"] for p in snap["positions"]}
     previous = None
     if catch_up:
         if month_end_used(saved_plans, saved_orders, snap["account_key"], decision):
@@ -843,6 +846,7 @@ def prepare(store, job, progress, broker):
                 "S&P membership changed during catch-up preparation. Prepare a new membership review before placing paper orders."
             )
     factor_audit = {}
+    model = None
     if previous:
         targets = {t["symbol"]: decimal(t["weight"]) for t in previous["targets"]}
         signals = previous["signals"]
@@ -861,19 +865,51 @@ def prepare(store, job, progress, broker):
                     "membership": {**audit, "additional_symbols": cfg["supplements"]},
                 },
             )
-        arguments = (signal_data, cfg["strategy_id"], decision)
-        if cfg.get("exit_symbols") and not (catch_up and index):
-            arguments += (set(cfg["exit_symbols"]),)
-        ranked, excluded = (
-            rank(*arguments, factor_audit=factor_audit)
-            if cfg["strategy_id"] in {"quality", "quality_value", "value_momentum"}
-            or recipe.get("requires_annual_income")
-            else rank(*arguments)
-        )
+        exit_only = set(cfg.get("exit_symbols", []))
+        if recipe.get("requires_periodic_income"):
+            progress(62, "Loading comparable income from the saved SEC filings")
+            signal_data = replace(
+                signal_data, periodic_income=load_reports(store, signal_data)
+            )
+        if recipe.get("frequency") == "weekly":
+            # Include prices for reductions, but keep exit-only and unapproved
+            # names out of the model's ranks and universe-level signals.
+            excluded_names = (
+                set(signal_data.metadata.get("research_exclusions", ()))
+                | exit_only
+                | (set(signal_data.bars) - set(cfg["symbols"]))
+            )
+            signal_data = replace(
+                signal_data,
+                metadata={
+                    **signal_data.metadata,
+                    "research_exclusions": sorted(excluded_names),
+                },
+            )
         policy = policy_from(cfg["policy"])
-        targets, notes = target_weights(
-            ranked, policy, weight_by_liquidity=uses_liquidity_weights(recipe, ranked)
-        )
+        model = weekly_model(signal_data, recipe)
+        if model is not None:
+            ranked, excluded, targets, notes, factor_audit = model.decision(
+                decision, policy, incumbents
+            )
+            notes.append(
+                "The weekly model uses reconciled paper holdings as incumbents."
+            )
+        else:
+            arguments = (signal_data, cfg["strategy_id"], decision)
+            if exit_only and not (catch_up and index):
+                arguments += (exit_only,)
+            ranked, excluded = (
+                rank(*arguments, factor_audit=factor_audit)
+                if cfg["strategy_id"] in {"quality", "quality_value", "value_momentum"}
+                or recipe.get("requires_annual_income")
+                else rank(*arguments)
+            )
+            targets, notes = target_weights(
+                ranked,
+                policy,
+                weight_by_liquidity=uses_liquidity_weights(recipe, ranked),
+            )
         signals = [
             {"symbol": s.symbol, "score": s.score, "components": s.components}
             for s in ranked
@@ -884,6 +920,10 @@ def prepare(store, job, progress, broker):
         notes.append(ds.metadata["fundamentals"]["share_basis"])
     snap = reconcile(store, broker, performance=True, dataset=ds)
     ensure_account(snap, cfg)
+    if model is not None and incumbents != {p["symbol"] for p in snap["positions"]}:
+        raise ResearchError(
+            "Paper holdings changed during signal preparation. Prepare a fresh review."
+        )
     if catch_up and month_end_used(
         saved_plans, orders(store), snap["account_key"], decision
     ):

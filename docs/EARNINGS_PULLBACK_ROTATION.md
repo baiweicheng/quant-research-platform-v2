@@ -1,6 +1,6 @@
 # Earnings and Pullback Rotation
 
-A weekly, long-only strategy available in Aperture under **Research → Earnings and Pullback Rotation → Backtest**. It uses saved daily bars, dated S&P 500 membership and original SEC periodic income. The strategy is research only.
+A weekly, long-only strategy available in Aperture under **Research → Earnings and Pullback Rotation → Backtest**. It uses saved daily bars, dated S&P 500 membership and original SEC periodic income. Select it in **Portfolio → Paper Settings** for paper trading under the [paper execution contract](PAPER_TRADING.md).
 
 ## Selection and execution
 

@@ -1,12 +1,12 @@
 import json
+from dataclasses import replace
 
 import pytest
-from fastapi.testclient import TestClient
-
 from aperture.api import create_app
 from aperture.domain import ResearchError
 from aperture.ingest import parse_csv
 from aperture.worker import process_one
+from fastapi.testclient import TestClient
 from test_storage_api import CSV, HEADER
 
 
@@ -14,10 +14,15 @@ from test_storage_api import CSV, HEADER
 def batch(tmp_path):
     app = create_app(tmp_path / "batch.sqlite3", None)
     dataset, raw, warnings = parse_csv(CSV, "Captured inputs", "Independent fixture")
+    dataset = replace(
+        dataset,
+        metadata={"fundamentals": {"annual_income_count": 1}},
+        annual_income={"ABC": [{"net_income": "120"}]},
+    )
     app.state.store.save_dataset(dataset, raw, warnings)
     payload = {
         "dataset_id": dataset.id,
-        "strategy_ids": ["momentum", "liquidity_weighted_momentum"],
+        "strategy_ids": ["momentum", "profitable_liquidity_leaders"],
         "start": "2025-01-06",
         "end": "2025-01-07",
         "capital": "123456",
@@ -45,7 +50,7 @@ def test_one_submission_keeps_common_inputs_and_saves_independent_results(batch)
         "/api/tasks/backtests",
         json={
             **payload,
-            "strategy_ids": ["liquidity_weighted_momentum", "momentum", "momentum"],
+            "strategy_ids": ["profitable_liquidity_leaders", "momentum", "momentum"],
         },
         headers=HEADER,
     ).json()
