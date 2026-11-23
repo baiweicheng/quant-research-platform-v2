@@ -15,6 +15,7 @@ from aperture.domain import (
 )
 from aperture.earnings_tracker import EarningsTracker, _select, _weights
 from aperture.market_capture import EarningsMarketCapture, market_capture
+from aperture.pullback_rotation import EarningsPullbackRotation
 
 
 def test_periodic_pairs_use_one_original_accession_and_override_stale_income():
@@ -59,6 +60,7 @@ def test_periodic_pairs_use_one_original_accession_and_override_stale_income():
     [
         ("earnings_reaction_tracker", EarningsTracker),
         ("earnings_market_capture", EarningsMarketCapture),
+        ("earnings_pullback_rotation", EarningsPullbackRotation),
     ],
 )
 def test_weekly_income_uses_only_completed_prices_and_public_filings(
@@ -111,6 +113,16 @@ def test_weekly_income_uses_only_completed_prices_and_public_filings(
         "A": Decimal(".05")
     }
     assert audit["factors"]["periodic_net_income"]["positive"] == 1
+    if isinstance(tracker, EarningsPullbackRotation):
+        assert audit["sleeve"] == "relative"
+        declining = tuple(
+            Bar("SPY", session, *([Decimal(300 - i)] * 4), 1000)
+            for i, session in enumerate(days)
+        )
+        stress = model(replace(ds, bars={**bars, "SPY": declining}))
+        ranked, _, _, _, stressed = stress.decision(day, Policy())
+        assert stressed["sleeve"] == "pullback"
+        assert ranked[0].components["pullback_score"] < 0
     unavailable = replace(
         bars["A"][-2], available_at=calendar.available_time(day) + timedelta(days=1)
     )

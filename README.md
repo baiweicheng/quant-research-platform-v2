@@ -65,6 +65,8 @@ Downloads and updates include the required source checks automatically. There is
 
 **Liquidity and Breadth** is a weekly technical strategy that uses sustained trading liquidity, relative volatility, sector participation and SPY beta. [Strategy rules and annual results](docs/LIQUIDITY_BREADTH.md)
 
+**Earnings and Pullback Rotation** is a weekly hybrid that combines filed earnings and beta-adjusted relative strength, with a pullback rule after broad market declines. [Strategy rules and full-period Standard-cost comparison](docs/EARNINGS_PULLBACK_ROTATION.md)
+
 To start fresh, open **Data → Reset workspace**. Review the preview, type **RESET WORKSPACE**, then choose **Reset permanently**. The reset clears saved research and downloads and preserves paper trading history and configuration. See the [workspace reset details](docs/RESEARCH_LIBRARY.md#reset-the-research-workspace).
 
 Research setup separates **total-return research** (ex-date closing reinvestment) from **payment-date cash-flow simulation** (verified settlement dates). It also separates **coverage-limited research**, which saves every omitted security and reason, from **strict full-index coverage**, which stops on unresolved required inputs. Coverage-limited results can have survivorship/selection bias and are not complete S&P 500 results. The unresolved free-data gaps remain open in [B-033](docs/FREE_DATA_GAPS.md); these options do not approve trading.

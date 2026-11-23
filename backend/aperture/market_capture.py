@@ -13,6 +13,10 @@ from .earnings_tracker import (
     ordinal_percentiles,
 )
 from .portfolio import target_weights
+from .pullback_rotation import (
+    STRATEGY_ID as PULLBACK_ROTATION,
+    EarningsPullbackRotation,
+)
 from .sectors import sectors_on
 from .signals import median_dollar_volume
 
@@ -131,5 +135,8 @@ class EarningsMarketCapture(WeeklyIncomeResearch):
 
 
 def weekly_income_model(dataset, identifier):
-    model = EarningsMarketCapture if identifier == STRATEGY_ID else EarningsTracker
+    model = {
+        STRATEGY_ID: EarningsMarketCapture,
+        PULLBACK_ROTATION: EarningsPullbackRotation,
+    }.get(identifier, EarningsTracker)
     return model(dataset)

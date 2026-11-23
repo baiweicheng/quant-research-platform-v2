@@ -300,7 +300,7 @@ export function TaskDialog({
         {missingPeriodicIncome && (
           <Notice>
             Choose a completed market and SEC snapshot with saved companyfacts
-            for the weekly earnings tracker.
+            for this weekly earnings strategy.
           </Notice>
         )}
         {missingAnnualIncome && (

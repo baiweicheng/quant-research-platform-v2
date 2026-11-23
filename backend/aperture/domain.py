@@ -361,6 +361,21 @@ STRATEGIES = [
         "calendar_year_comparison": True,
         "research_only": True,
     },
+    {
+        "id": "earnings_pullback_rotation",
+        "name": "Earnings and Pullback Rotation",
+        "version": "1.0.0",
+        "category": "Technical + fundamental",
+        "description": "Each week, rank liquid, profitable stocks by earnings growth and relative strength. Switch to short-term pullbacks when SPY's six-month total return falls below −5%.",
+        "definition": "Among the 100 most liquid stocks with positive comparable filed income, select up to 25 using beta-adjusted strength and income growth. When SPY's trailing 126-session total return is below −5%, favor higher beta, larger five-session pullbacks, liquidity and earnings growth. Prefer existing targets, use one listing per issuer, and size by liquidity and, in the relative-strength state, beta. Apply the shared portfolio caps and trade at the next open.",
+        "inputs": "Comparable original SEC 10-Q or 10-K income, dated issuer evidence, and 253 complete daily bars for stocks and SPY including volume and corporate actions.",
+        "risk": "Selected on the full historical study window. High-beta pullbacks can deepen losses, and forward performance is untested.",
+        "implemented": True,
+        "requires_periodic_income": True,
+        "frequency": "weekly",
+        "calendar_year_comparison": True,
+        "research_only": True,
+    },
 ]
 
 STRATEGIES.extend(

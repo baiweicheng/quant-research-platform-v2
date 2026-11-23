@@ -69,6 +69,10 @@ export type Signal = {
     filing_relative_return?: number;
     weak_market_relative_return?: number;
     strong_market_relative_return?: number;
+    beta_126?: number;
+    pullback_score?: number;
+    residual_63?: number;
+    residual_126?: number;
     stock_return?: number;
     daytime_relative_log_return?: number;
     overnight_followthrough_log_return?: number;
@@ -103,6 +107,8 @@ export type Decision = {
   factor_coverage?: {
     members: number;
     assessed: number;
+    market_log_return_126?: number;
+    sleeve?: "relative" | "pullback";
     market_regime?: {
       state: "weak" | "mixed" | "strong";
       average_gap: number;
