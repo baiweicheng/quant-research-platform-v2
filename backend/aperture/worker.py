@@ -18,6 +18,8 @@ from .domain import (
     runnable_strategy,
 )
 from .ingest import practice_dataset
+from .earnings_tracker import EarningsTracker
+from .periodic_income import research_dataset
 from .portfolio import target_weights, uses_liquidity_weights
 from .signals import rank
 from .store import Store
@@ -249,7 +251,7 @@ def execute(store: Store, job: dict):
         return
     identifier = payload["strategy_id"]
     recipe = runnable_strategy(identifier)
-    dataset = store.dataset(payload["dataset_id"])
+    dataset = research_dataset(store, payload["dataset_id"], recipe)
     update(5, "Validating immutable inputs")
     policy = Policy()
     if job["kind"] == "backtest":
@@ -271,11 +273,22 @@ def execute(store: Store, job: dict):
             raise ResearchError(
                 f"Dataset ends {end}; the latest completed session is {latest}. Import updated data before preparing a current review."
             )
-        ranked, excluded = rank(dataset, identifier, latest)
+        factor_coverage = None
+        if recipe.get("requires_periodic_income"):
+            latest, (ranked, excluded, targets, notes, factor_coverage) = (
+                EarningsTracker(dataset).weekly_review(latest, policy)
+            )
+            notes.append(
+                "Incumbents follow the weekly model selections from the snapshot's default start through its latest completed exchange week."
+            )
+        else:
+            ranked, excluded = rank(dataset, identifier, latest)
+            targets, notes = target_weights(
+                ranked,
+                policy,
+                weight_by_liquidity=uses_liquidity_weights(recipe, ranked),
+            )
         ranked_by_symbol = {stock.symbol: stock for stock in ranked}
-        targets, notes = target_weights(
-            ranked, policy, weight_by_liquidity=uses_liquidity_weights(recipe, ranked)
-        )
         if identifier in {"quality_value", "value_momentum"} and dataset.metadata.get(
             "fundamentals", {}
         ).get("eps_policy"):
@@ -305,6 +318,11 @@ def execute(store: Store, job: dict):
             ],
             "excluded": excluded,
             "eligible": len(ranked),
+            **(
+                {"factor_coverage": factor_coverage}
+                if factor_coverage is not None
+                else {}
+            ),
             "signals": [
                 {
                     "symbol": stock.symbol,

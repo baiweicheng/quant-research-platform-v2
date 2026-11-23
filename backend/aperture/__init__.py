@@ -1,3 +1,3 @@
 """Independent v2 implementation of the local research workspace."""
 
-__version__ = "0.15.0"
+__version__ = "0.16.0"

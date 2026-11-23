@@ -43,13 +43,14 @@ wheels = [
 
 [[package]]
 name = "aperture-research"
-version = "0.15.0"
+version = "0.16.0"
 source = { editable = "." }
 dependencies = [
     { name = "exchange-calendars" },
     { name = "fastapi" },
     { name = "httpx" },
     { name = "lxml" },
+    { name = "numpy" },
     { name = "pydantic" },
     { name = "python-dotenv" },
     { name = "uvicorn" },
@@ -68,6 +69,7 @@ requires-dist = [
     { name = "fastapi", specifier = ">=0.115,<1" },
     { name = "httpx", specifier = ">=0.28,<1" },
     { name = "lxml", specifier = ">=6.0,<7" },
+    { name = "numpy", specifier = ">=2,<3" },
     { name = "pydantic", specifier = ">=2.10,<3" },
     { name = "python-dotenv", specifier = ">=1.2.4" },
     { name = "uvicorn", specifier = ">=0.34,<1" },

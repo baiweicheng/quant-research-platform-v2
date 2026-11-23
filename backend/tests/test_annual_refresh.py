@@ -9,7 +9,7 @@ from aperture.providers import Provider
 from aperture.store import Store
 
 
-def test_annual_changes_force_and_periodic_revalidation_while_quarters_reuse(
+def test_annual_changes_force_and_periodic_revalidation_including_quarters(
     tmp_path, monkeypatch
 ):
     monkeypatch.setattr("aperture.providers.time.sleep", lambda _: None)
@@ -50,28 +50,29 @@ def test_annual_changes_force_and_periodic_revalidation_while_quarters_reuse(
     }
     for key, value in values.items():
         quarterly["filings"]["recent"][key].insert(0, value)
-    assert companyfacts(api, "0000000001", quarterly) == first and len(calls) == 1
+    assert companyfacts(api, "0000000001", quarterly)["capture"] == 2
+    assert companyfacts(api, "0000000001", quarterly)["capture"] == 2
     amended = deepcopy(submissions)
     amended["filings"]["recent"]["form"][0] = "10-K/A"
     amended["filings"]["recent"]["accessionNumber"][0] = "0000000001-23-000003"
-    assert companyfacts(api, "0000000001", amended)["capture"] == 2
-    assert companyfacts(api, "0000000001", amended, force=True)["capture"] == 3
+    assert companyfacts(api, "0000000001", amended)["capture"] == 3
+    assert companyfacts(api, "0000000001", amended, force=True)["capture"] == 4
     with store.connect() as db:
         db.execute(
             "update observations set fetched_at=?",
             ((datetime.now(timezone.utc) - timedelta(days=31)).isoformat(),),
         )
-    assert companyfacts(api, "0000000001", amended)["capture"] == 4
-    assert companyfacts(api, "0000000001", {"cik": 1})["capture"] == 5
+    assert companyfacts(api, "0000000001", amended)["capture"] == 5
     assert companyfacts(api, "0000000001", {"cik": 1})["capture"] == 6
+    assert companyfacts(api, "0000000001", {"cik": 1})["capture"] == 7
     incomplete = deepcopy(submissions)
     incomplete["filings"]["recent"]["primaryDocument"] = []
-    assert companyfacts(api, "0000000001", incomplete)["capture"] == 7
     assert companyfacts(api, "0000000001", incomplete)["capture"] == 8
-    incomplete["filings"]["recent"]["primaryDocument"] = None
     assert companyfacts(api, "0000000001", incomplete)["capture"] == 9
+    incomplete["filings"]["recent"]["primaryDocument"] = None
     assert companyfacts(api, "0000000001", incomplete)["capture"] == 10
-    assert api.annual_cache_stats == {"reused": 2, "downloaded": 10}
+    assert companyfacts(api, "0000000001", incomplete)["capture"] == 11
+    assert api.annual_cache_stats == {"reused": 2, "downloaded": 11}
 
 
 def test_unexpected_capture_replacement_cannot_reuse_stale_validation(

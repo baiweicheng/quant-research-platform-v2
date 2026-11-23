@@ -80,6 +80,7 @@ def test_archived_strategy_is_unavailable_to_research_and_queued_jobs(
             "profitable_liquidity_leaders",
             "session_strength_liquidity",
             "earnings_market_regime",
+            "earnings_reaction_tracker",
         }
         assert {
             s["id"]: s["variant_of"] for s in state["strategies"] if "variant_of" in s

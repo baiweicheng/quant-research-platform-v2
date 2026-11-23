@@ -16,6 +16,7 @@ from .domain import (
     strategy,
     decimal,
 )
+from .earnings_tracker import EarningsTracker
 from .ledger import apply_actions, buy, rebalance, reinvest_research_income
 from .lifecycles import recipients
 from .research_data import blocked_inputs, indexed_issues, security_events
@@ -229,6 +230,10 @@ def run(
             for symbol in symbols
         }
 
+    tracker = (
+        EarningsTracker(dataset) if recipe.get("requires_periodic_income") else None
+    )
+    previous_targets = {}
     for index, day in enumerate(days):
         today = {
             symbol: rows[day] for symbol, rows in investible.items() if day in rows
@@ -323,18 +328,24 @@ def run(
             }
         )
         if day in decisions and day != days[-1]:
-            factor_audit = {}
-            ranked, excluded = (
-                rank(dataset, identifier, day, factor_audit=factor_audit)
-                if identifier in {"quality", "quality_value", "value_momentum"}
-                or recipe.get("requires_annual_income")
-                else rank(dataset, identifier, day)
-            )
-            targets, allocation_notes = target_weights(
-                ranked,
-                policy,
-                weight_by_liquidity=uses_liquidity_weights(recipe, ranked),
-            )
+            if tracker is not None:
+                ranked, excluded, targets, allocation_notes, factor_audit = (
+                    tracker.decision(day, policy, previous_targets)
+                )
+                previous_targets = targets
+            else:
+                factor_audit = {}
+                ranked, excluded = (
+                    rank(dataset, identifier, day, factor_audit=factor_audit)
+                    if identifier in {"quality", "quality_value", "value_momentum"}
+                    or recipe.get("requires_annual_income")
+                    else rank(dataset, identifier, day)
+                )
+                targets, allocation_notes = target_weights(
+                    ranked,
+                    policy,
+                    weight_by_liquidity=uses_liquidity_weights(recipe, ranked),
+                )
             notes.update(
                 note for note in allocation_notes if "stays in cash because" not in note
             )

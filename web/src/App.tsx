@@ -996,6 +996,7 @@ function ReviewDetail({ review }: { review: Review }) {
               session: review.decision_session,
               execute_session: review.execute_session,
               eligible: review.eligible,
+              factor_coverage: review.factor_coverage,
               signals: review.signals || [],
               exclusions: review.excluded,
             },

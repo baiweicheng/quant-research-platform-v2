@@ -287,6 +287,7 @@ const factorLabels: Record<string, string> = {
   profitability: "Gross profit / assets",
   earnings_yield: "Annual earnings yield",
   annual_net_income: "Annual net income",
+  periodic_net_income: "Comparable 10-Q/10-K net income",
 };
 
 function factorLabel(key: string) {
@@ -306,8 +307,10 @@ export function SignalAudit({
 }) {
   const available =
     fundamental ||
+    strategyId === "earnings_reaction_tracker" ||
     decisions.some(
       (d) =>
+        d.factor_coverage?.factors.periodic_net_income ||
         d.factor_coverage?.factors.annual_net_income ||
         d.signals?.some(
           (s) => s.components.filing || s.components.annual_income,
@@ -324,6 +327,9 @@ export function SignalAudit({
   });
   const decision = auditPath ? (details.data ?? brief) : brief;
   if (!decision) return null;
+  const trackerAudit =
+    strategyId === "earnings_reaction_tracker" ||
+    !!decision.factor_coverage?.factors.periodic_net_income;
   const incomeAudit =
     !!decision.factor_coverage?.factors.annual_net_income ||
     decision.signals?.some((s) => s.components.annual_income);
@@ -362,13 +368,15 @@ export function SignalAudit({
         <p className="field-hint">
           Decided {shortDate(decision.session)} after close · Intended execution{" "}
           {shortDate(decision.execute_session)}.{" "}
-          {sessionStrength
-            ? "The ranking combines liquidity and both session signals for liquid stocks with positive filed income."
-            : regime
-              ? `Market state is ${regime.state}. SPY is ${percent(regime.average_gap, true)} versus its 100-session average, with a ${percent(regime.short_return, true)} 21-session return.`
-              : incomeAudit
-                ? "Positive annual net income and a positive trend qualify a stock for the liquidity ranking."
-                : "Positive factors are required. Blends use average percentile ranks within the jointly eligible stocks. Ties share a rank."}
+          {trackerAudit
+            ? "The tracker selects from the largest profitable filers using earnings growth, the three-session log return relative to SPY around filing, and portfolio tracking risk."
+            : sessionStrength
+              ? "The ranking combines liquidity and both session signals for liquid stocks with positive filed income."
+              : regime
+                ? `Market state is ${regime.state}. SPY is ${percent(regime.average_gap, true)} versus its 100-session average, with a ${percent(regime.short_return, true)} 21-session return.`
+                : incomeAudit
+                  ? "Positive annual net income and a positive trend qualify a stock for the liquidity ranking."
+                  : "Positive factors are required. Blends use average percentile ranks within the jointly eligible stocks. Ties share a rank."}
         </p>
       </div>
       {decision.factor_coverage && (
@@ -404,15 +412,29 @@ export function SignalAudit({
         <table className="fundamental-table">
           <thead>
             <tr>
-              <th>{incomeAudit ? "Stock" : "Stock / rank score"}</th>
               <th>
-                {incomeAudit ? "Annual net income" : "Gross profit / assets"}
+                {incomeAudit || trackerAudit ? "Stock" : "Stock / rank score"}
               </th>
               <th>
-                {incomeAudit ? incomeSignalLabel : "Annual earnings yield"}
+                {trackerAudit
+                  ? "Filed net income"
+                  : incomeAudit
+                    ? "Annual net income"
+                    : "Gross profit / assets"}
               </th>
               <th>
-                {incomeAudit ? "Median daily dollar volume" : "12–1 momentum"}
+                {trackerAudit
+                  ? "Scaled income change"
+                  : incomeAudit
+                    ? incomeSignalLabel
+                    : "Annual earnings yield"}
+              </th>
+              <th>
+                {trackerAudit
+                  ? "Filing return vs SPY (log)"
+                  : incomeAudit
+                    ? "Median daily dollar volume"
+                    : "12–1 momentum"}
               </th>
               <th>Statement & availability</th>
             </tr>
@@ -421,6 +443,43 @@ export function SignalAudit({
             {decision.signals?.map((stock) => {
               const f = stock.components.filing;
               const income = stock.components.annual_income;
+              if (trackerAudit) {
+                const c = stock.components;
+                return (
+                  <tr key={stock.symbol}>
+                    <td>
+                      <strong>{stock.symbol}</strong>
+                    </td>
+                    <td>{money(Number(c.income))}</td>
+                    <td>{percent(c.earnings_growth, true)}</td>
+                    <td>{percent(c.filing_relative_return, true)}</td>
+                    <td>
+                      <details>
+                        <summary>
+                          {c.form} filed {c.filed}
+                        </summary>
+                        <p>
+                          Period ending {c.period_end}. Prior comparable income{" "}
+                          {money(Number(c.prior_income))}.
+                          {c.concept && <> Both amounts use {c.concept}.</>}
+                        </p>
+                        {c.accession && (
+                          <a
+                            href={
+                              c.source_url ??
+                              `https://www.sec.gov/Archives/edgar/data/${Number(c.cik)}/${c.accession.replaceAll("-", "")}/`
+                            }
+                            target="_blank"
+                            rel="noreferrer"
+                          >
+                            SEC filing {c.accession}
+                          </a>
+                        )}
+                      </details>
+                    </td>
+                  </tr>
+                );
+              }
               if (incomeAudit) {
                 const url =
                   income &&

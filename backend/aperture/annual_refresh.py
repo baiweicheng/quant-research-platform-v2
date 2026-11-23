@@ -1,4 +1,4 @@
-"""Refetch financial histories on annual filing changes, with periodic rechecks."""
+"""Refetch financial histories on periodic filing changes, with periodic rechecks."""
 
 import hashlib
 import json
@@ -19,7 +19,7 @@ def annual_signature(submissions):
     columns = ["form", "accessionNumber", "filingDate", "reportDate", "primaryDocument"]
     annuals = []
     for index, form in enumerate(recent.get("form", [])):
-        if form not in {"10-K", "10-K/A"}:
+        if form not in {"10-K", "10-K/A", "10-Q", "10-Q/A"}:
             continue
         row = [
             recent[key][index]

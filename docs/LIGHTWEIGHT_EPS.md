@@ -26,7 +26,7 @@ These reviewed cases are a small exception set, not a comprehensive security mas
 
 ## Change-aware refresh
 
-The annual financial-history cache is shared by issuer. Normal updates check submissions, including annual accession, form, filing/report dates, primary document and archived-file manifest. A changed annual signature or amendment fetches company facts again. Otherwise a captured history with the expected issuer and source digest can be reused for at most **30 days**. Incomplete metadata, changed captures or an expired check cannot authorize reuse. A quarterly filing alone does not invalidate annual inputs; its comparative revisions can therefore wait until the periodic check. This delay is part of the speed tradeoff.
+The issuer cache serves annual and quarterly research. Normal updates check submissions for each original or amended 10-Q and 10-K, including accession, form, filing date, report date, primary document and the archived-file manifest. A change triggers a new company-facts capture. Reuse requires complete metadata, matching issuer and digest, and a capture at most **30 days** old. Manual financial refresh forces a new capture.
 
 The optional **Refresh SEC financial data** action forces a fresh history capture. It is a repair option; ordinary users continue using the existing Download, Update or weekly preparation action. Requests retain the shared eight-starts-per-second SEC budget and identifying contact. The [SEC API documentation](https://www.sec.gov/search-filings/edgar-application-programming-interfaces) describes company facts and submissions; this bounded reuse policy belongs to Aperture.
 

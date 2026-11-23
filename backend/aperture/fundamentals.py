@@ -752,7 +752,7 @@ def attach(
             "eps_policy": EPS_VERSION,
             "issuer_mapping": "Current SEC directory, reviewed filing evidence for the exact historical quote vintage, or reviewed Rule 12g-3 predecessor registrants of the same listed shares (their reports filed before the succession); never an inferred successor ticker.",
             "share_basis": EPS_WARNING,
-            "refresh_policy": "Annual filing changes trigger financial-history refresh; otherwise captured histories can be reused for up to 30 days. Manual SEC refresh forces a new capture.",
+            "refresh_policy": "Original and amended 10-Q and 10-K filing changes trigger financial-history refresh; otherwise captured histories can be reused for up to 30 days. Manual SEC refresh forces a new capture.",
             "annual_income_policy": annual_income.VERSION,
         }
         raw = json.dumps(

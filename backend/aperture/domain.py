@@ -3,7 +3,10 @@
 from dataclasses import dataclass, field
 from datetime import date, datetime
 from decimal import Decimal, InvalidOperation
-from typing import Literal
+from typing import TYPE_CHECKING, Literal
+
+if TYPE_CHECKING:
+    from .periodic_income import IncomeReport
 
 ZERO = Decimal("0")
 ONE = Decimal("1")
@@ -113,6 +116,9 @@ class Dataset:
     metadata: dict = field(default_factory=dict)
     fundamentals: dict[str, tuple[AnnualStatement, ...]] = field(default_factory=dict)
     annual_income: dict[str, list[dict]] = field(default_factory=dict)
+    periodic_income: dict[str, list["IncomeReport"]] = field(
+        default_factory=dict, repr=False
+    )
 
 
 @dataclass(frozen=True)
@@ -310,6 +316,21 @@ STRATEGIES = [
         "weight_by_liquidity": True,
         "frequency": "monthly",
         "calendar_year_comparison": True,
+    },
+    {
+        "id": "earnings_reaction_tracker",
+        "name": "Weekly Earnings Reaction Tracker",
+        "version": "1.0.0",
+        "category": "Technical + fundamental",
+        "description": "Select profitable companies using earnings growth, the share-price reaction to their filing and tracking risk relative to SPY.",
+        "definition": "Each week, screen the 50 listings with the largest positive annualized income from comparable original 10-Q or 10-K filings. Rank earnings growth and the three-session return relative to SPY around filing. Select up to 25 stocks using six months of daily tracking risk and a preference for incumbents. Size positions using one year of tracking risk and the earnings and price signals. Decisions execute at the following open.",
+        "inputs": "Captured SEC companyfacts, dated issuer evidence and 253 complete stock and SPY sessions. Filing signals become available after the first exchange close following filing.",
+        "risk": "Selected on the historical default period. Small annual leads are sensitive to costs and portfolio construction. A periodic filing can follow the original earnings announcement.",
+        "implemented": True,
+        "requires_periodic_income": True,
+        "frequency": "weekly",
+        "calendar_year_comparison": True,
+        "research_only": True,
     },
 ]
 

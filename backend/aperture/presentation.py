@@ -36,6 +36,10 @@ def dataset_view(dataset: dict) -> dict:
                 for k, v in meta["fundamentals"].items()
                 if k not in {"observation_ids", "source_hashes"}
             },
+            "has_periodic_captures": bool(
+                meta["fundamentals"].get("observation_ids")
+                and meta["fundamentals"].get("annual_income_count")
+            ),
             "coverage": [
                 {k: v for k, v in row.items() if k != "filed_share_classes"}
                 for row in meta["fundamentals"].get("coverage", [])

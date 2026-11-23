@@ -9,6 +9,7 @@ export type Strategy = {
   implemented: boolean;
   research_only?: boolean;
   requires_annual_income?: boolean;
+  requires_periodic_income?: boolean;
   frequency?: "monthly" | "weekly";
   variant_of?: string;
   definition?: string;
@@ -16,6 +17,7 @@ export type Strategy = {
 export type FundamentalCoverage = {
   normalizer?: string;
   annual_income_count?: number;
+  has_periodic_captures?: boolean;
   eps_policy?: string;
   share_basis?: string;
   refresh_policy?: string;
@@ -49,6 +51,17 @@ export type Signal = {
     median_dollar_volume?: string;
     above_200_session_average?: number;
     income_growth?: number;
+    cik?: string;
+    form?: string;
+    filed?: string;
+    accession?: string;
+    source_url?: string;
+    concept?: string;
+    period_end?: string;
+    income?: string;
+    prior_income?: string;
+    earnings_growth?: number;
+    filing_relative_return?: number;
     stock_return?: number;
     daytime_relative_log_return?: number;
     overnight_followthrough_log_return?: number;
@@ -299,6 +312,7 @@ export type Run = Omit<RunSummary, "metrics"> & {
   }[];
 };
 export type Review = ReviewSummary & {
+  factor_coverage?: Decision["factor_coverage"];
   signals?: Signal[];
   capital: string;
   cash_weight: string;

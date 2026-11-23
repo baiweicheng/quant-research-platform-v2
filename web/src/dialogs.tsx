@@ -32,17 +32,17 @@ export function TaskDialog({
   onClose: () => void;
   onQueued: () => void;
 }) {
-  const initialNeedsIncome = state.strategies.find(
-    (s) => s.id === initial,
-  )?.requires_annual_income;
+  const initialRecipe = state.strategies.find((s) => s.id === initial);
   const [datasetId, setDatasetId] = useState(
     (
       snapshotGroups(researchSnapshots(state.datasets)).latest.find((d) =>
-        initialNeedsIncome
-          ? !!d.metadata?.fundamentals?.annual_income_count
-          : !["quality", "quality_value", "value_momentum"].includes(
-              initial || "",
-            ) || !!d.metadata?.fundamentals?.record_count,
+        initialRecipe?.requires_periodic_income
+          ? !!d.metadata?.fundamentals?.has_periodic_captures
+          : initialRecipe?.requires_annual_income
+            ? !!d.metadata?.fundamentals?.annual_income_count
+            : !["quality", "quality_value", "value_momentum"].includes(
+                initial || "",
+              ) || !!d.metadata?.fundamentals?.record_count,
       ) || snapshotGroups(researchSnapshots(state.datasets)).latest[0]
     )?.id ?? "",
   );
@@ -68,6 +68,10 @@ export function TaskDialog({
   const missingAnnualIncome =
     requiresAnnualIncome &&
     !dataset?.metadata?.fundamentals?.annual_income_count;
+  const missingPeriodicIncome =
+    availableStrategies.some(
+      (s) => s.requires_periodic_income && selectedStrategies.includes(s.id),
+    ) && !dataset?.metadata?.fundamentals?.has_periodic_captures;
   const legacyClasses =
     ["quality_value", "value_momentum"].some((id) =>
       selectedStrategies.includes(id),
@@ -293,6 +297,12 @@ export function TaskDialog({
             filing-dated statements as well as prices.
           </Notice>
         )}
+        {missingPeriodicIncome && (
+          <Notice>
+            Choose a completed market and SEC snapshot with saved companyfacts
+            for the weekly earnings tracker.
+          </Notice>
+        )}
         {missingAnnualIncome && (
           <Notice>
             Add or refresh SEC financials in Data, then select the updated
@@ -426,6 +436,7 @@ export function TaskDialog({
               !dataset ||
               !selectedStrategies.length ||
               missingFundamentals ||
+              missingPeriodicIncome ||
               missingAnnualIncome ||
               task.isPending
             }

@@ -6,6 +6,7 @@ from dataclasses import replace
 from datetime import date
 from uuid import uuid4
 
+from .periodic_income import research_dataset
 from . import __version__, annual_income, calendar
 from .backtest import run
 from .domain import (
@@ -87,7 +88,7 @@ def create(store: Store, data: dict) -> dict:
             "Give the protocol a name and a meaningful hypothesis of at least ten characters."
         )
     recipe = runnable_strategy(data["strategy_id"])
-    ds = store.dataset(data["dataset_id"])
+    ds = research_dataset(store, data["dataset_id"], recipe)
     start, split, end = (
         date.fromisoformat(data[k]) for k in ("start", "holdout_start", "end")
     )
@@ -293,7 +294,7 @@ def retire(store: Store, identifier: str) -> dict:
 def execute(store: Store, job: dict, progress) -> dict:
     p = protocol(store, job["payload"]["protocol_id"])
     recipe = runnable_strategy(p["strategy_id"])
-    ds = store.dataset(p["dataset_id"])
+    ds = research_dataset(store, p["dataset_id"], recipe)
     if (
         ds.digest != p["source_digest"]
         or p["strategy"] != recipe

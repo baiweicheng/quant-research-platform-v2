@@ -561,6 +561,12 @@ def create_app(
             "fundamentals", {}
         ).get("annual_income_count"):
             raise ResearchError(annual_income.MISSING_INPUTS)
+        if recipe.get("requires_periodic_income") and not summary.get(
+            "metadata", {}
+        ).get("fundamentals", {}).get("observation_ids"):
+            from .periodic_income import MISSING
+
+            raise ResearchError(MISSING)
         if kind == "backtest":
             if (
                 payload.start is None
