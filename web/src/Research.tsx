@@ -461,6 +461,9 @@ export function RunDetail({
   const window = run.windows[period];
   const attribution = window.return_attribution;
   const exposure = displayedExposure(run, period);
+  const coverage = run.coverage;
+  const decisionExclusions = coverage?.decision_exclusions ?? [];
+  const decisionStocks = new Set(decisionExclusions.map((row) => row.symbol));
   return (
     <>
       {run.coverage?.mode === "coverage_limited" && (
@@ -765,8 +768,45 @@ export function RunDetail({
           </details>
         </div>
       </DisclosureCard>
-      <DisclosureCard title="Research limitations">
+      <DisclosureCard
+        title="Research limitations"
+        summary={
+          decisionStocks.size > 0
+            ? `${decisionStocks.size} ${coverage?.decision_scope === "supplemental" ? "supplemental" : "fixed-list"} ${decisionStocks.size === 1 ? "stock skipped" : "stocks skipped"} on one or more decision dates`
+            : undefined
+        }
+      >
         <div className="card-body notes-list">
+          {coverage?.decision_scope && <p>{coverage.warning}</p>}
+          {decisionExclusions.length > 0 && (
+            <details className="details">
+              <summary>Decision exclusions</summary>
+              <div className="table-scroll">
+                <table className="coverage-table">
+                  <thead>
+                    <tr>
+                      <th>Stock</th>
+                      <th>Reason</th>
+                      <th>Decisions</th>
+                      <th>First</th>
+                      <th>Last</th>
+                    </tr>
+                  </thead>
+                  <tbody>
+                    {decisionExclusions.map((row) => (
+                      <tr key={`${row.symbol}:${row.reason}`}>
+                        <td>{row.symbol}</td>
+                        <td>{row.reason}</td>
+                        <td>{row.decisions}</td>
+                        <td>{row.first}</td>
+                        <td>{row.last}</td>
+                      </tr>
+                    ))}
+                  </tbody>
+                </table>
+              </div>
+            </details>
+          )}
           {run.notes.map((note) => (
             <p key={note}>{note}</p>
           ))}

@@ -316,7 +316,7 @@ export default function Validation({ state }: { state: State }) {
             <Notice>
               {protocol.coverage_mode === "coverage_limited"
                 ? "Coverage-limited exploratory research; data exclusions can bias every evaluation. "
-                : "Strict input coverage. "}
+                : "Strict coverage of in-period prices and actions for dated S&P 500 members. Supplemental and custom stocks are screened at each decision. "}
               {protocol.dividend_model === "ex_date"
                 ? "Ex-date total-return accounting. "
                 : "Payment-date cash-flow accounting. "}

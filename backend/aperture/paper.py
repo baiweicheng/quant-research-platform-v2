@@ -535,6 +535,12 @@ def pending_plans(store, saved_plans, at):
 def public_state(store):
     cfg = configuration(store)
     snap = store.preference("paper_snapshot")
+    performance = store.preference("paper_performance")
+    if performance and performance.get("account_key") not in (
+        None,
+        (snap or {}).get("account_key"),
+    ):
+        performance = None
     recipe = strategy(cfg["strategy_id"]) if cfg else None
     hidden = bool(recipe and recipe["id"] in HIDDEN_STRATEGIES)
     archived_strategy = (
@@ -582,7 +588,7 @@ def public_state(store):
         "orders": saved_orders,
         "events": events,
         "quote_waits": store.preference("paper_quote_waits"),
-        "performance": store.preference("paper_performance"),
+        "performance": performance,
         "last_error": store.preference("paper_error"),
         "worker_seen": store.preference("worker_seen"),
         "automatic_status": (
@@ -700,6 +706,9 @@ def reconcile(store, broker, performance=False, dataset=None, *, staging=False):
         observed_at=None if staging else datetime.now(UTC),
     )
     if not staging:
+        prior_snapshot = store.preference("paper_snapshot") or {}
+        if prior_snapshot.get("account_key") != snap["account_key"]:
+            store.set_preference("paper_performance", None)
         store.set_preference("paper_snapshot", snap)
         store.set_preference("paper_error", None)
         update_cancellation(store, snap["account_key"])
@@ -717,12 +726,29 @@ def reconcile(store, broker, performance=False, dataset=None, *, staging=False):
                 None,
             )
             dataset = store.dataset(usable["id"]) if usable else None
+        account_key = snap["account_key"]
         try:
-            store.set_preference("paper_performance", refresh(store, broker, dataset))
+            result = refresh(store, broker, dataset, account_key=account_key)
         except ResearchError as e:
+            prior = store.preference("paper_performance") or {}
+            if prior.get("account_key", account_key) == account_key and prior.get(
+                "curve"
+            ):
+                result = {
+                    **prior,
+                    "refresh_issue": f"Showing saved history through {prior['curve'][-1]['session']}. Latest refresh failed. {e}",
+                }
+            else:
+                result = {
+                    "available": False,
+                    "curve": [],
+                    "windows": {},
+                    "notes": [],
+                    "refresh_issue": f"Could not refresh broker valuations. {e}",
+                }
+        if (store.preference("paper_snapshot") or {}).get("account_key") == account_key:
             store.set_preference(
-                "paper_performance",
-                {"available": False, "curve": [], "windows": {}, "notes": [str(e)]},
+                "paper_performance", {**result, "account_key": account_key}
             )
     return snap
 

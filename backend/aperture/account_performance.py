@@ -33,13 +33,49 @@ SUPPORTED_INCOME = {
 }
 
 
+def history_rows(raw):
+    if not isinstance(raw, dict) or not all(
+        isinstance(raw.get(key), list) for key in ("timestamp", "equity")
+    ):
+        raise ResearchError(
+            "Broker equity history must contain timestamp and equity arrays."
+        )
+    timestamps, equities = raw["timestamp"], raw["equity"]
+    if len(timestamps) != len(equities):
+        raise ResearchError("Broker equity-history arrays have different lengths.")
+    rows = []
+    for stamp, value in zip(timestamps, equities, strict=True):
+        try:
+            if type(stamp) is not int:
+                raise ValueError
+            day = datetime.fromtimestamp(stamp, UTC).astimezone(NY).date()
+        except (ValueError, OverflowError, OSError):
+            raise ResearchError(
+                "Broker equity history has an invalid timestamp."
+            ) from None
+        eq = decimal(value, "Broker daily equity") if value is not None else None
+        rows.append((day, stamp, eq))
+    return rows
+
+
+def completed_rows(rows, latest, start):
+    daily = {}
+    for day, stamp, eq in sorted(rows, key=lambda row: row[1]):
+        if day > latest or (start and day < start) or not calendar.sessions(day, day):
+            continue
+        if day in daily and daily[day][1] != eq:
+            raise ResearchError(
+                "Broker equity history has conflicting values for " + str(day) + "."
+            )
+        daily[day] = stamp, eq
+    return daily
+
+
 def build(
     raw: dict, activities: list[dict], dataset=None, latest=None, start=None
 ) -> dict:
     latest = latest or calendar.latest_complete()
-    timestamps, equities = raw.get("timestamp", []), raw.get("equity", [])
-    if len(timestamps) != len(equities):
-        raise ResearchError("Broker equity-history arrays have different lengths.")
+    daily = completed_rows(history_rows(raw), latest, start)
     flows = {}
     uncertain = []
     for a in activities:
@@ -64,26 +100,14 @@ def build(
             )
         flows[day] = flows.get(day, ZERO) + amount
     rows = {}
-    for stamp, value in sorted(zip(timestamps, equities)):
-        if value is None:
+    for day, (_, eq) in daily.items():
+        if eq is None:
             continue
-        day = datetime.fromtimestamp(stamp, UTC).astimezone(NY).date()
-        if (
-            day > latest
-            or (start and day < start)
-            or day not in calendar.sessions(day, day)
-        ):
-            continue
-        eq = decimal(value)
         if eq <= ZERO and rows:
             raise ResearchError(
                 "The funded account returned to zero/nonpositive equity. Review an account reset before starting a new reporting period."
             )
         if eq > ZERO:
-            if str(day) in rows and rows[str(day)] != eq:
-                raise ResearchError(
-                    "Conflicting daily broker valuations cannot be silently replaced."
-                )
             rows[str(day)] = eq
     days = sorted(rows)
     notes = [
@@ -190,31 +214,56 @@ def build(
     }
 
 
-def refresh(store, broker, dataset=None):
+def refresh(store, broker, dataset=None, *, account_key=None):
     at = datetime.now(UTC)
     # The API requires a number + duration unit, not an invented period=all.
     raw = broker.read(
         "/v2/account/portfolio/history",
         {"period": "1A", "timeframe": "1D", "extended_hours": "false"},
     )
-    timestamps = raw.get("timestamp", [])
-    earliest = (
-        datetime.fromtimestamp(min(timestamps), UTC).date() if timestamps else at.date()
-    )
-    activities = broker.activities((earliest - timedelta(days=1)).isoformat())
-    snap = store.preference("paper_snapshot", {})
-    account_key = snap.get("account_key", "unbound")
+    raw_rows = history_rows(raw)
+    latest = calendar.latest_complete(at)
+    if account_key is None:
+        account_key = (store.preference("paper_snapshot") or {}).get(
+            "account_key", "unbound"
+        )
     tracking_key = "paper_tracking_" + account_key
-    tracking = store.preference(tracking_key)
-    if not tracking:
-        tracking = str(calendar.latest_complete(at))
-        store.set_preference(tracking_key, tracking)
+    saved_tracking = store.preference(tracking_key)
+    tracking = saved_tracking or str(latest)
+    start = date.fromisoformat(tracking)
+    incoming = completed_rows(raw_rows, latest, start)
     archive_key = "paper_equity_archive_" + account_key
     archive = store.preference(archive_key, {"rows": {}, "activities": {}})
-    for stamp, eq in zip(raw.get("timestamp", []), raw.get("equity", [])):
-        day = datetime.fromtimestamp(stamp, UTC).astimezone(NY).date()
-        if day >= date.fromisoformat(tracking):
-            archive["rows"][str(day)] = {"timestamp": stamp, "equity": eq}
+    funded_at = min(
+        (day for day, (_, eq) in incoming.items() if eq is not None and eq > ZERO),
+        default=date.max,
+    )
+    for day, row in archive["rows"].items():
+        session = date.fromisoformat(day)
+        if (
+            start <= session <= latest
+            and row["equity"] is not None
+            and decimal(row["equity"], "Saved broker daily equity") > ZERO
+        ):
+            funded_at = min(funded_at, session)
+    if not raw_rows and funded_at != date.max:
+        raise ResearchError(
+            "Broker equity history is empty for a previously funded account."
+        )
+    for day, (stamp, eq) in incoming.items():
+        if eq is None:
+            if day >= funded_at:
+                raise ResearchError(
+                    f"Broker equity history has no completed valuation for {day}."
+                )
+            continue
+        archive["rows"][str(day)] = {"timestamp": stamp, "equity": str(eq)}
+    earliest = (
+        datetime.fromtimestamp(min(stamp for _, stamp, _ in raw_rows), UTC).date()
+        if raw_rows
+        else at.date()
+    )
+    activities = broker.activities((earliest - timedelta(days=1)).isoformat())
     for a in activities:
         if a.get("id"):
             archive["activities"][a["id"]] = {
@@ -228,12 +277,6 @@ def refresh(store, broker, dataset=None):
                 )
                 if k in a
             }
-    store.observe(
-        "alpaca-paper",
-        "daily-equity-and-activities",
-        json.dumps({"history": raw, "activities": activities}, sort_keys=True).encode(),
-    )
-    store.set_preference(archive_key, archive)
     rows = [archive["rows"][d] for d in sorted(archive["rows"])]
     merged = {
         "timestamp": [r["timestamp"] for r in rows],
@@ -243,12 +286,25 @@ def refresh(store, broker, dataset=None):
         merged,
         list(archive["activities"].values()),
         dataset,
-        start=date.fromisoformat(tracking),
+        latest=latest,
+        start=start,
     )
+    if result.get("end") and result["end"] < str(latest):
+        result["refresh_issue"] = (
+            f"Broker valuations are available through {result['end']}. The completed session on {latest} is still missing."
+        )
     result["tracking_start"] = tracking
     result["notes"].append(
         "Reporting begins with the first tracked completed session ("
         + tracking
         + "). Earlier broker history is excluded. Daily observations accumulate locally; downloaded revisions retain a source archive."
     )
+    store.observe(
+        "alpaca-paper",
+        "daily-equity-and-activities",
+        json.dumps({"history": raw, "activities": activities}, sort_keys=True).encode(),
+    )
+    if not saved_tracking:
+        store.set_preference(tracking_key, tracking)
+    store.set_preference(archive_key, archive)
     return result

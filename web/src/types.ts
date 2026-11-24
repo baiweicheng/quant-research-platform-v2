@@ -266,6 +266,14 @@ export type Run = Omit<RunSummary, "metrics"> & {
     price_window_policy?: string;
     warning?: string;
     excluded?: { symbol: string; reasons: string[] }[];
+    decision_scope?: "supplemental" | "fixed_list";
+    decision_exclusions?: {
+      symbol: string;
+      reason: string;
+      decisions: number;
+      first: string;
+      last: string;
+    }[];
   };
   frequency: string;
   notes: string[];

@@ -142,6 +142,7 @@ type Performance = {
   notes: string[];
   benchmark_model?: string;
   checked_at?: string;
+  refresh_issue?: string;
 };
 type PaperState = {
   config?: Config | null;
@@ -237,6 +238,11 @@ export function PaperPerformance() {
         </div>
         <Badge>Broker valuations</Badge>
       </div>
+      {perf?.refresh_issue && (
+        <p className="range-note" role="status">
+          {perf.refresh_issue}
+        </p>
+      )}
       <MetricStrip account metrics={window?.metrics} />
       <p className="range-note">
         Alpaca paper does not credit dividends. SPY includes them; the gap

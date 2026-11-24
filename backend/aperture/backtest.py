@@ -20,7 +20,7 @@ from .ledger import apply_actions, buy, rebalance, reinvest_research_income
 from .lifecycles import recipients
 from .liquidity_breadth import STRATEGY_ID as LIQUIDITY_BREADTH, LiquidityBreadth
 from .market_capture import weekly_income_model
-from .membership import HISTORY_NOTE, validate_coverage
+from .membership import HISTORY_NOTE, eligible, validate_coverage
 from .metrics import calendar_year_returns, windows
 from .portfolio import target_weights, uses_liquidity_weights
 from .research_data import blocked_inputs, indexed_issues, security_events
@@ -241,6 +241,21 @@ def run(
 
     tracker = weekly_model(dataset, recipe)
     previous_targets = {}
+    roster = dataset.metadata.get("membership")
+    decision_scope = set()
+    decision_exclusions = {}
+    if coverage_mode == "strict":
+        decision_scope = set(
+            roster["additional_symbols"]
+            if roster
+            else dataset.metadata.get("custom_symbols", dataset.bars)
+        ) - {"SPY"}
+        coverage_audit["warning"] = (
+            "Strict validates in-period prices and actions for dated S&P 500 members. "
+            "Supplemental stocks are screened at each decision."
+            if roster
+            else "This run uses a fixed list. Stocks are screened at each decision."
+        )
     for index, day in enumerate(days):
         today = {
             symbol: rows[day] for symbol, rows in investible.items() if day in rows
@@ -353,6 +368,17 @@ def run(
                     policy,
                     weight_by_liquidity=uses_liquidity_weights(recipe, ranked),
                 )
+            if decision_scope:
+                active = eligible(dataset, day) & decision_scope
+                for entry in excluded:
+                    symbol, reason = entry["symbol"], entry["reason"]
+                    if symbol in active:
+                        summary = decision_exclusions.setdefault(symbol, {})
+                        stats = summary.setdefault(
+                            reason, {"decisions": 0, "first": str(day)}
+                        )
+                        stats["decisions"] += 1
+                        stats["last"] = str(day)
             notes.update(
                 note for note in allocation_notes if "stays in cash because" not in note
             )
@@ -390,6 +416,13 @@ def run(
                 10 + round(index / len(days) * 85),
                 f"Simulating {day}; {len(trades)} fills recorded",
             )
+    if coverage_mode == "strict":
+        coverage_audit["decision_scope"] = "supplemental" if roster else "fixed_list"
+        coverage_audit["decision_exclusions"] = [
+            {"symbol": symbol, "reason": reason, **stats}
+            for symbol, reasons in sorted(decision_exclusions.items())
+            for reason, stats in sorted(reasons.items())
+        ]
     if not trades:
         notes.add(
             "No trades occurred. Check the warm-up history, missing sessions, and eligible-stock count."

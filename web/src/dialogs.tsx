@@ -528,9 +528,7 @@ export function ResearchCoverageChoice() {
           <option value="coverage_limited">
             Coverage-limited research · exclusions disclosed
           </option>
-          <option value="strict">
-            Strict coverage · require complete inputs
-          </option>
+          <option value="strict">Strict coverage</option>
         </select>
       </label>
       <p className="field-hint">
@@ -538,6 +536,10 @@ export function ResearchCoverageChoice() {
         inputs during possible holding periods. Every exclusion is saved. This
         can introduce survivorship and selection bias; results do not represent
         the complete S&P 500.
+      </p>
+      <p className="field-hint">
+        Strict coverage checks in-period prices and actions for dated S&P 500
+        members. Supplemental and custom stocks are screened at each decision.
       </p>
     </>
   );

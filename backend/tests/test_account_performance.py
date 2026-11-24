@@ -4,6 +4,9 @@ from decimal import Decimal as D
 import pytest
 from aperture.account_performance import build
 from aperture.domain import Bar, Dataset, ResearchError
+from aperture.paper import public_state, reconcile
+from aperture.store import Store
+from test_paper import FakeBroker
 
 
 def raw(values, days=None):
@@ -89,3 +92,83 @@ def test_unknown_activity_and_account_reset_cannot_manufacture_returns():
     )["available"]
     with pytest.raises(ResearchError, match="returned to zero"):
         build(raw([100, 0, 100]), [], latest=date(2026, 10, 28))
+
+
+@pytest.mark.parametrize(
+    ("payload", "message"),
+    [
+        (raw([100, 110]), "different lengths"),
+        (raw([110, None, 125]), "no completed valuation for 2026-10-27"),
+        (
+            raw([100, 110, 125], ["2026-10-26", "2026-10-27", "2026-10-27"]),
+            "conflicting values",
+        ),
+        ({"timestamp": ["bad"], "equity": [100]}, "invalid timestamp"),
+        ({"timestamp": [], "equity": None}, "timestamp and equity arrays"),
+        ({"timestamp": [], "equity": []}, "empty for a previously funded account"),
+        (raw([100, "NaN", 125]), "finite number"),
+    ],
+)
+def test_rejected_history_keeps_saved_report_and_archive(
+    tmp_path, monkeypatch, payload, message
+):
+    store = Store(tmp_path / "returns.sqlite3")
+    broker = FakeBroker()
+    key = broker.account_key
+    monkeypatch.setattr(
+        "aperture.calendar.latest_complete", lambda *_: date(2026, 10, 28)
+    )
+    store.set_preference("paper_tracking_" + key, "2026-10-26")
+    monkeypatch.setattr(broker, "read", lambda *_: raw([100, 110, 120]))
+    reconcile(store, broker, performance=True)
+    prior = public_state(store)["performance"]
+    assert prior["end"] == "2026-10-28" and prior["available"]
+    archive = store.preference("paper_equity_archive_" + key)
+    with store.connect() as db:
+        count = db.execute("SELECT count(*) FROM observations").fetchone()[0]
+
+    monkeypatch.setattr(broker, "read", lambda *_: payload)
+    reconcile(store, broker, performance=True)
+    stale = public_state(store)["performance"]
+    assert message in stale.pop("refresh_issue")
+    assert stale == prior
+    assert store.preference("paper_equity_archive_" + key) == archive
+    with store.connect() as db:
+        assert db.execute("SELECT count(*) FROM observations").fetchone()[0] == count
+
+    monkeypatch.setattr(broker, "read", lambda *_: raw([100, 115, 125]))
+    reconcile(store, broker, performance=True)
+    recovered = public_state(store)["performance"]
+    assert "refresh_issue" not in recovered
+    assert [row["account_equity"] for row in recovered["curve"]] == [
+        "100",
+        "115",
+        "125",
+    ]
+
+
+def test_history_distinguishes_funding_lag_and_another_account(tmp_path, monkeypatch):
+    store = Store(tmp_path / "returns.sqlite3")
+    broker = FakeBroker()
+    key = broker.account_key
+    monkeypatch.setattr(
+        "aperture.calendar.latest_complete", lambda *_: date(2026, 10, 28)
+    )
+    store.set_preference("paper_tracking_" + key, "2026-10-23")
+    days = ["2026-10-23", "2026-10-26", "2026-10-27", "2026-10-29"]
+    monkeypatch.setattr(broker, "read", lambda *_: raw([None, 100, 120, None], days))
+    reconcile(store, broker, performance=True)
+    history = public_state(store)["performance"]
+    assert history["available"]
+    assert history["start"] == "2026-10-26" and history["end"] == "2026-10-27"
+    assert "2026-10-28 is still missing" in history["refresh_issue"]
+    assert store.preference("paper_equity_archive_" + key)["rows"].keys() == {
+        "2026-10-26",
+        "2026-10-27",
+    }
+    broker.account_key = "other-paper-account"
+    monkeypatch.setattr(broker, "read", lambda *_: raw([100, 110]))
+    reconcile(store, broker, performance=True)
+    result = public_state(store)["performance"]
+    assert not result["available"] and not result["curve"]
+    assert "different lengths" in result["refresh_issue"]

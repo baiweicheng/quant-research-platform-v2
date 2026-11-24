@@ -1,9 +1,13 @@
 import json
 from dataclasses import replace
+from datetime import date
+from decimal import Decimal as D
 
 import pytest
+from aperture import calendar
 from aperture.api import create_app
-from aperture.domain import ResearchError
+from aperture.backtest import run
+from aperture.domain import Bar, Dataset, Policy, ResearchError
 from aperture.ingest import parse_csv
 from aperture.worker import process_one
 from fastapi.testclient import TestClient
@@ -100,3 +104,64 @@ def test_transaction_rolls_back_earlier_tasks_when_a_later_input_disappears(batc
             "backtest", [task, {**task, "dataset_id": "removed"}]
         )
     assert app.state.store.jobs() == []
+
+
+@pytest.mark.parametrize("fixed_list", [False, True])
+def test_strict_reports_supplement_or_custom_decision_gap_without_blocking(fixed_list):
+    days = calendar.sessions(date(2024, 1, 2), date(2025, 2, 4))
+    decision, end = days[-2:]
+    meta = (
+        {"custom_symbols": ["AAA", "BBB"]}
+        if fixed_list
+        else {
+            "membership": {
+                "kind": "historical",
+                "coverage_start": str(days[0]),
+                "coverage_end": str(end),
+                "rosters": [{"effective": str(days[0]), "symbols": ["AAA"]}],
+                "additional_symbols": ["BBB"],
+            }
+        }
+    )
+    ds = Dataset(
+        "test",
+        "Supplement gap",
+        "imported",
+        1,
+        {
+            name: tuple(
+                Bar(name, day, *([D(10 + i * inc)] * 4), 10_000)
+                for i, day in enumerate(days)
+            )
+            for name, inc in (("AAA", 1), ("BBB", 2))
+        },
+        {"AAA": "A", "BBB": "B"},
+        "fixture",
+        "digest",
+        meta,
+    )
+    clean = run(ds, "momentum", decision, end, D(1000), Policy(positions=1))
+    assert set(clean["decisions"][0]["targets"]) == {"BBB"}
+    assert not clean["coverage"]["decision_exclusions"]
+    gapped = replace(
+        ds,
+        bars={
+            **ds.bars,
+            "BBB": tuple(b for b in ds.bars["BBB"] if b.session != decision),
+        },
+    )
+    report = run(gapped, "momentum", decision, end, D(1000), Policy(positions=1))
+    assert set(report["decisions"][0]["targets"]) == {"AAA"}
+    assert report["coverage"]["excluded_count"] == 0  # No whole-run exclusions.
+    assert report["coverage"]["decision_scope"] == (
+        "fixed_list" if fixed_list else "supplemental"
+    )
+    assert report["coverage"]["decision_exclusions"] == [
+        {
+            "symbol": "BBB",
+            "reason": "Needs 253 complete sessions available by this decision.",
+            "decisions": 1,
+            "first": str(decision),
+            "last": str(decision),
+        }
+    ]

@@ -80,8 +80,14 @@ def execute(store: Store, job: dict):
                 from .staged import fill_check
 
                 fill_check(store, broker, performance=True)
+                performance = store.preference("paper_performance") or {}
+                performance_message = performance.get("refresh_issue")
                 body = {
-                    "completion_message": "Paper account, orders and daily performance refreshed. No orders submitted."
+                    "completion_message": (
+                        f"Paper account and orders refreshed. {performance_message} No orders submitted."
+                        if performance_message
+                        else "Paper account, orders and daily performance refreshed. No orders submitted."
+                    )
                 }
             elif job["kind"] == "paper_cancel":
                 body = {
