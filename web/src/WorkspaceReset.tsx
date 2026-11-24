@@ -1,7 +1,7 @@
 import { useState } from "react";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { api } from "./api";
-import { Modal, Notice } from "./components";
+import { DisclosureCard, Modal, Notice } from "./components";
 
 const confirmationText = "RESET WORKSPACE";
 const labels = {
@@ -176,15 +176,11 @@ export default function WorkspaceReset() {
   const [open, setOpen] = useState(false);
   const [message, setMessage] = useState("");
   return (
-    <section className="card">
-      <div className="card-header">
-        <div>
-          <h2>Reset workspace</h2>
-          <p>
-            Clear saved research and downloaded data. Paper trading history is
-            kept.
-          </p>
-        </div>
+    <DisclosureCard title="Workspace maintenance">
+      <div className="card-body">
+        <p>
+          Clear saved research and datasets while keeping paper trading history.
+        </p>
         <button className="button secondary" onClick={() => setOpen(true)}>
           Reset workspace
         </button>
@@ -203,6 +199,6 @@ export default function WorkspaceReset() {
           }}
         />
       )}
-    </section>
+    </DisclosureCard>
   );
 }

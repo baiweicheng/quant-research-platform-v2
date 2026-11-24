@@ -2,7 +2,14 @@ import { lazy, Suspense, useEffect, useState, type FormEvent } from "react";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { ArrowRight, Download, RefreshCw, ShieldCheck } from "lucide-react";
 import { api, download, money, percent, shortDate } from "./api";
-import { Badge, Empty, MetricStrip, Notice, PeriodPicker } from "./components";
+import {
+  Badge,
+  DisclosureCard,
+  Empty,
+  MetricStrip,
+  Notice,
+  PeriodPicker,
+} from "./components";
 import { SignalAudit } from "./Fundamentals";
 import type { Decision, Period, Run, State, Strategy } from "./types";
 const Chart = lazy(() => import("./Chart"));
@@ -299,20 +306,13 @@ export function PaperWeekly({ onPortfolio }: { onPortfolio: () => void }) {
               : (cfg?.mode ?? "Set up")}
         </Badge>
       </div>
-      <h2>Prepare once. Review with context.</h2>
+      <h2>{monthly ? "Month-end paper review" : "Weekly paper review"}</h2>
       <p>
-        Reconcile the account, update prices and filings, validate inputs and
-        save an allocation with proposed paper orders.
+        Reconcile the account and refresh market data to prepare proposed
+        orders.
         {monthly &&
-          " Aim to rebalance at month-end. Manual catch-up is available for up to seven calendar days after the scheduled open."}
+          " Manual catch-up is available for up to seven calendar days after the scheduled open."}
       </p>
-      <div className="weekly-steps">
-        <span>Reconcile</span>
-        <ArrowRight size={13} />
-        <span>Update & calculate</span>
-        <ArrowRight size={13} />
-        <span>Review</span>
-      </div>
       {latest && (
         <p>
           Latest plan: {latest.state.replaceAll("_", " ")} · {latest.message}
@@ -464,13 +464,7 @@ export default function PaperWorkspace({ state }: { state: State }) {
   return (
     <div className="paper-workspace">
       <div className="page-heading">
-        <div>
-          <span className="eyebrow">RESEARCH INTO PRACTICE</span>
-          <h1>A considered paper portfolio.</h1>
-          <p>
-            Explicit approval, visible cash and a durable record of every order.
-          </p>
-        </div>
+        <h1>Paper portfolio</h1>
         <button
           className="button secondary"
           disabled={action.isPending}
@@ -480,11 +474,6 @@ export default function PaperWorkspace({ state }: { state: State }) {
           Refresh paper account
         </button>
       </div>
-      <Notice>
-        Paper environment only. No live-trading endpoint is available. Your
-        intended starting balance is $100,000; account refresh shows the
-        broker’s actual balance and never resets it.
-      </Notice>
       {query.error && <Notice error>{query.error.message}</Notice>}
       {query.launchError && (
         <Notice error>
@@ -849,7 +838,7 @@ export default function PaperWorkspace({ state }: { state: State }) {
                 </strong>
               </p>
               <p>
-                {monthly && "Month-end · "}
+                {monthly ? "Month-end" : "Weekly"} · {cfg.mode} ·{" "}
                 {cfg.symbols.length - 1} stocks · up to {cfg.policy.positions}{" "}
                 positions · {percent(Number(cfg.policy.max_weight))} stock cap ·{" "}
                 {percent(Number(cfg.policy.sector_cap))} sector cap ·{" "}
@@ -858,25 +847,33 @@ export default function PaperWorkspace({ state }: { state: State }) {
                   ? "Broker-staged Market DAY"
                   : `${percent(Number(cfg.max_drift))} legacy limit price band`}
               </p>
-              {!archivedStrategy && (
+              <details className="details">
+                <summary>Rebalance timing & account requirements</summary>
                 <p>
-                  {monthly
-                    ? "Ideally, prepare at month-end after the final session’s data is available and stage before the next regular open. If you miss it, prepare a manual catch-up after a later session’s data is available, for an open within seven calendar days of the originally scheduled open."
-                    : selectedStrategy?.variant_of
-                      ? "Prepare and approve after data is available for the final trading session of the week and before the next regular open. Automatic preparation uses the same window and requires separate approval."
-                      : cfg.execution_version === "paper-broker-market-day-v1"
-                        ? "Prepare and approve outside market hours. Keep Aperture open until every instruction is confirmed accepted at Alpaca, then you may close the app. Closing does not cancel broker-held orders. The next launch checks actual fills before another rebalance."
-                        : cfg.mode === "automatic"
-                          ? "Automatic weekly preparation runs after the week’s final market close and submits in the next regular session, only under explicit automatic paper approval. Keep the worker running through execution and any settlement wait."
-                          : "Manual mode: prepare after a completed close, inspect the plan and separately approve the following session’s paper orders. Keep Aperture running through fills and settlement."}
+                  Use a dedicated long-only stock paper account. Your intended
+                  starting balance is $100,000; refreshing shows the broker’s
+                  actual balance.
                 </p>
-              )}
-              {!!cfg.exit_symbols?.length && (
-                <p>
-                  Exit-only holdings: {cfg.exit_symbols.join(", ")}. They can be
-                  reduced, and are excluded from new-buy ranking.
-                </p>
-              )}
+                {!archivedStrategy && (
+                  <p>
+                    {monthly
+                      ? "Ideally, prepare at month-end after the final session’s data is available and stage before the next regular open. If you miss it, prepare a manual catch-up after a later session’s data is available, for an open within seven calendar days of the originally scheduled open."
+                      : selectedStrategy?.variant_of
+                        ? "Prepare and approve after data is available for the final trading session of the week and before the next regular open. Automatic preparation uses the same window and requires separate approval."
+                        : cfg.execution_version === "paper-broker-market-day-v1"
+                          ? "Prepare and approve outside market hours. Keep Aperture open until every instruction is confirmed accepted at Alpaca, then you may close the app. Closing does not cancel broker-held orders. The next launch checks actual fills before another rebalance."
+                          : cfg.mode === "automatic"
+                            ? "Automatic weekly preparation runs after the week’s final market close and submits in the next regular session, only under explicit automatic paper approval. Keep the worker running through execution and any settlement wait."
+                            : "Manual mode: prepare after a completed close, inspect the plan and separately approve the following session’s paper orders. Keep Aperture running through fills and settlement."}
+                  </p>
+                )}
+                {!!cfg.exit_symbols?.length && (
+                  <p>
+                    Exit-only holdings: {cfg.exit_symbols.join(", ")}. They can
+                    be reduced, and are excluded from new-buy ranking.
+                  </p>
+                )}
+              </details>
             </>
           )}
           {cfg && (
@@ -909,11 +906,12 @@ export default function PaperWorkspace({ state }: { state: State }) {
               )}
             </div>
           )}
-          <p className="field-hint">
-            Stopping does not undo fills. Cancellation is a request; an order
-            may fill before cancellation. Only Aperture-owned orders are
-            canceled.
-          </p>
+          {cfg && (
+            <p className="field-hint">
+              Cancellation applies to Aperture orders. Fills may occur before
+              the broker confirms cancellation.
+            </p>
+          )}
         </div>
       </section>
       {cfg && !archivedStrategy && !data?.approval && (
@@ -1297,16 +1295,26 @@ export default function PaperWorkspace({ state }: { state: State }) {
         </section>
       )}
       {!!data?.orders?.length && (
-        <section className="card">
-          <div className="card-header">
-            <div>
-              <h2>Paper order lifecycle</h2>
-              <p>
-                Partial, rejected and uncertain orders remain in this record
-                across restarts.
-              </p>
-            </div>
-          </div>
+        <DisclosureCard
+          title="Paper order lifecycle"
+          summary={
+            data.orders.length + " recorded · Fills, prices & broker status"
+          }
+          open={data.orders.some(
+            (order) =>
+              ![
+                "filled",
+                "canceled",
+                "expired",
+                "rejected",
+                "replaced",
+              ].includes(order.state),
+          )}
+        >
+          <p className="card-body">
+            Partial, rejected and uncertain orders remain in this record across
+            restarts.
+          </p>
           <div className="table-scroll">
             <table>
               <thead>
@@ -1376,14 +1384,14 @@ export default function PaperWorkspace({ state }: { state: State }) {
               </tbody>
             </table>
           </div>
-        </section>
+        </DisclosureCard>
       )}
       {snap && <PaperPerformance />}
       {!!data?.events?.length && (
-        <section className="card">
-          <div className="card-header">
-            <h2>Paper activity</h2>
-          </div>
+        <DisclosureCard
+          title="Paper activity"
+          summary="Latest account and order events"
+        >
           <div className="card-body">
             {data.events.slice(0, 20).map((e) => (
               <p key={e.id}>
@@ -1393,7 +1401,7 @@ export default function PaperWorkspace({ state }: { state: State }) {
               </p>
             ))}
           </div>
-        </section>
+        </DisclosureCard>
       )}
     </div>
   );

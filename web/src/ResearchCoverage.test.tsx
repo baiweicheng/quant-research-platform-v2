@@ -1,4 +1,8 @@
-import { render as baseRender, screen } from "@testing-library/react";
+import {
+  render as baseRender,
+  fireEvent,
+  screen,
+} from "@testing-library/react";
 import { expect, it, vi } from "vitest";
 import { RunDetail } from "./Research";
 import type { Run } from "./types";
@@ -66,6 +70,8 @@ const run = {
 } as unknown as Run;
 it("displays the saved sensitivity policy rather than default assumptions", () => {
   render(<RunDetail run={run} period="All" setPeriod={() => {}} />);
+  expect(screen.getByText("3.00% per position")).not.toBeVisible();
+  fireEvent.click(screen.getByText("Assumptions, costs & exposures"));
   expect(screen.getByText("3.00% per position")).toBeVisible();
   expect(screen.getByText("20.00% per sector")).toBeVisible();
   expect(screen.getByText("At least 10.00%")).toBeVisible();
@@ -118,6 +124,7 @@ it("shows weighted fundamental availability even with complete price coverage", 
     ],
   };
   render(<RunDetail run={saved} period="All" setPeriod={() => {}} />);
+  fireEvent.click(screen.getByText("Assumptions, costs & exposures"));
   expect(
     screen.getByText("Factor data coverage · selected period"),
   ).toBeVisible();
@@ -139,6 +146,7 @@ it("does not interpret an old fundamental result as complete coverage", () => {
       setPeriod={() => {}}
     />,
   );
+  fireEvent.click(screen.getByText("Assumptions, costs & exposures"));
   expect(
     screen.getByText(
       "Factor data coverage is unavailable for this saved period.",
@@ -170,6 +178,7 @@ it("makes the low equity exposure of a legacy result prominent without changing 
   expect(
     screen.getByText("Average allocation: 25.00% stocks / 75.00% cash."),
   ).toBeVisible();
+  fireEvent.click(screen.getByText("Assumptions, costs & exposures"));
   expect(
     screen.getByText(/SPY is a fully invested buy-and-hold comparison/),
   ).toBeVisible();

@@ -1,31 +1,27 @@
 import { useEffect, useState } from "react";
 import { NavLink, useLocation, useNavigate } from "react-router-dom";
-import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
+import { useQuery } from "@tanstack/react-query";
 import {
   Activity,
   ArrowRight,
   ArrowUpRight,
-  BookOpen,
   Check,
-  ChevronRight,
-  Database,
   Download,
   Leaf,
   LoaderCircle,
   ShieldCheck,
-  Sparkles,
-  Upload,
 } from "lucide-react";
 import { api, download, money, percent, shortDate } from "./api";
 import {
   Badge,
+  DisclosureCard,
   Empty,
   MetricStrip,
   Notice,
   Step,
   TextLink,
 } from "./components";
-import { ImportDialog, StrategyDialog, TaskDialog } from "./dialogs";
+import { StrategyDialog, TaskDialog } from "./dialogs";
 import Research from "./Research";
 import MarketData from "./MarketData";
 import DatasetUpdates from "./DatasetUpdates";
@@ -59,10 +55,7 @@ const tabs = [
 export default function App() {
   const navigate = useNavigate();
   const location = useLocation();
-  const client = useQueryClient();
-  const [dialog, setDialog] = useState<"import" | "backtest" | "review" | null>(
-    null,
-  );
+  const [dialog, setDialog] = useState<"backtest" | "review" | null>(null);
   const [strategy, setStrategy] = useState<string>();
   const [info, setInfo] = useState<Strategy | null>(null);
   const [toast, setToast] = useState("");
@@ -77,16 +70,6 @@ export default function App() {
         : 10000,
   });
   const state = query.data;
-  const practice = useMutation({
-    mutationFn: () => api("/practice", {}),
-    onSuccess: async () => {
-      await client.invalidateQueries({ queryKey: ["state"] });
-      setToast(
-        "Practice dataset queued. You can continue browsing while it is prepared.",
-      );
-    },
-    onError: (error) => setToast(error.message),
-  });
   const route = tabs.some(([path]) => path === location.pathname)
     ? location.pathname
     : "/";
@@ -96,7 +79,7 @@ export default function App() {
   function start(kind: "review" | "backtest", id?: string) {
     if (!state?.datasets.length) {
       navigate("/data");
-      setToast("Add a dataset or create the practice universe to begin.");
+      setToast("Download research data to begin.");
       return;
     }
     setStrategy(id);
@@ -214,31 +197,7 @@ export default function App() {
                 onData={() => navigate("/data")}
               />
             )}
-            {route === "/data" && (
-              <DataPage
-                state={state}
-                onImport={() => setDialog("import")}
-                onPractice={() => practice.mutate()}
-                busy={
-                  practice.isPending ||
-                  state.jobs.some(
-                    (j) =>
-                      j.kind === "practice" &&
-                      ["queued", "running"].includes(j.state),
-                  )
-                }
-              />
-            )}
-            {dialog === "import" && (
-              <ImportDialog
-                onClose={() => setDialog(null)}
-                onImported={() =>
-                  setToast(
-                    "Dataset imported. It is now available in Research. Repeated identical imports do not create duplicates.",
-                  )
-                }
-              />
-            )}
+            {route === "/data" && <DataPage state={state} />}
             {(dialog === "backtest" || dialog === "review") && (
               <TaskDialog
                 key={`${dialog}-${strategy}`}
@@ -261,9 +220,7 @@ export default function App() {
         )}
       </main>
       <footer>
-        <span>
-          Aperture <span> / </span> A little more clarity, every week.
-        </span>
+        <span>Aperture</span>
         <span>Local research workspace · v{state?.version ?? "0.1.0"}</span>
       </footer>
     </div>
@@ -294,7 +251,6 @@ function Overview({
           <h1>
             Your week, in focus<span>.</span>
           </h1>
-          <p>A calm place to turn research into considered decisions.</p>
         </div>
         <div className="portfolio-value">
           <span>
@@ -325,11 +281,8 @@ function Overview({
               <Activity size={25} />
             </span>
             <div>
-              <h3>A clear view of performance, when it begins.</h3>
-              <p>
-                Account returns will appear here after paper trading is
-                connected. Explore strategy performance in Research today.
-              </p>
+              <h3>Paper performance</h3>
+              <p>Account returns appear after paper trading is connected.</p>
             </div>
             <button className="button small secondary" onClick={onResearch}>
               Explore research <ArrowUpRight size={14} />
@@ -344,9 +297,6 @@ function Overview({
           <section className="weekly-card">
             <div className="weekly-overline">
               <span className="eyebrow">YOUR NEXT STEP</span>
-              <Badge tone="light">
-                {latest ? "Review prepared" : "Start with a clear plan"}
-              </Badge>
             </div>
             <div className="weekly-title">
               <span className="weekly-icon">
@@ -354,25 +304,15 @@ function Overview({
               </span>
               <h2>
                 {latest
-                  ? "Your allocation, ready to explore."
-                  : "Make room for a good decision."}
+                  ? "Allocation review ready"
+                  : "Prepare an allocation review"}
               </h2>
             </div>
             <p>
               {latest
                 ? `Your ${latest.strategy.name} review is saved. Inspect the targets, cash allocation and exclusions before taking the next step.`
-                : "Bring your data and a research idea together. One preparation task validates the inputs, calculates signals, and builds a target allocation."}
+                : "Use the latest market data to calculate signals and build a target allocation."}
             </p>
-            <div className="weekly-steps">
-              <span>
-                <Check size={13} />
-                Validate data
-              </span>
-              <ChevronRight size={13} />
-              <span>Calculate signals</span>
-              <ChevronRight size={13} />
-              <span>Build targets</span>
-            </div>
             <div className="weekly-bottom">
               <button
                 className="button light"
@@ -388,7 +328,6 @@ function Overview({
         <section className="card readiness">
           <div className="card-header">
             <div>
-              <span className="eyebrow">A SOLID FOUNDATION</span>
               <h2>Your workspace</h2>
             </div>
             <ShieldCheck size={21} />
@@ -396,11 +335,11 @@ function Overview({
           <div className="card-body">
             <Step
               complete={state.datasets.length > 0}
-              title="Add a research dataset"
+              title="Download research data"
               detail={
                 state.datasets.length
-                  ? `${state.datasets.length} saved · imported or synthetic`
-                  : "Import prices or explore the practice universe"
+                  ? `${state.datasets.length} saved snapshots`
+                  : "Get market prices and SEC filings"
               }
             />
             <Step
@@ -421,69 +360,11 @@ function Overview({
           </div>
         </section>
       </div>
-      <div className="section-heading">
-        <div>
-          <span className="eyebrow">ROOM TO EXPLORE</span>
-          <h2>Build conviction, one idea at a time.</h2>
-        </div>
-        <TextLink onClick={onResearch}>Open research</TextLink>
-      </div>
-      <div className="explore-grid">
-        <button className="card explore-card" onClick={onResearch}>
-          <span className="soft-icon">
-            <BookOpen size={22} />
-          </span>
-          <h3>Understand the strategy.</h3>
-          <p>
-            Five research families. Clear inputs, honest limitations, and no
-            unexplained black boxes.
-          </p>
-          <span className="text-link">
-            Strategy library <ArrowRight size={15} />
-          </span>
-        </button>
-        <button className="card explore-card" onClick={onResearch}>
-          <span className="soft-icon">
-            <Sparkles size={22} />
-          </span>
-          <h3>Test the evidence.</h3>
-          <p>
-            Compare saved backtests with SPY, modeled costs and the same
-            portfolio constraints.
-          </p>
-          <span className="text-link">
-            Your experiments <ArrowRight size={15} />
-          </span>
-        </button>
-        <div className="card explore-card muted-card">
-          <span className="soft-icon">
-            <ShieldCheck size={22} />
-          </span>
-          <h3>Move forward deliberately.</h3>
-          <p>
-            Paper trading includes strategy-version approval, manual or
-            automatic rebalancing, order reconciliation and cash safeguards.
-          </p>
-          <button className="text-link" onClick={onPortfolio}>
-            Open paper workspace <ArrowRight size={15} />
-          </button>
-        </div>
-      </div>
     </>
   );
 }
 
-function DataPage({
-  state,
-  onImport,
-  onPractice,
-  busy,
-}: {
-  state: State;
-  onImport: () => void;
-  onPractice: () => void;
-  busy: boolean;
-}) {
+function DataPage({ state }: { state: State }) {
   const [showOlder, setShowOlder] = useState(false);
   const snapshots = snapshotGroups(state.datasets);
   const preparingData = state.jobs.some(
@@ -493,242 +374,216 @@ function DataPage({
       ) &&
       (job.state === "queued" || job.state === "running"),
   );
+  const hasDownload = snapshots.latest.some(
+    (d) => d.metadata?.provider === "alpaca",
+  );
   const visible = showOlder
     ? [...snapshots.latest, ...snapshots.older]
     : snapshots.latest;
   return (
     <>
       <div className="page-heading">
-        <div>
-          <span className="eyebrow">THE INPUTS MATTER</span>
-          <h1>Good research starts here.</h1>
-          <p>Know where your data comes from, and what it can support.</p>
-        </div>
-        <div className="heading-actions">
-          <ResearchManager category="Datasets" />
-          <button className="button" onClick={onImport}>
-            <Upload size={16} />
-            Import CSV
-          </button>
-        </div>
+        <h1>Data</h1>
+        {state.datasets.length > 0 && <ResearchManager category="Datasets" />}
       </div>
-      <MarketData />
       <DatasetUpdates datasets={state.datasets} preparing={preparingData} />
+      <MarketData open={!hasDownload} />
       {!preparingData && <FundamentalsPanel datasets={state.datasets} />}
-      <div className="data-start card">
-        <span className="soft-icon">
-          <Database size={23} />
-        </span>
-        <div>
-          <h2>Try the workflow before adding market data.</h2>
-          <p>
-            The practice universe has 32 fictional stocks and a synthetic SPY
-            series. Use it to learn the app, with no API keys or account
-            required.
-          </p>
-        </div>
-        <button
-          className="button secondary"
-          onClick={onPractice}
-          disabled={busy}
-        >
-          {busy ? (
-            <LoaderCircle size={16} className="spin" />
-          ) : (
-            <Sparkles size={16} />
-          )}
-          {busy ? "Preparing…" : "Create practice data"}
-        </button>
-      </div>
-      <div className="section-heading">
-        <div>
-          <h2>Your latest snapshots</h2>
-          <p>
-            Market data and SEC filings together. Older snapshots remain
-            available to reproduce saved research.
-          </p>
-        </div>
-        <Badge>{snapshots.latest.length} latest</Badge>
-      </div>
-      {!state.datasets.length ? (
-        <div className="card">
-          <Empty
-            title="A fresh start, with clear inputs"
-            action={
-              <button className="button secondary" onClick={onImport}>
-                Import your first dataset <ArrowRight size={15} />
-              </button>
-            }
-          >
-            Nothing has been imported. Download the S&P 500 with enough warm-up
-            history, or create practice data above.
-          </Empty>
-        </div>
-      ) : (
-        <div className="dataset-list">
-          {visible.map((dataset) => (
-            <article className="card dataset-card" key={dataset.id}>
-              <div className="card-header">
-                <div>
-                  <div className="inline">
-                    <h2>{snapshotName(dataset)}</h2>
-                    {snapshots.older.some((old) => old.id === dataset.id) && (
-                      <Badge>Older snapshot</Badge>
-                    )}
-                    <Badge
-                      tone={dataset.kind === "synthetic" ? "amber" : "green"}
-                    >
-                      {dataset.kind === "synthetic"
-                        ? "Synthetic practice"
-                        : dataset.metadata?.provider === "alpaca"
-                          ? "Downloaded · Alpaca SIP"
-                          : "Imported · as-traded declared"}
-                    </Badge>
-                  </div>
-                  <p>
-                    {dataset.symbol_count} symbols ·{" "}
-                    {dataset.row_count.toLocaleString()} rows ·{" "}
-                    {shortDate(dataset.start)} – {shortDate(dataset.end)}
-                  </p>
-                </div>
-                <div className="heading-actions">
-                  <DeleteResearchButton
-                    kind="dataset"
-                    id={dataset.id}
-                    name={`${snapshotName(dataset)} snapshot ${dataset.id.slice(0, 8)}`}
-                  />
-                  <button
-                    className="icon-button"
-                    aria-label={`Export ${dataset.name} metadata`}
-                    onClick={() =>
-                      window.location.assign(
-                        `/api/datasets/${dataset.id}/metadata`,
-                      )
-                    }
-                  >
-                    <Download size={18} />
-                  </button>
-                </div>
-              </div>
-              <div className="card-body">
-                <p className="data-source">
-                  <strong>Source</strong> {dataset.source}
-                </p>
-                {!!Object.keys(dataset.metadata?.unavailable_symbols ?? {})
-                  .length && (
-                  <Notice>
-                    {
-                      Object.keys(dataset.metadata?.unavailable_symbols ?? {})
-                        .length
-                    }{" "}
-                    securities have dated input limitations, including
-                    historical payment dates. Total-return and cash-flow modes
-                    have different requirements. Coverage-limited research
-                    records every exclusion; strict full-index calculations
-                    require complete inputs. See coverage below for reasons.
-                  </Notice>
-                )}
-                {!!aliasActionGaps(dataset).length && (
-                  <Notice>
-                    Historical ticker transitions still need corporate-action
-                    reconciliation: {aliasActionGaps(dataset).join(", ")}. Their
-                    affected periods are excluded in coverage-limited research.
-                  </Notice>
-                )}
-                {!!mergerActionGaps(dataset).length && (
-                  <Notice>
-                    Merger consideration still needs verified recipient, ratio
-                    or valuation terms: {mergerActionGaps(dataset).join(", ")}.
-                    These affected dates cannot be simulated at an assumed zero
-                    recovery.
-                  </Notice>
-                )}
-                {!!reviewedActionCorrections(dataset).length && (
-                  <details className="details">
-                    <summary>
-                      Reviewed corporate actions ·{" "}
-                      {reviewedActionCorrections(dataset).length} verified
-                      corrections
-                    </summary>
-                    <p>
-                      Dated primary sources reconcile these corporate actions.
-                      Captured provider inputs and filings are retained in the
-                      metadata export.
-                    </p>
-                    <ul>
-                      {reviewedActionCorrections(dataset).map((action) => (
-                        <li key={`${action.symbol}-${action.effective}`}>
-                          <strong>
-                            {action.symbol} · {action.effective}
-                          </strong>
-                          <p>
-                            {action.basis}{" "}
-                            <a
-                              href={action.url}
-                              target="_blank"
-                              rel="noreferrer"
-                            >
-                              Primary filing
-                            </a>
-                          </p>
-                        </li>
-                      ))}
-                    </ul>
-                  </details>
-                )}
-                <HistoricalIssuers dataset={dataset} />
-                {dataset.metadata?.validation_issues?.map((reason) => (
-                  <Notice error key={reason}>
-                    {reason}
-                  </Notice>
-                ))}
-                <SectorCoverage dataset={dataset} />
-                {dataset.metadata?.fundamentals && (
-                  <FundamentalDetails data={dataset.metadata.fundamentals} />
-                )}
-                <details className="details">
-                  <summary>Coverage, symbols & limitations</summary>
-                  <p>{dataset.symbols.join(" · ")}</p>
-                  {dataset.metadata?.coverage && (
-                    <div className="table-scroll">
-                      <table>
-                        <thead>
-                          <tr>
-                            <th>Stock</th>
-                            <th>Bars</th>
-                            <th>Missing sessions</th>
-                            <th>Coverage</th>
-                          </tr>
-                        </thead>
-                        <tbody>
-                          {dataset.metadata.coverage.map((row) => (
-                            <tr key={row.symbol}>
-                              <td>{row.symbol}</td>
-                              <td>
-                                {row.rows} / {row.expected}
-                              </td>
-                              <td>{row.missing_count}</td>
-                              <td>
-                                {row.rows
-                                  ? `${row.start} – ${row.end}`
-                                  : "No prices returned"}
-                                {row.reason && <small>{row.reason}</small>}
-                              </td>
-                            </tr>
-                          ))}
-                        </tbody>
-                      </table>
+      {visible.length > 0 && (
+        <>
+          <div className="section-heading">
+            <h2>Saved snapshots</h2>
+            <Badge>{snapshots.latest.length} latest</Badge>
+          </div>
+          <div className="dataset-list">
+            {visible.map((dataset) => {
+              const unavailable = Object.keys(
+                dataset.metadata?.unavailable_symbols ?? {},
+              ).length;
+              return (
+                <article className="card dataset-card" key={dataset.id}>
+                  <div className="card-header">
+                    <div>
+                      <div className="inline">
+                        <h2>{snapshotName(dataset)}</h2>
+                        {snapshots.older.some(
+                          (old) => old.id === dataset.id,
+                        ) && <Badge>Older snapshot</Badge>}
+                        <Badge
+                          tone={
+                            dataset.kind === "synthetic" ? "amber" : "green"
+                          }
+                        >
+                          {dataset.kind === "synthetic"
+                            ? "Synthetic practice"
+                            : dataset.metadata?.provider === "alpaca"
+                              ? "Downloaded · Alpaca SIP"
+                              : "Imported · as-traded declared"}
+                        </Badge>
+                      </div>
+                      <p>
+                        {dataset.symbol_count} symbols ·{" "}
+                        {dataset.row_count.toLocaleString()} rows ·{" "}
+                        {shortDate(dataset.start)} – {shortDate(dataset.end)}
+                      </p>
+                      {unavailable > 0 && (
+                        <p>{unavailable} securities with input limitations</p>
+                      )}
                     </div>
-                  )}
-                  {dataset.warnings.map((w) => (
-                    <p key={w}>{w}</p>
-                  ))}
-                  <p className="digest">Source fingerprint: {dataset.digest}</p>
-                </details>
-              </div>
-            </article>
-          ))}
-        </div>
+                    <div className="heading-actions">
+                      <DeleteResearchButton
+                        kind="dataset"
+                        id={dataset.id}
+                        name={`${snapshotName(dataset)} snapshot ${dataset.id.slice(0, 8)}`}
+                      />
+                      <button
+                        className="icon-button"
+                        aria-label={`Export ${dataset.name} metadata`}
+                        onClick={() =>
+                          window.location.assign(
+                            `/api/datasets/${dataset.id}/metadata`,
+                          )
+                        }
+                      >
+                        <Download size={18} />
+                      </button>
+                    </div>
+                  </div>
+                  {dataset.metadata?.validation_issues?.length ? (
+                    <div className="card-body">
+                      {dataset.metadata.validation_issues.map((reason) => (
+                        <Notice error key={reason}>
+                          {reason}
+                        </Notice>
+                      ))}
+                    </div>
+                  ) : null}
+                  <details className="snapshot-details">
+                    <summary>Snapshot details</summary>
+                    <div className="card-body">
+                      <p className="data-source">
+                        <strong>Source</strong> {dataset.source}
+                      </p>
+                      {unavailable > 0 && (
+                        <Notice>
+                          {unavailable} securities have dated input limitations,
+                          including historical payment dates. Total-return and
+                          cash-flow modes have different requirements.
+                          Coverage-limited research records every exclusion;
+                          strict full-index calculations require complete
+                          inputs. See coverage below for reasons.
+                        </Notice>
+                      )}
+                      {!!aliasActionGaps(dataset).length && (
+                        <Notice>
+                          Historical ticker transitions still need
+                          corporate-action reconciliation:{" "}
+                          {aliasActionGaps(dataset).join(", ")}. Their affected
+                          periods are excluded in coverage-limited research.
+                        </Notice>
+                      )}
+                      {!!mergerActionGaps(dataset).length && (
+                        <Notice>
+                          Merger consideration still needs verified recipient,
+                          ratio or valuation terms:{" "}
+                          {mergerActionGaps(dataset).join(", ")}. These affected
+                          dates cannot be simulated at an assumed zero recovery.
+                        </Notice>
+                      )}
+                      {!!reviewedActionCorrections(dataset).length && (
+                        <details className="details">
+                          <summary>
+                            Reviewed corporate actions ·{" "}
+                            {reviewedActionCorrections(dataset).length} verified
+                            corrections
+                          </summary>
+                          <p>
+                            Dated primary sources reconcile these corporate
+                            actions. Captured provider inputs and filings are
+                            retained in the metadata export.
+                          </p>
+                          <ul>
+                            {reviewedActionCorrections(dataset).map(
+                              (action) => (
+                                <li
+                                  key={`${action.symbol}-${action.effective}`}
+                                >
+                                  <strong>
+                                    {action.symbol} · {action.effective}
+                                  </strong>
+                                  <p>
+                                    {action.basis}{" "}
+                                    <a
+                                      href={action.url}
+                                      target="_blank"
+                                      rel="noreferrer"
+                                    >
+                                      Primary filing
+                                    </a>
+                                  </p>
+                                </li>
+                              ),
+                            )}
+                          </ul>
+                        </details>
+                      )}
+                      <HistoricalIssuers dataset={dataset} />
+                      <SectorCoverage dataset={dataset} />
+                      {dataset.metadata?.fundamentals && (
+                        <FundamentalDetails
+                          data={dataset.metadata.fundamentals}
+                        />
+                      )}
+                      <details className="details">
+                        <summary>Coverage, symbols & limitations</summary>
+                        <p>{dataset.symbols.join(" · ")}</p>
+                        {dataset.metadata?.coverage && (
+                          <div className="table-scroll">
+                            <table>
+                              <thead>
+                                <tr>
+                                  <th>Stock</th>
+                                  <th>Bars</th>
+                                  <th>Missing sessions</th>
+                                  <th>Coverage</th>
+                                </tr>
+                              </thead>
+                              <tbody>
+                                {dataset.metadata.coverage.map((row) => (
+                                  <tr key={row.symbol}>
+                                    <td>{row.symbol}</td>
+                                    <td>
+                                      {row.rows} / {row.expected}
+                                    </td>
+                                    <td>{row.missing_count}</td>
+                                    <td>
+                                      {row.rows
+                                        ? `${row.start} – ${row.end}`
+                                        : "No prices returned"}
+                                      {row.reason && (
+                                        <small>{row.reason}</small>
+                                      )}
+                                    </td>
+                                  </tr>
+                                ))}
+                              </tbody>
+                            </table>
+                          </div>
+                        )}
+                        {dataset.warnings.map((w) => (
+                          <p key={w}>{w}</p>
+                        ))}
+                        <p className="digest">
+                          Source fingerprint: {dataset.digest}
+                        </p>
+                      </details>
+                    </div>
+                  </details>
+                </article>
+              );
+            })}
+          </div>
+        </>
       )}
       {!!snapshots.older.length && (
         <button
@@ -741,8 +596,8 @@ function DataPage({
             : `Show older snapshots (${snapshots.older.length})`}
         </button>
       )}
-      <div className="two-columns">
-        <div className="card education">
+      <DisclosureCard title="Research and paper data">
+        <div className="card-body notes-list">
           <h3>Which stocks should I start with?</h3>
           <p>
             Start with the full S&P 500. Additional symbols supplement the
@@ -752,8 +607,6 @@ function DataPage({
             historical rosters and delisted-security coverage still need
             independent verification.
           </p>
-        </div>
-        <div className="card education">
           <h3>What about automatic downloads?</h3>
           <p>
             Paper preparation refreshes S&P membership, backfills new members
@@ -764,7 +617,7 @@ function DataPage({
             Mac is off.
           </p>
         </div>
-      </div>
+      </DisclosureCard>
       <WorkspaceReset />
     </>
   );
@@ -832,7 +685,7 @@ function ResearchAllocations({
       <div className="page-heading">
         <div>
           <span className="eyebrow">FROM IDEAS TO ALLOCATIONS</span>
-          <h1>A considered portfolio.</h1>
+          <h1>Research allocations</h1>
           <p>
             Explore target allocations before a strategy is approved to trade.
           </p>
@@ -1034,16 +887,118 @@ function ActivityPage({
   onData: () => void;
 }) {
   const navigate = useNavigate();
+  const visibleJobs = state.jobs.filter(
+    (job, index) => index < 6 || job.state !== "complete",
+  );
+  const earlierJobs = state.jobs.filter(
+    (job, index) => index >= 6 && job.state === "complete",
+  );
+  function taskList(jobs: State["jobs"]) {
+    return (
+      <div className="activity-list">
+        {jobs.map((job) => (
+          <article className="activity-item" key={job.id}>
+            <span className={`activity-icon ${job.state}`}>
+              {job.state === "running" || job.state === "queued" ? (
+                <LoaderCircle className="spin" size={19} />
+              ) : job.state === "complete" ? (
+                <Check size={19} />
+              ) : (
+                <Activity size={19} />
+              )}
+            </span>
+            <div className="activity-content">
+              <div className="inline">
+                <h3>
+                  {{
+                    practice: "Prepare practice data",
+                    download: "Download research data",
+                    dataset_update: "Update saved dataset",
+                    connection: "Check paper/data access",
+                    membership: "Refresh S&P 500 membership",
+                    fundamentals: "Complete SEC download",
+                    sector_update: "Refresh sector classifications",
+                    backtest: "Run backtest",
+                    review: "Prepare allocation review",
+                    validation: "Evaluate frozen research protocol",
+                    paper_sync: "Reconcile paper account",
+                    paper_prepare: "Prepare paper review",
+                    paper_cancel: "Cancel Aperture paper orders",
+                  }[job.kind] ?? job.kind}
+                  {job.strategy_id &&
+                    ` · ${state.strategies.find((s) => s.id === job.strategy_id)?.name ?? job.strategy_id}`}
+                </h3>
+                <Badge
+                  tone={
+                    job.state === "failed"
+                      ? "amber"
+                      : job.state === "complete"
+                        ? "green"
+                        : ""
+                  }
+                >
+                  {job.state === "complete"
+                    ? "Complete"
+                    : job.state === "failed"
+                      ? "Needs attention"
+                      : job.state === "queued"
+                        ? "Queued"
+                        : "In progress"}
+                </Badge>
+              </div>
+              <p>{job.message}</p>
+              <small>{new Date(job.created_at).toLocaleString()}</small>
+              {job.state === "running" && (
+                <progress
+                  value={job.progress}
+                  max="100"
+                  aria-label="Task progress"
+                />
+              )}
+              {job.state === "queued" && (
+                <p className="field-hint">
+                  If this stays queued, make sure Aperture’s local worker is
+                  running.
+                </p>
+              )}
+            </div>
+            {job.state === "complete" && job.kind !== "practice" && (
+              <button
+                className="button small secondary"
+                onClick={() =>
+                  job.kind.startsWith("paper_")
+                    ? navigate("/portfolio")
+                    : job.kind === "validation"
+                      ? navigate("/research?section=validation")
+                      : job.kind === "backtest"
+                        ? onResearch(job.result_id ?? "")
+                        : job.kind === "review"
+                          ? onReview(job.result_id ?? "")
+                          : onData()
+                }
+              >
+                Open{" "}
+                {job.kind.startsWith("paper_")
+                  ? "paper portfolio"
+                  : job.kind === "validation"
+                    ? "validation"
+                    : job.kind === "backtest"
+                      ? "research"
+                      : job.kind === "review"
+                        ? "review"
+                        : "data"}
+                <ArrowRight size={14} />
+              </button>
+            )}
+          </article>
+        ))}
+      </div>
+    );
+  }
   return (
     <>
       <div className="page-heading">
-        <div>
-          <span className="eyebrow">NOTHING LOST BETWEEN VISITS</span>
-          <h1>Your work, kept in view.</h1>
-          <p>
-            Background tasks save their progress and completed results locally.
-          </p>
-        </div>
+        <h1>Activity</h1>
         <div className="heading-actions">
           <ResearchManager category="Task history" />
           <Badge>{state.jobs.length} recent tasks</Badge>
@@ -1066,111 +1021,19 @@ function ActivityPage({
             when you run them.
           </Empty>
         ) : (
-          <div className="activity-list">
-            {state.jobs.map((job) => (
-              <article className="activity-item" key={job.id}>
-                <span className={`activity-icon ${job.state}`}>
-                  {job.state === "running" || job.state === "queued" ? (
-                    <LoaderCircle className="spin" size={19} />
-                  ) : job.state === "complete" ? (
-                    <Check size={19} />
-                  ) : (
-                    <Activity size={19} />
-                  )}
-                </span>
-                <div className="activity-content">
-                  <div className="inline">
-                    <h3>
-                      {{
-                        practice: "Prepare practice data",
-                        download: "Download research data",
-                        dataset_update: "Update saved dataset",
-                        connection: "Check paper/data access",
-                        membership: "Refresh S&P 500 membership",
-                        fundamentals: "Complete SEC download",
-                        sector_update: "Refresh sector classifications",
-                        backtest: "Run backtest",
-                        review: "Prepare allocation review",
-                        validation: "Evaluate frozen research protocol",
-                        paper_sync: "Reconcile paper account",
-                        paper_prepare: "Prepare paper review",
-                        paper_cancel: "Cancel Aperture paper orders",
-                      }[job.kind] ?? job.kind}
-                      {job.strategy_id &&
-                        ` · ${state.strategies.find((s) => s.id === job.strategy_id)?.name ?? job.strategy_id}`}
-                    </h3>
-                    <Badge
-                      tone={
-                        job.state === "failed"
-                          ? "amber"
-                          : job.state === "complete"
-                            ? "green"
-                            : ""
-                      }
-                    >
-                      {job.state === "complete"
-                        ? "Complete"
-                        : job.state === "failed"
-                          ? "Needs attention"
-                          : job.state === "queued"
-                            ? "Queued"
-                            : "In progress"}
-                    </Badge>
-                  </div>
-                  <p>{job.message}</p>
-                  <small>{new Date(job.created_at).toLocaleString()}</small>
-                  {job.state === "running" && (
-                    <progress
-                      value={job.progress}
-                      max="100"
-                      aria-label="Task progress"
-                    />
-                  )}
-                  {job.state === "queued" && (
-                    <p className="field-hint">
-                      If this stays queued, make sure Aperture’s local worker is
-                      running.
-                    </p>
-                  )}
-                </div>
-                {job.state === "complete" && job.kind !== "practice" && (
-                  <button
-                    className="button small secondary"
-                    onClick={() =>
-                      job.kind.startsWith("paper_")
-                        ? navigate("/portfolio")
-                        : job.kind === "validation"
-                          ? navigate("/research?section=validation")
-                          : job.kind === "backtest"
-                            ? onResearch(job.result_id ?? "")
-                            : job.kind === "review"
-                              ? onReview(job.result_id ?? "")
-                              : onData()
-                    }
-                  >
-                    Open{" "}
-                    {job.kind.startsWith("paper_")
-                      ? "paper portfolio"
-                      : job.kind === "validation"
-                        ? "validation"
-                        : job.kind === "backtest"
-                          ? "research"
-                          : job.kind === "review"
-                            ? "review"
-                            : "data"}
-                    <ArrowRight size={14} />
-                  </button>
-                )}
-              </article>
-            ))}
-          </div>
+          taskList(visibleJobs)
         )}
       </div>
-      <p className="page-note">
-        Tasks run while Aperture is open. If the worker stops midway, the task
-        is marked for attention on restart and can be run again. Completed
-        results are preserved.
-      </p>
+      {earlierJobs.length > 0 && (
+        <DisclosureCard
+          title="Earlier completed tasks"
+          summary={
+            earlierJobs.length === 1 ? "1 task" : earlierJobs.length + " tasks"
+          }
+        >
+          {taskList(earlierJobs)}
+        </DisclosureCard>
+      )}
     </>
   );
 }

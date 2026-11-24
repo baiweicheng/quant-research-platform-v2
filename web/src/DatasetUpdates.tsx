@@ -50,19 +50,14 @@ export default function DatasetUpdates({
     <section className="card market-data">
       <div className="card-header">
         <div>
-          <span className="eyebrow">KEEP YOUR RESEARCH CURRENT</span>
           <h2>Update a saved dataset</h2>
-          <p>Bring prices, sectors, membership and SEC filings forward.</p>
+          <p>
+            Refresh prices, corporate actions, membership, sectors and SEC
+            filings.
+          </p>
         </div>
       </div>
       <div className="card-body">
-        <p>
-          Update the latest snapshot with recent prices, corporate actions,
-          membership, sector classifications and SEC filings. New members
-          receive historical backfill. A new snapshot shares unchanged data with
-          earlier snapshots. After completion, select the newest snapshot in
-          Research.
-        </p>
         <form
           className="form"
           onSubmit={(event) => {
@@ -90,7 +85,7 @@ export default function DatasetUpdates({
             </label>
             <div className="form-action">
               <button
-                className="button secondary"
+                className="button"
                 disabled={preparing || !id || task.isPending}
               >
                 <RefreshCw size={16} />
@@ -113,19 +108,17 @@ export default function DatasetUpdates({
                 : chosen.metadata?.bundle_role === "prices"
                   ? "SEC download unfinished · Update completes it"
                   : "Legacy snapshot · SEC filings will be added"}
-            . Earlier inputs are retained unless a reviewed source correction
-            applies. Any historical repair is recorded in the new snapshot.
-            Original snapshots stay unchanged; a full download revalidates older
-            prices.
           </p>
         )}
         {task.error && <Notice error>{task.error.message}</Notice>}
-        <p className="field-hint">
-          Update dataset already includes prices, sectors and SEC filings. No
-          separate share-class refresh is needed for normal updates.
-        </p>
         <details className="details">
           <summary>More refresh options</summary>
+          <p>
+            Normal updates backfill new members and check share-class data. A
+            new snapshot reuses unchanged inputs and records reviewed
+            corrections. A full download revalidates older prices. Select the
+            newest snapshot in Research after the update.
+          </p>
           <p>
             Use these only to retry a stage or refresh one input separately.
           </p>

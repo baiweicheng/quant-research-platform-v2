@@ -23,19 +23,18 @@ For frontend development, run `npm --prefix web run dev` alongside the Python se
 
 ## Try the complete workflow
 
-1. Open **Data → Create practice data**. This explicitly opts into fictional prices, including a fictional SPY series.
+1. Configure the sources below and open **Data → Download research data → Download & validate**.
 2. Open **Research**, inspect a strategy’s explanation, and run a backtest. Default dates leave room for signal warm-up.
 3. Follow progress in **Activity**, then open the completed result. Try every chart period, inspect simulated fills, and export the full result.
 4. Run the other price strategy with identical inputs. Select both experiments to compare.
 5. Use **Portfolio → Research allocations → Prepare weekly review** to inspect read-only targets. Saved data must cover the latest completed session. Research reviews never submit orders.
 6. Use **Research → Validation** for a frozen hypothesis, chronological windows, sensitivity trials and a one-time final-test reservation.
-7. For actual paper operation, follow the account/approval sequence below. Practice symbols cannot be traded.
+7. For actual paper operation, follow the account/approval sequence below.
 
-The app opens empty. Practice data is never silently loaded. Account metrics remain unavailable until actual paper-account history exists.
+A fresh workspace opens without a dataset. Account metrics appear once paper-account history is available.
 
 ## Supported workflows
 
-- Immutable CSV datasets with source fingerprints, idempotent imports, validation, and retained submitted CSV content.
 - Authenticated Alpaca SIP history, split/dividend normalization, per-stock coverage and captured source responses through the Data interface.
 - A persisted background queue, visible progress, atomic saved results, duplicate task protection, and interrupted-task recovery.
 - Weekly 12–1 Momentum and Liquidity and Breadth strategies with shared stock, sector and cash allocation limits.
@@ -49,13 +48,13 @@ The app opens empty. Practice data is never silently loaded. Account metrics rem
 - Actual broker holdings/equity, daily cash-flow-adjusted estimates and SPY comparison with explicit simulator limits.
 - Approved Weekly Focus layout, responsive top navigation, empty/error states and explanations.
 
-For real research, use **Data → Download & validate**. The normal download always includes daily market data and filing-dated SEC fundamentals; price-only strategies simply ignore the fundamental portion. Backtests default to the latest complete snapshot, with older versions grouped separately. January 2016 inputs default research dates to January 2017 through the latest saved session. Review factor values, filing availability and exclusions under “Why these stocks?” in the result. Annual US-GAAP support is deliberately limited; unsupported inputs are excluded. See the research contract before interpreting results.
+Use **Data → Download research data → Download & validate** to create a snapshot. The normal download always includes daily market data and filing-dated SEC fundamentals; price-only strategies simply ignore the fundamental portion. Backtests default to the latest complete snapshot, with older versions grouped separately. January 2016 inputs default research dates to January 2017 through the latest saved session. Review factor values, filing availability and exclusions under “Why these stocks?” in the result. Annual US-GAAP support is deliberately limited; unsupported inputs are excluded. See the research contract before interpreting results.
 
 To bring existing research forward, use **Data → Update a saved dataset → Update dataset**, then select the new snapshot in Research. Only the latest version of each saved dataset is offered for update. Existing stocks refresh a recent overlap plus new sessions; new members receive historical backfill, and SEC company facts refresh when a 10-Q or 10-K changes, an amendment arrives or the 30-day check is due. Unchanged prices, filings and provider responses share storage. See [snapshot updates and storage](docs/SNAPSHOTS.md) for older-history, reproducibility, recovery and backup limits.
 
 Downloads and updates include the required source checks automatically. There is no routine second SEC/share-class step. **More refresh options** contains optional stage-specific repairs; an interrupted download can complete its SEC stage using the prices already saved. Structured SEC facts replace bulk EPS report downloads. Profitability additionally verifies derived revenues/costs against compact primary income-statement reports; source proofs are reused automatically. See [profitability support and definition limits](docs/PROFITABILITY.md). Ordinary share comparability is a disclosed approximation, with known unequal-share cases excluded; unchanged annual histories can be reused for up to 30 days. Activity shows progress while the rest of the workspace remains usable. See [the lightweight EPS policy](docs/LIGHTWEIGHT_EPS.md). Reviewed corporate-action corrections and their primary sources are expandable in Data.
 
-**Research → New backtest** lets you select several strategies, including Select all, with one shared dataset, date range and policy. One submission queues separate named tasks and results. The worker runs them in sequence to keep memory bounded; the existing comparison view can compare the saved results.
+**Research → New backtest** lets you select several strategies, including Select all, with one shared dataset, date range and policy. One submission queues separate named tasks and results. The worker runs them in sequence to keep memory bounded; Open **Saved backtests** in **Backtest results** to select or compare saved results.
 
 **Session Strength and Liquidity** and **Earnings and Market Regime Rotation** are available in the Research catalog. Both use complete SPY and stock history plus comparable annual SEC net income. Their results show calendar-year returns against SPY, with the valuation dates for partial years. See the [strategy definitions and historical limitations](docs/RESEARCH_CONTRACT.md#signals-and-allocation).
 
@@ -67,7 +66,7 @@ Downloads and updates include the required source checks automatically. There is
 
 **Earnings and Pullback Rotation** is a weekly hybrid that combines filed earnings and beta-adjusted relative strength, with a pullback rule after broad market declines. [Strategy rules and full-period Standard-cost comparison](docs/EARNINGS_PULLBACK_ROTATION.md)
 
-To start fresh, open **Data → Reset workspace**. Review the preview, type **RESET WORKSPACE**, then choose **Reset permanently**. The reset clears saved research and downloads and preserves paper trading history and configuration. See the [workspace reset details](docs/RESEARCH_LIBRARY.md#reset-the-research-workspace).
+To start fresh, open **Data → Workspace maintenance → Reset workspace**. Review the preview, type **RESET WORKSPACE**, then choose **Reset permanently**. The reset clears saved research and downloads and preserves paper trading history and configuration. See the [workspace reset details](docs/RESEARCH_LIBRARY.md#reset-the-research-workspace).
 
 Research setup separates **total-return research** (ex-date closing reinvestment) from **payment-date cash-flow simulation** (verified settlement dates). It also separates **coverage-limited research**, which saves every omitted security and reason, from **strict full-index coverage**, which stops on unresolved required inputs. Coverage-limited results can have survivorship/selection bias and are not complete S&P 500 results. The unresolved free-data gaps remain open in [B-033](docs/FREE_DATA_GAPS.md); these options do not approve trading.
 
@@ -107,7 +106,7 @@ See the [hybrid strategy study](docs/HYBRID_STRATEGY_RESEARCH_2026-11-18.md), [p
 
 ## Local data and backups
 
-Application state and submitted imports are local and Git-ignored. Stop Aperture before copying the entire `var/` directory for a consistent backup, and keep it private. Exported results include provenance and the full simulation ledger, but are not a full database backup. No telemetry or remote analytics is configured.
+Application state is local and Git-ignored. Stop Aperture before copying the entire `var/` directory for a consistent backup, and keep it private. Exported results include provenance and the full simulation ledger, but are not a full database backup. No telemetry or remote analytics is configured.
 
 ## Provider setup
 

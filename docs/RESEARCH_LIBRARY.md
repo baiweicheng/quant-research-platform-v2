@@ -2,7 +2,7 @@
 
 ## Reset the research workspace
 
-Open **Data → Reset workspace** and review the counts. Type **RESET WORKSPACE** and choose **Reset permanently**. Cancel closes the preview without changing the workspace. Wait for background tasks to finish, and refresh the preview if the workspace changes before confirmation.
+Open **Data → Workspace maintenance → Reset workspace** and review the counts. Type **RESET WORKSPACE** and choose **Reset permanently**. Cancel closes the preview without changing the workspace. Wait for background tasks to finish, and refresh the preview if the workspace changes before confirmation.
 
 Reset clears downloaded, imported and practice datasets, backtests, allocation reviews, validation protocols and trials, research jobs, and disposable source captures and filing caches. Paper orders, plans, approvals, account history, connection settings and the saved watchlist remain. Any snapshot or membership capture linked to paper records stays available for the paper audit and leaves the research catalog. Minimal research-date markers preserve previously attempted periods. SQLite compacts the workspace after the deletion commits when possible.
 

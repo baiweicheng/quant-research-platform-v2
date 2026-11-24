@@ -5,7 +5,7 @@ import { MemoryRouter } from "react-router-dom";
 import { afterEach, describe, expect, it, vi } from "vitest";
 import App from "./App";
 import { MetricStrip, PeriodPicker } from "./components";
-import { ImportDialog, TaskDialog } from "./dialogs";
+import { TaskDialog } from "./dialogs";
 import type { State } from "./types";
 import { percent, points } from "./api";
 import { SignalAudit } from "./Fundamentals";
@@ -83,14 +83,8 @@ describe("honest research workspace", () => {
     await userEvent.click(
       await screen.findByRole("button", { name: "Prepare weekly review" }),
     );
-    expect(
-      screen.getByRole("heading", { name: "Good research starts here." }),
-    ).toBeVisible();
-    expect(
-      screen.getByText(
-        "Add a dataset or create the practice universe to begin.",
-      ),
-    ).toBeVisible();
+    expect(screen.getByRole("heading", { name: "Data" })).toBeVisible();
+    expect(screen.getByText("Download research data to begin.")).toBeVisible();
   });
   it("explains fundamental gating instead of offering a fake runnable strategy", async () => {
     mockState();
@@ -246,58 +240,6 @@ it("keeps percentage-point comparison distinct from percentage return", () => {
   expect(screen.getByText("-18.00%")).toBeVisible();
 });
 
-it("imports pasted CSV and displays row-level validation errors", async () => {
-  const fetch = vi.fn().mockResolvedValue({
-    ok: false,
-    status: 422,
-    json: async () => ({ detail: "Row 2: inconsistent OHLC bounds." }),
-  });
-  vi.stubGlobal("fetch", fetch);
-  render(wrapper(<ImportDialog onClose={() => {}} onImported={() => {}} />));
-  await userEvent.type(screen.getByLabelText("Dataset name"), "Test prices");
-  await userEvent.type(screen.getByLabelText("Data source"), "Hand-authored");
-  await userEvent.click(screen.getByRole("button", { name: "Paste CSV" }));
-  const csv =
-    "symbol,date,open,high,low,close,volume\nABC,2025-01-06,100,90,99,101,1000";
-  fireEvent.change(screen.getByLabelText("CSV content"), {
-    target: { value: csv },
-  });
-  await userEvent.click(screen.getByRole("checkbox"));
-  await userEvent.click(screen.getByRole("button", { name: "Import dataset" }));
-  expect(await screen.findByRole("alert")).toHaveTextContent(
-    "Row 2: inconsistent OHLC",
-  );
-  expect(JSON.parse(fetch.mock.calls[0][1].body)).toMatchObject({
-    csv,
-    name: "Test prices",
-    source: "Hand-authored",
-    price_basis: "as_traded",
-  });
-});
-
-it("reads a selected CSV file and completes import", async () => {
-  const fetch = vi
-    .fn()
-    .mockResolvedValue({ ok: true, json: async () => ({ id: "dataset" }) });
-  vi.stubGlobal("fetch", fetch);
-  const done = vi.fn();
-  render(wrapper(<ImportDialog onClose={() => {}} onImported={done} />));
-  await userEvent.type(screen.getByLabelText("Dataset name"), "File prices");
-  await userEvent.type(screen.getByLabelText("Data source"), "Fixture");
-  const csv =
-    "symbol,date,open,high,low,close,volume\nABC,2025-01-06,100,102,99,101,1000";
-  const file = new File([csv], "prices.csv", { type: "text/csv" });
-  await userEvent.upload(screen.getByLabelText("CSV file"), file);
-  expect(
-    (screen.getByLabelText("CSV file") as HTMLInputElement).files,
-  ).toHaveLength(1);
-  expect(screen.getByLabelText("CSV file")).toBeValid();
-  await userEvent.click(screen.getByRole("checkbox"));
-  await userEvent.click(screen.getByRole("button", { name: "Import dataset" }));
-  await waitFor(() => expect(done).toHaveBeenCalled());
-  expect(JSON.parse(fetch.mock.calls[0][1].body).csv).toBe(csv);
-});
-
 it("downloads a custom stock list from the interface without exposing credentials", async () => {
   const fetch = vi.fn(async (path: string) => ({
     ok: true,
@@ -323,6 +265,12 @@ it("downloads a custom stock list from the interface without exposing credential
     name: "Download & validate",
   });
   await waitFor(() => expect(downloadButton).toBeEnabled());
+  expect(
+    screen.queryByRole("button", { name: "Import CSV" }),
+  ).not.toBeInTheDocument();
+  expect(
+    screen.queryByRole("button", { name: "Create practice data" }),
+  ).not.toBeInTheDocument();
   await userEvent.selectOptions(
     screen.getByLabelText("Stock universe"),
     "custom",
@@ -333,7 +281,7 @@ it("downloads a custom stock list from the interface without exposing credential
   await userEvent.click(
     screen.getByRole("button", { name: "Download & validate" }),
   );
-  await screen.findByRole("heading", { name: "Your work, kept in view." });
+  await screen.findByRole("heading", { name: "Activity" });
   const call = vi
     .mocked(globalThis.fetch)
     .mock.calls.find((call) => call[0] === "/api/downloads")!;
@@ -370,9 +318,7 @@ it("opens Data for a completed download rather than treating it as a portfolio r
   render(wrapper(<App />));
   await userEvent.click(await screen.findByRole("link", { name: "Activity" }));
   await userEvent.click(screen.getByRole("button", { name: "Open data" }));
-  expect(
-    screen.getByRole("heading", { name: "Good research starts here." }),
-  ).toBeVisible();
+  expect(screen.getByRole("heading", { name: "Data" })).toBeVisible();
 });
 
 it("identifies each queued backtest by strategy in Activity", async () => {
@@ -563,7 +509,7 @@ it("queues SEC enrichment for the chosen saved dataset through Data", async () =
   await waitFor(() => expect(add).toBeEnabled());
   await userEvent.click(add);
   expect(
-    await screen.findByRole("heading", { name: "Your work, kept in view." }),
+    await screen.findByRole("heading", { name: "Activity" }),
   ).toBeVisible();
   const call = fetch.mock.calls.find(
     (c) => c[0] === "/api/fundamentals/prices",

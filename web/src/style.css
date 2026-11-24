@@ -5,7 +5,6 @@
 }
 .market-data .form {
   max-width: 760px;
-  margin-top: 22px;
 }
 .snapshot-update-controls {
   display: flex;
@@ -19,8 +18,18 @@
   gap: 12px;
   padding-top: 2px;
 }
+@media (min-width: 769px) {
+  .snapshot-update-controls {
+    flex-direction: row;
+    align-items: end;
+  }
+  .snapshot-update-controls > label {
+    flex: 1;
+    min-width: 0;
+  }
+}
 .snapshot-archive-toggle {
-  margin: 18px 0 28px;
+  margin: 0 0 16px;
 }
 .provider-summary {
   display: flex;
@@ -547,20 +556,6 @@ footer span span {
   position: relative;
   z-index: 1;
 }
-.weekly-steps {
-  display: flex;
-  flex-wrap: wrap;
-  gap: 12px;
-  align-items: center;
-  color: #94b294;
-  margin: 20px 0;
-  font-size: var(--font-caption);
-}
-.weekly-steps span {
-  display: flex;
-  gap: 4px;
-  align-items: center;
-}
 .weekly-bottom {
   display: flex;
   flex-wrap: wrap;
@@ -568,6 +563,7 @@ footer span span {
   align-items: center;
   border-top: 1px solid #ffffff12;
   padding-top: 18px;
+  margin-top: 18px;
   position: relative;
   z-index: 1;
 }
@@ -663,48 +659,6 @@ footer span span {
   font-size: var(--font-small);
   margin-top: 6px;
 }
-.explore-grid {
-  display: grid;
-  grid-template-columns: repeat(3, 1fr);
-  gap: 20px;
-}
-.explore-card {
-  padding: 23px 24px;
-  text-align: left;
-  display: flex;
-  align-items: flex-start;
-  flex-direction: column;
-}
-.explore-card:is(button):hover {
-  background: #fcfefb;
-  border-color: #b9cfbb;
-}
-.soft-icon {
-  width: 39px;
-  height: 39px;
-  display: flex;
-  align-items: center;
-  justify-content: center;
-  border-radius: 10px;
-  background: #f0f5ed;
-  color: #7b977b;
-  flex-shrink: 0;
-}
-.explore-card h3 {
-  font-size: var(--font-subtitle);
-  margin-top: 20px;
-}
-.explore-card p {
-  font-size: var(--font-small);
-  margin: 8px 0 18px;
-}
-.explore-card .text-link,
-.explore-card > .badge {
-  margin-top: auto;
-}
-.muted-card {
-  background: #f8faf6;
-}
 .page-heading {
   display: flex;
   align-items: center;
@@ -747,13 +701,6 @@ footer span span {
   background: #e8eee6;
   font-size: var(--font-caption);
   color: #80917d;
-}
-.section-intro {
-  margin: 28px 0 20px;
-}
-.section-intro p {
-  font-size: var(--font-small);
-  margin-top: 6px;
 }
 .strategy-grid {
   display: grid;
@@ -987,12 +934,6 @@ input[type="checkbox"] {
   font-size: var(--font-caption);
   color: #98a091;
 }
-.two-columns {
-  display: grid;
-  grid-template-columns: 1fr 1fr;
-  gap: 23px;
-  margin: 24px 0;
-}
 .facts {
   display: grid;
   gap: 11px;
@@ -1019,6 +960,63 @@ input[type="checkbox"] {
 }
 .card-body > .field-hint {
   margin: 15px 0;
+}
+.disclosure-card > summary {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  padding: 17px clamp(16px, 3vw, 25px);
+  cursor: pointer;
+  list-style: none;
+  border-radius: inherit;
+}
+.disclosure-card,
+.dataset-list {
+  margin-bottom: 16px;
+}
+.disclosure-card > summary:focus-visible,
+.snapshot-details > summary:focus-visible,
+.details > summary:focus-visible {
+  outline: 2px solid #447e58;
+  outline-offset: -2px;
+}
+.disclosure-card > summary::-webkit-details-marker {
+  display: none;
+}
+.disclosure-card > summary:hover {
+  background: #f7faf4;
+}
+.disclosure-card > summary > svg {
+  flex: none;
+  color: #657e5b;
+}
+.disclosure-card[open] > summary {
+  border-bottom: 1px solid #edf0eb;
+  border-radius: 13px 13px 0 0;
+}
+.disclosure-card[open] > summary > svg {
+  transform: rotate(90deg);
+}
+.disclosure-label {
+  display: grid;
+  gap: 3px;
+}
+.snapshot-details > summary {
+  padding: 10px clamp(16px, 3vw, 25px);
+  cursor: pointer;
+  font-size: var(--font-small);
+  font-weight: 500;
+  color: #4f7154;
+}
+.snapshot-details > .card-body {
+  padding-top: 6px;
+}
+.allocation-summary {
+  color: #506a55;
+}
+.disclosure-title {
+  font-size: var(--font-subtitle);
+  font-weight: 600;
 }
 .details {
   border-top: 1px solid #e7ede2;
@@ -1067,24 +1065,6 @@ input[type="checkbox"] {
   margin: 20px 24px;
   font-size: var(--font-small);
 }
-.data-start {
-  display: flex;
-  align-items: center;
-  gap: 20px;
-  padding: 25px 28px;
-}
-.data-start h2 {
-  font-size: var(--font-subtitle);
-}
-.data-start p {
-  font-size: var(--font-small);
-  max-width: 630px;
-  margin-top: 6px;
-}
-.data-start > .button {
-  margin-left: auto;
-  flex-shrink: 0;
-}
 .dataset-list {
   display: grid;
   grid-template-columns: minmax(0, 1fr);
@@ -1110,16 +1090,6 @@ input[type="checkbox"] {
 .data-source strong {
   color: #83927b;
   margin-right: 10px;
-}
-.education {
-  padding: 24px;
-}
-.education h3 {
-  font-size: var(--font-body);
-  margin-bottom: 10px;
-}
-.education p {
-  font-size: var(--font-small);
 }
 .icon-button {
   display: flex;
@@ -1231,10 +1201,6 @@ input[type="checkbox"] {
   display: block;
   margin-top: 15px;
   accent-color: #669357;
-}
-.page-note {
-  font-size: var(--font-small);
-  margin-top: 20px;
 }
 .modal-overlay {
   position: fixed;
@@ -1405,19 +1371,6 @@ input[type="file"]::file-selector-button {
   gap: 10px;
   margin-top: 3px;
 }
-.import-guide {
-  background: #f6f9f2;
-  padding: 17px 19px;
-  border-radius: 9px;
-}
-.import-guide strong {
-  font-size: var(--font-small);
-  color: #57754a;
-}
-.import-guide p {
-  font-size: var(--font-small);
-  margin: 8px 0 12px;
-}
 .toast {
   display: flex;
   align-items: center;
@@ -1507,9 +1460,6 @@ input[type="file"]::file-selector-button {
   .weekly-card > p {
     margin-top: 16px;
   }
-  .weekly-steps {
-    margin: 24px 0;
-  }
 }
 @media (max-width: 1100px) {
   .topbar-inner {
@@ -1547,20 +1497,8 @@ input[type="file"]::file-selector-button {
     flex-direction: column;
     gap: 10px;
   }
-  .weekly-steps {
-    gap: 8px;
-  }
   .strategy-grid {
     grid-template-columns: repeat(2, 1fr);
-  }
-  .data-start {
-    flex-wrap: wrap;
-  }
-  .data-start > div {
-    flex: 1;
-  }
-  .data-start > .button {
-    margin-left: 59px;
   }
   .performance-empty .button {
     font-size: var(--font-caption);
@@ -1696,9 +1634,6 @@ input[type="file"]::file-selector-button {
   .weekly-bottom > span {
     font-size: var(--font-caption);
   }
-  .weekly-steps {
-    gap: 11px;
-  }
   .readiness .card-body {
     display: grid;
     grid-template-columns: 1fr;
@@ -1716,18 +1651,6 @@ input[type="file"]::file-selector-button {
   .section-heading > .text-link {
     margin-top: 5px;
     white-space: nowrap;
-  }
-  .explore-grid {
-    grid-template-columns: 1fr;
-  }
-  .explore-card {
-    padding: 23px;
-  }
-  .explore-card h3 {
-    margin-top: 15px;
-  }
-  .explore-card p {
-    max-width: 500px;
   }
   .page-heading {
     flex-direction: column;
@@ -1762,10 +1685,6 @@ input[type="file"]::file-selector-button {
   .card-body {
     padding: 20px;
   }
-  .two-columns {
-    grid-template-columns: 1fr;
-    gap: 18px;
-  }
   .chart-toolbar {
     padding: 8px 20px;
     gap: 13px;
@@ -1777,20 +1696,6 @@ input[type="file"]::file-selector-button {
     padding: 12px 20px;
     gap: 12px;
     flex-wrap: wrap;
-  }
-  .data-start {
-    padding: 23px;
-    align-items: flex-start;
-    gap: 15px;
-  }
-  .data-start > div {
-    flex-basis: calc(100% - 60px);
-  }
-  .data-start > .button {
-    margin-left: 54px;
-  }
-  .data-start h2 {
-    font-size: var(--font-subtitle);
   }
   .dataset-card .card-header h2 {
     font-size: var(--font-subtitle);
@@ -1922,11 +1827,6 @@ input[type="file"]::file-selector-button {
   .weekly-card > p {
     font-size: var(--font-small);
   }
-  .weekly-steps {
-    font-size: var(--font-caption);
-    gap: 6px;
-    flex-wrap: wrap;
-  }
   .weekly-bottom {
     flex-direction: column;
     align-items: flex-start;
@@ -1971,13 +1871,6 @@ input[type="file"]::file-selector-button {
   }
   .result-card .metrics {
     padding: 23px 17px;
-  }
-  .data-start > .button {
-    margin-left: 0;
-    width: 100%;
-  }
-  .data-start .soft-icon {
-    display: none;
   }
   .modal-content {
     width: calc(100vw - 20px);
@@ -2263,4 +2156,8 @@ textarea:focus-visible {
 .coverage-table td:last-child {
   white-space: normal;
   overflow-wrap: anywhere;
+}
+
+main > .card + .disclosure-card {
+  margin-top: 16px;
 }

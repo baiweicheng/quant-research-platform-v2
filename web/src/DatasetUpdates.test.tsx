@@ -65,8 +65,9 @@ it("updates the selected SEC vintage and explains sharing and older history", as
   const fetcher = setup();
   expect(screen.getByLabelText("Dataset to update")).toHaveValue("sec");
   expect(screen.getByText(/Market data \+ SEC filings/)).toBeVisible();
-  expect(screen.getByText(/shares unchanged data/)).toBeVisible();
-  expect(screen.getByText(/reviewed source correction/)).toBeVisible();
+  await userEvent.click(screen.getByText("More refresh options"));
+  expect(screen.getByText(/reuses unchanged inputs/)).toBeVisible();
+  expect(screen.getByText(/records reviewed corrections/)).toBeVisible();
   await userEvent.click(screen.getByRole("button", { name: "Update dataset" }));
   await waitFor(() =>
     expect(fetcher).toHaveBeenCalledWith(

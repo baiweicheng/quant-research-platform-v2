@@ -3,7 +3,7 @@ import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { useNavigate } from "react-router-dom";
 import { Database, Download, PlugZap } from "lucide-react";
 import { api } from "./api";
-import { Badge, Notice } from "./components";
+import { DisclosureCard, Notice } from "./components";
 
 type ProviderInfo = {
   alpaca_configured: boolean;
@@ -35,7 +35,7 @@ type Membership = {
   initial?: boolean;
 };
 
-export default function MarketData() {
+export default function MarketData({ open }: { open: boolean }) {
   const client = useQueryClient();
   const navigate = useNavigate();
   const info = useQuery({
@@ -64,31 +64,18 @@ export default function MarketData() {
   const end = cfg?.latest_session ?? "";
   const start = cfg?.first_session ?? "2016-01-04";
   return (
-    <section className="card market-data">
-      <div className="card-header">
-        <div>
-          <span className="eyebrow">A CONNECTED RESEARCH WORKSPACE</span>
-          <h2>Download research data</h2>
-          <p>
-            Daily market data, corporate actions and filing-dated SEC
-            fundamentals in one snapshot.
-          </p>
-        </div>
-        <Badge tone={cfg?.alpaca_configured ? "green" : ""}>
-          {info.isPending
-            ? "Checking configuration"
-            : cfg?.alpaca_configured
-              ? "Paper keys configured"
-              : "Keys needed"}
-        </Badge>
-      </div>
+    <DisclosureCard
+      title="Download research data"
+      summary="Alpaca market data & SEC filings"
+      open={open}
+    >
       <div className="card-body">
         {info.error && <Notice error>{info.error.message}</Notice>}
         {!info.isPending && !cfg?.alpaca_configured && (
           <Notice>
             Add paper credentials to the ignored local .env file using
             ALPACA_API_KEY and ALPACA_SECRET_KEY. This page never displays or
-            stores the keys. CSV and practice data remain available.
+            stores the keys.
           </Notice>
         )}
         {cfg && !cfg.sec_configured && (
@@ -97,98 +84,6 @@ export default function MarketData() {
             email before downloading market data and SEC filings.
           </Notice>
         )}
-        <div className="provider-summary">
-          <span>
-            <Database size={16} />
-            Alpaca · SIP historical feed · as-traded prices
-          </span>
-          <button
-            className="button secondary small"
-            disabled={
-              !cfg?.alpaca_configured ||
-              !cfg?.sec_configured ||
-              enqueue.isPending
-            }
-            onClick={() =>
-              enqueue.mutate({ path: "/providers/check", body: {} })
-            }
-          >
-            <PlugZap size={15} />
-            Test connection
-          </button>
-        </div>
-        <div className="membership-status">
-          <h3>S&P 500 membership</h3>
-          <p>
-            {current
-              ? `${current.member_count} current securities`
-              : "Current roster not downloaded yet"}
-            {historical?.unique_member_count != null &&
-              ` · ${historical.unique_member_count.toLocaleString()} unique securities in the historical archive`}
-          </p>
-          <p className="field-hint">
-            {historical
-              ? `Historical backtest membership: ${historical.coverage_start} – ${historical.coverage_end}.`
-              : "Historical membership not downloaded yet."}{" "}
-            {cfg && `Prices can be downloaded through ${cfg.latest_session}.`}
-          </p>
-          <button
-            type="button"
-            className="button secondary small"
-            disabled={enqueue.isPending}
-            onClick={() =>
-              enqueue.mutate({ path: "/membership/all/refresh", body: {} })
-            }
-          >
-            Refresh S&P 500 membership
-          </button>
-          <details className="details">
-            <summary>Membership sources and changes</summary>
-            {(["current", "historical"] as const).map((kind) => {
-              const saved = cfg?.membership?.[kind];
-              return (
-                saved && (
-                  <div key={kind}>
-                    <p>
-                      <strong>
-                        {kind === "current"
-                          ? "Current roster"
-                          : "Historical archive"}
-                      </strong>
-                      {` · captured ${new Date(saved.captured_at).toLocaleString()}`}{" "}
-                      ·{" "}
-                      <a href={saved.source} target="_blank" rel="noreferrer">
-                        Source
-                      </a>
-                    </p>
-                    <p className="field-hint">
-                      {kind === "historical"
-                        ? `Last recorded change: ${saved.last_change ?? saved.coverage_end}; ${saved.member_count} securities in that roster. A last change date is not an expiry date. ${saved.verified_through ? `Verified through ${saved.verified_through} using dated announcements and current-roster reconciliation.` : "Update membership to verify later coverage."}`
-                        : saved.initial
-                          ? "First capture saved. Future refreshes report additions and removals."
-                          : `Changes since previous capture: added ${saved.added?.join(", ") || "none"}; removed ${saved.removed?.join(", ") || "none"}.`}
-                    </p>
-                    {saved.events && (
-                      <p className="field-hint">
-                        Dated primary evidence:{" "}
-                        {[
-                          ...new Set(saved.events.map((event) => event.source)),
-                        ].map((source, index) => (
-                          <span key={source}>
-                            {index > 0 && " · "}
-                            <a href={source} target="_blank" rel="noreferrer">
-                              Source {index + 1}
-                            </a>
-                          </span>
-                        ))}
-                      </p>
-                    )}
-                  </div>
-                )
-              );
-            })}
-          </details>
-        </div>
         <form
           className="form"
           key={`${cfg?.latest_session ?? "loading"}-${universe}`}
@@ -264,17 +159,6 @@ export default function MarketData() {
               />
             </label>
           )}
-          <p className="field-hint">
-            {universe !== "custom"
-              ? "Includes today's full S&P 500 and every historical member recorded during the selected period, including departures and separate share classes. Membership refreshes when over 24 hours old or coverage trails a new completed session."
-              : "Downloads only your custom stock list."}{" "}
-            SPY is always included only as a benchmark.
-          </p>
-          <Notice>
-            {universe !== "custom"
-              ? "One download collects available current and historical prices, sector classifications and SEC filings. Sector caps use current or last-known labels when historical classifications are unavailable; this approximation is saved with the result. Gaps stay visible with per-stock reasons. Coverage-limited research saves its exclusions; strict full-index calculations require complete inputs. Backtests automatically use dated membership within supported coverage. Newer prices do not fill missing membership changes. Public history remains retrospective and exploratory."
-              : "Sector classifications and SEC filings are included. A custom fixed list can introduce survivorship and selection bias in historical tests; unresolved sectors remain visible and capped together."}
-          </Notice>
           <div className="form-row">
             <label>
               History from
@@ -312,15 +196,119 @@ export default function MarketData() {
               <Download size={16} />
               Download & validate
             </button>
-            <small>
-              Existing snapshots stay unchanged. Repeated identical data
-              deduplicates.
-            </small>
           </div>
         </form>
         {enqueue.error && <Notice error>{enqueue.error.message}</Notice>}
+        <details className="details membership-status">
+          <summary>S&P 500 membership</summary>
+          <p>
+            {current
+              ? `${current.member_count} current securities`
+              : "Current roster not downloaded yet"}
+            {historical?.unique_member_count != null &&
+              ` · ${historical.unique_member_count.toLocaleString()} unique securities in the historical archive`}
+          </p>
+          <p className="field-hint">
+            {historical
+              ? `Historical backtest membership: ${historical.coverage_start} – ${historical.coverage_end}.`
+              : "Historical membership not downloaded yet."}{" "}
+            {cfg && `Prices can be downloaded through ${cfg.latest_session}.`}
+          </p>
+          <button
+            type="button"
+            className="button secondary small"
+            disabled={enqueue.isPending}
+            onClick={() =>
+              enqueue.mutate({ path: "/membership/all/refresh", body: {} })
+            }
+          >
+            Refresh S&P 500 membership
+          </button>
+          <details className="details">
+            <summary>Membership sources and changes</summary>
+            {(["current", "historical"] as const).map((kind) => {
+              const saved = cfg?.membership?.[kind];
+              return (
+                saved && (
+                  <div key={kind}>
+                    <p>
+                      <strong>
+                        {kind === "current"
+                          ? "Current roster"
+                          : "Historical archive"}
+                      </strong>
+                      {` · captured ${new Date(saved.captured_at).toLocaleString()}`}{" "}
+                      ·{" "}
+                      <a href={saved.source} target="_blank" rel="noreferrer">
+                        Source
+                      </a>
+                    </p>
+                    <p className="field-hint">
+                      {kind === "historical"
+                        ? `Last recorded change: ${saved.last_change ?? saved.coverage_end}; ${saved.member_count} securities in that roster. A last change date is not an expiry date. ${saved.verified_through ? `Verified through ${saved.verified_through} using dated announcements and current-roster reconciliation.` : "Update membership to verify later coverage."}`
+                        : saved.initial
+                          ? "First capture saved. Future refreshes report additions and removals."
+                          : `Changes since previous capture: added ${saved.added?.join(", ") || "none"}; removed ${saved.removed?.join(", ") || "none"}.`}
+                    </p>
+                    {saved.events && (
+                      <p className="field-hint">
+                        Dated primary evidence:{" "}
+                        {[
+                          ...new Set(saved.events.map((event) => event.source)),
+                        ].map((source, index) => (
+                          <span key={source}>
+                            {index > 0 && " · "}
+                            <a href={source} target="_blank" rel="noreferrer">
+                              Source {index + 1}
+                            </a>
+                          </span>
+                        ))}
+                      </p>
+                    )}
+                  </div>
+                )
+              );
+            })}
+          </details>
+        </details>
         <details className="details">
-          <summary>What is checked, and what is still uncertain?</summary>
+          <summary>Sources, coverage & limitations</summary>
+          <div className="provider-summary">
+            <span>
+              <Database size={16} />
+              Alpaca · SIP historical feed · as-traded prices
+            </span>
+            <button
+              className="button secondary small"
+              disabled={
+                !cfg?.alpaca_configured ||
+                !cfg?.sec_configured ||
+                enqueue.isPending
+              }
+              onClick={() =>
+                enqueue.mutate({ path: "/providers/check", body: {} })
+              }
+            >
+              <PlugZap size={15} />
+              Test connection
+            </button>
+          </div>
+          <p>
+            Existing snapshots are preserved. Repeated identical data
+            deduplicates.
+          </p>
+          <p className="field-hint">
+            {universe !== "custom"
+              ? "Includes today's full S&P 500 and every historical member recorded during the selected period, including departures and separate share classes. Membership refreshes when over 24 hours old or coverage trails a new completed session."
+              : "Downloads only your custom stock list."}{" "}
+            SPY is always included only as a benchmark.
+          </p>
+          <p>
+            {universe !== "custom"
+              ? "One download collects available current and historical prices, sector classifications and SEC filings. Sector caps use current or last-known labels when historical classifications are unavailable; this approximation is saved with the result. Gaps stay visible with per-stock reasons. Coverage-limited research saves its exclusions; strict full-index calculations require complete inputs. Backtests automatically use dated membership within supported coverage. Newer prices do not fill missing membership changes. Public history remains retrospective and exploratory."
+              : "Sector classifications and SEC filings are included. A custom fixed list can introduce survivorship and selection bias in historical tests; unresolved sectors remain visible and capped together."}
+          </p>
+
           <p>
             Downloads capture active and archived listing evidence, dated price
             queries, corporate actions and SEC filings. Unavailable or ambiguous
@@ -340,6 +328,6 @@ export default function MarketData() {
           </p>
         </details>
       </div>
-    </section>
+    </DisclosureCard>
   );
 }

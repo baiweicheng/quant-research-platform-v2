@@ -10,7 +10,14 @@ import {
   Play,
 } from "lucide-react";
 import { api, download, money, percent, points, shortDate } from "./api";
-import { Badge, Empty, MetricStrip, Notice, PeriodPicker } from "./components";
+import {
+  Badge,
+  DisclosureCard,
+  Empty,
+  MetricStrip,
+  Notice,
+  PeriodPicker,
+} from "./components";
 import type { Period, Run, State, Strategy } from "./types";
 import Validation from "./Validation";
 import { SignalAudit, FactorAvailability } from "./Fundamentals";
@@ -91,11 +98,7 @@ export default function Research({
   return (
     <>
       <div className="page-heading">
-        <div>
-          <span className="eyebrow">YOUR IDEAS, TESTED</span>
-          <h1>Research with a clear view.</h1>
-          <p>Understand the evidence before putting an idea to work.</p>
-        </div>
+        <h1>Research</h1>
         <div className="heading-actions">
           <ResearchManager category="Backtests" />
           <button
@@ -136,13 +139,6 @@ export default function Research({
         <Validation state={state} />
       ) : section === "library" ? (
         <>
-          <div className="section-intro">
-            <h2>A thoughtful starting point.</h2>
-            <p>
-              Established research families, with explicit definitions and
-              limitations. Nothing here is approved for trading.
-            </p>
-          </div>
           <div className="strategy-grid">
             {families.map((s, i) => (
               <article
@@ -202,12 +198,15 @@ export default function Research({
               </article>
             ))}
           </div>
-          <Notice>
-            Backtesting explores a hypothesis. It does not approve a strategy or
-            establish that it will work in the future. Fundamental strategies
-            need a combined price + SEC dataset. AI-assisted discovery comes in
-            a later milestone.
-          </Notice>
+          <DisclosureCard title="Backtesting notes">
+            <div className="card-body">
+              <p>
+                Backtests test a hypothesis using historical data. Paper trading
+                requires separate approval. Fundamental strategies need a
+                snapshot with market data and SEC filings.
+              </p>
+            </div>
+          </DisclosureCard>
         </>
       ) : !state.runs.length ? (
         <div className="card">
@@ -230,14 +229,13 @@ export default function Research({
         </div>
       ) : (
         <>
-          <div className="card runs-card">
-            <div className="card-header">
-              <div>
-                <h2>Saved experiments</h2>
-                <p>Select a result to explore, or compare up to three.</p>
-              </div>
-              <Badge>{state.runs.length} saved</Badge>
-            </div>
+          <DisclosureCard
+            title="Saved backtests"
+            summary={
+              state.runs.length +
+              " saved · Select a result or compare up to three"
+            }
+          >
             <div className="table-scroll">
               <table>
                 <thead>
@@ -324,7 +322,7 @@ export default function Research({
                 </tbody>
               </table>
             </div>
-          </div>
+          </DisclosureCard>
           {compare.length > 0 && (
             <div className="card comparison">
               <div className="card-header">
@@ -532,35 +530,10 @@ export function RunDetail({
           </div>
         )}
         <MetricStrip metrics={window.metrics} />
-        <div className="card-body exposure-disclosure">
-          <Notice>
-            <strong>
-              Average allocation: {percent(exposure.stocks)} stocks /{" "}
-              {percent(exposure.cash)} cash.
-            </strong>{" "}
-            Cash earns 0% in this simulation. SPY is a fully invested
-            buy-and-hold comparison; the exposure can differ substantially. This
-            average uses the displayed period, including its starting valuation.
-          </Notice>
-          <FactorAvailability
-            decisions={run.decisions || []}
-            start={window.start}
-            end={window.end}
-            expected={["quality", "quality_value", "value_momentum"].includes(
-              run.strategy.id,
-            )}
-          />
-          {run.sector_classification?.warning && (
-            <p className="field-hint">{run.sector_classification.warning}</p>
-          )}
-          {!run.sector_classification && (
-            <p className="field-hint">
-              This saved result predates sector coverage auditing. Its original
-              classifications and returns are preserved; refresh sectors in Data
-              and select the new snapshot for another backtest.
-            </p>
-          )}
-        </div>
+        <p className="range-note allocation-summary">
+          Average allocation: {percent(exposure.stocks)} stocks /{" "}
+          {percent(exposure.cash)} cash.
+        </p>
         <div className="chart-toolbar">
           <div className="legend">
             <span>
@@ -646,16 +619,14 @@ export function RunDetail({
         </section>
       )}
       {!!run.calendar_year_returns?.length && (
-        <section className="card">
-          <div className="card-header">
-            <div>
-              <h2>Calendar-year returns</h2>
-              <p>
-                Net of modeled trading costs. Holdings carry across years. The
-                dates show the valuations used, including partial years.
-              </p>
-            </div>
-          </div>
+        <DisclosureCard
+          title="Calendar-year returns"
+          summary="Strategy vs SPY, after modeled costs"
+        >
+          <p className="card-body">
+            Holdings carry across years. The dates show the valuations used,
+            including partial years.
+          </p>
           <div className="table-scroll">
             <table className="fundamental-table">
               <thead>
@@ -682,120 +653,127 @@ export function RunDetail({
               </tbody>
             </table>
           </div>
-        </section>
+        </DisclosureCard>
       )}
-      <div className="two-columns">
-        <section className="card">
-          <div className="card-header">
+      <DisclosureCard title="Assumptions, costs & exposures">
+        <div className="card-body">
+          <dl className="facts">
             <div>
-              <h2>Know the assumptions</h2>
-              <p>Every result carries its calculation context.</p>
+              <dt>Stock limit</dt>
+              <dd>
+                {percent(Number(run.policy.max_weight ?? 0.05))} per position
+              </dd>
             </div>
-          </div>
-          <div className="card-body">
-            <dl className="facts">
+            <div>
+              <dt>Sector limit</dt>
+              <dd>
+                {percent(Number(run.policy.sector_cap ?? 0.25))} per sector
+              </dd>
+            </div>
+            <div>
+              <dt>Cash reserve</dt>
+              <dd>
+                At least {percent(Number(run.policy.cash_reserve ?? 0.02))}
+              </dd>
+            </div>
+            <div>
+              <dt>Modeled costs</dt>
+              <dd>
+                {run.policy.slippage_bps ?? 5} bps{" "}
+                {run.trading_costs ? "base slippage" : "slippage"} +{" "}
+                {run.policy.fee_bps ?? 1} bp{" "}
+                {run.trading_costs ? "fee allowance + size adjustment" : "fee"},
+                each side
+              </dd>
+            </div>
+            {run.trading_costs && (
               <div>
-                <dt>Stock limit</dt>
+                <dt>Full-run trading costs</dt>
                 <dd>
-                  {percent(Number(run.policy.max_weight ?? 0.05))} per position
+                  {money(run.trading_costs.strategy.total)}
+                  {run.trading_costs.strategy.average_bps != null &&
+                    ` · ${run.trading_costs.strategy.average_bps.toFixed(1)} bps per dollar traded`}
                 </dd>
               </div>
-              <div>
-                <dt>Sector limit</dt>
-                <dd>
-                  {percent(Number(run.policy.sector_cap ?? 0.25))} per sector
-                </dd>
-              </div>
-              <div>
-                <dt>Cash reserve</dt>
-                <dd>
-                  At least {percent(Number(run.policy.cash_reserve ?? 0.02))}
-                </dd>
-              </div>
-              <div>
-                <dt>Modeled costs</dt>
-                <dd>
-                  {run.policy.slippage_bps ?? 5} bps{" "}
-                  {run.trading_costs ? "base slippage" : "slippage"} +{" "}
-                  {run.policy.fee_bps ?? 1} bp{" "}
-                  {run.trading_costs
-                    ? "fee allowance + size adjustment"
-                    : "fee"}
-                  , each side
-                </dd>
-              </div>
-              {run.trading_costs && (
-                <div>
-                  <dt>Full-run trading costs</dt>
-                  <dd>
-                    {money(run.trading_costs.strategy.total)}
-                    {run.trading_costs.strategy.average_bps != null &&
-                      ` · ${run.trading_costs.strategy.average_bps.toFixed(1)} bps per dollar traded`}
-                  </dd>
-                </div>
-              )}
-              <div>
-                <dt>Cash return</dt>
-                <dd>0% · no borrowing</dd>
-              </div>
-              <div>
-                <dt>Annualized volatility</dt>
-                <dd>{percent(window.metrics.volatility)}</dd>
-              </div>
-              <div>
-                <dt>CAGR</dt>
-                <dd>{percent(window.metrics.cagr)}</dd>
-              </div>
-            </dl>
+            )}
+            <div>
+              <dt>Cash return</dt>
+              <dd>0% · no borrowing</dd>
+            </div>
+            <div>
+              <dt>Annualized volatility</dt>
+              <dd>{percent(window.metrics.volatility)}</dd>
+            </div>
+            <div>
+              <dt>CAGR</dt>
+              <dd>{percent(window.metrics.cagr)}</dd>
+            </div>
+          </dl>
+          <p className="field-hint">
+            Volatility needs 20 returns; CAGR needs one calendar year. A dash
+            means insufficient history.
+          </p>
+          <p className="field-hint">
+            Cash earns 0%. SPY is a fully invested buy-and-hold comparison.
+            Average allocation includes the starting valuation of the displayed
+            period.
+          </p>
+          <FactorAvailability
+            decisions={run.decisions || []}
+            start={window.start}
+            end={window.end}
+            expected={["quality", "quality_value", "value_momentum"].includes(
+              run.strategy.id,
+            )}
+          />
+          {run.sector_classification?.warning && (
+            <p className="field-hint">{run.sector_classification.warning}</p>
+          )}
+          {!run.sector_classification && (
             <p className="field-hint">
-              Volatility needs 20 returns; CAGR needs one calendar year. A dash
-              means insufficient history.
+              This saved result predates sector coverage auditing. Its original
+              classifications and returns are preserved; refresh sectors in Data
+              and select the new snapshot for another backtest.
             </p>
-            <details className="details">
-              <summary>Execution, dividends & benchmark</summary>
-              <p>{run.execution_model}</p>
-              {run.trading_costs && (
-                <p>
-                  Strategy costs include{" "}
-                  {money(run.trading_costs.strategy.fees)} in fees and{" "}
-                  {money(run.trading_costs.strategy.slippage)} in slippage
-                  across the full run. SPY modeled costs were{" "}
-                  {money(run.trading_costs.benchmark.total)}.{" "}
-                  {run.trading_costs.strategy.without_liquidity_data > 0 &&
-                    `${run.trading_costs.strategy.without_liquidity_data.toLocaleString()} fills used the missing-volume allowance.`}
-                </p>
-              )}
+          )}
+          <details className="details">
+            <summary>Execution, dividends & benchmark</summary>
+            <p>{run.execution_model}</p>
+            {run.trading_costs && (
               <p>
-                {run.dividend_model === "ex_date"
-                  ? "Total-return research: overnight holders’ distributions are reinvested at the ex-date close when still held, otherwise retained as cash. This is a research assumption, not payment-date cash availability."
-                  : "Splits adjust held shares. Dividends accrue to overnight holders on ex-date and become spendable on verified pay dates. Receivables are included in portfolio value."}
+                Strategy costs include {money(run.trading_costs.strategy.fees)}{" "}
+                in fees and {money(run.trading_costs.strategy.slippage)} in
+                slippage across the full run. SPY modeled costs were{" "}
+                {money(run.trading_costs.benchmark.total)}.{" "}
+                {run.trading_costs.strategy.without_liquidity_data > 0 &&
+                  `${run.trading_costs.strategy.without_liquidity_data.toLocaleString()} fills used the missing-volume allowance.`}
               </p>
-              <p>{run.benchmark_model}</p>
-              {run.engine_version && (
-                <p>
-                  Research engine {run.engine_version}. Saved results retain the
-                  engine and inputs used when they were created.
-                </p>
-              )}
-              <p className="digest">Input fingerprint: {run.source_digest}</p>
-            </details>
-          </div>
-        </section>
-        <section className="card">
-          <div className="card-header">
-            <div>
-              <h2>Research limitations</h2>
-              <p>Read these before interpreting performance.</p>
-            </div>
-          </div>
-          <div className="card-body notes-list">
-            {run.notes.map((note) => (
-              <p key={note}>{note}</p>
-            ))}
-          </div>
-        </section>
-      </div>
+            )}
+            <p>
+              {run.dividend_model === "ex_date"
+                ? "Total-return research: overnight holders’ distributions are reinvested at the ex-date close when still held, otherwise retained as cash. This is a research assumption, not payment-date cash availability."
+                : "Splits adjust held shares. Dividends accrue to overnight holders on ex-date and become spendable on verified pay dates. Receivables are included in portfolio value."}
+            </p>
+            <p>{run.benchmark_model}</p>
+            {run.engine_version && (
+              <p>
+                Research engine {run.engine_version}. Saved results retain the
+                engine and inputs used when they were created.
+              </p>
+            )}
+            <p className="digest">Input fingerprint: {run.source_digest}</p>
+          </details>
+        </div>
+      </DisclosureCard>
+      <DisclosureCard title="Research limitations">
+        <div className="card-body notes-list">
+          {run.notes.map((note) => (
+            <p key={note}>{note}</p>
+          ))}
+        </div>
+      </DisclosureCard>
       <SignalAudit
+        collapsed
         decisions={run.decisions || []}
         auditPath={run.audit_path}
         strategyId={run.strategy.variant_of ?? run.strategy.id}
@@ -803,53 +781,51 @@ export function RunDetail({
           run.strategy.id,
         )}
       />
-      <section className="card">
-        <div className="card-header">
-          <div>
-            <h2>Simulated fills</h2>
-            <p>
-              {run.trade_count.toLocaleString()} total · Most recent 50 shown ·
-              Full ledger included in export
-            </p>
-          </div>
-          <Badge>Simulation</Badge>
-        </div>
+      <DisclosureCard
+        title="Simulated fills"
+        summary={
+          run.trade_count.toLocaleString() + " total · Full ledger in export"
+        }
+      >
         {run.trades.length ? (
-          <div className="table-scroll">
-            <table>
-              <thead>
-                <tr>
-                  <th>Session</th>
-                  <th>Stock</th>
-                  <th>Side</th>
-                  <th>Shares</th>
-                  <th>Fill price</th>
-                  <th>Fee</th>
-                </tr>
-              </thead>
-              <tbody>
-                {run.trades
-                  .slice(-50)
-                  .reverse()
-                  .map((trade, i) => (
-                    <tr key={`${trade.session}-${trade.symbol}-${i}`}>
-                      <td>{shortDate(trade.session)}</td>
-                      <td>
-                        <strong>{trade.symbol}</strong>
-                      </td>
-                      <td>{trade.side}</td>
-                      <td>
-                        {Number(trade.quantity).toLocaleString("en-US", {
-                          maximumFractionDigits: 6,
-                        })}
-                      </td>
-                      <td>{money(trade.price)}</td>
-                      <td>{money(trade.fee)}</td>
-                    </tr>
-                  ))}
-              </tbody>
-            </table>
-          </div>
+          <>
+            <p className="card-body">Showing up to the 50 most recent fills.</p>
+            <div className="table-scroll">
+              <table>
+                <thead>
+                  <tr>
+                    <th>Session</th>
+                    <th>Stock</th>
+                    <th>Side</th>
+                    <th>Shares</th>
+                    <th>Fill price</th>
+                    <th>Fee</th>
+                  </tr>
+                </thead>
+                <tbody>
+                  {run.trades
+                    .slice(-50)
+                    .reverse()
+                    .map((trade, i) => (
+                      <tr key={`${trade.session}-${trade.symbol}-${i}`}>
+                        <td>{shortDate(trade.session)}</td>
+                        <td>
+                          <strong>{trade.symbol}</strong>
+                        </td>
+                        <td>{trade.side}</td>
+                        <td>
+                          {Number(trade.quantity).toLocaleString("en-US", {
+                            maximumFractionDigits: 6,
+                          })}
+                        </td>
+                        <td>{money(trade.price)}</td>
+                        <td>{money(trade.fee)}</td>
+                      </tr>
+                    ))}
+                </tbody>
+              </table>
+            </div>
+          </>
         ) : (
           <div className="card-body">
             <p>
@@ -858,7 +834,7 @@ export function RunDetail({
             </p>
           </div>
         )}
-      </section>
+      </DisclosureCard>
     </>
   );
 }

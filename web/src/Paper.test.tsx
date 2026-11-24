@@ -270,6 +270,8 @@ it("shows staged dollar orders, actual fill checks and gap acknowledgement", asy
   mount(paper);
   expect(await screen.findByText("Broker fill check: checked")).toBeVisible();
   expect(screen.getByText(/1 filled/)).toBeVisible();
+  expect(screen.getByText("$125.00")).not.toBeVisible();
+  await userEvent.click(screen.getByText("Paper order lifecycle"));
   expect(screen.getByText("$125.00")).toBeVisible();
   expect(
     screen.getByRole("checkbox", { name: /I accept price gaps/ }),

@@ -1,6 +1,13 @@
 import * as Dialog from "@radix-ui/react-dialog";
 import * as Tooltip from "@radix-ui/react-tooltip";
-import { ArrowUpRight, Check, CircleHelp, FlaskConical, X } from "lucide-react";
+import {
+  ArrowUpRight,
+  Check,
+  ChevronRight,
+  CircleHelp,
+  FlaskConical,
+  X,
+} from "lucide-react";
 import type { ReactNode } from "react";
 import { percent, points } from "./api";
 import type { Metrics, Period } from "./types";
@@ -99,6 +106,30 @@ export function Notice({
     >
       {children}
     </div>
+  );
+}
+export function DisclosureCard({
+  title,
+  summary,
+  open,
+  children,
+}: {
+  title: string;
+  summary?: string;
+  open?: boolean;
+  children: ReactNode;
+}) {
+  return (
+    <details className="card disclosure-card" open={open}>
+      <summary>
+        <ChevronRight size={18} aria-hidden="true" />
+        <span className="disclosure-label">
+          <span className="disclosure-title">{title}</span>
+          {summary && <small>{summary}</small>}
+        </span>
+      </summary>
+      {children}
+    </details>
   );
 }
 export function PeriodPicker({
