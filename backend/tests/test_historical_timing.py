@@ -6,10 +6,11 @@ from decimal import Decimal
 from types import SimpleNamespace
 
 import pytest
-
+from aperture import historical_timing, membership
 from aperture.domain import Bar, ResearchError
 from aperture.historical_timing import TIMING, apply_timing, verified_nontrading_tail
 from aperture.lifecycles import terminal_events
+from test_dated_research import vendor  # noqa: F401
 from test_lifecycles import dataset
 
 
@@ -243,3 +244,140 @@ def test_changed_native_date_requires_new_review(monkeypatch, symbol):
     result = apply_timing([event], ids, bars, api, lambda *v: issues.append(v))
     assert issues and result == [event]
     assert "reviewed_market_timing" not in result[0]
+
+
+@pytest.mark.parametrize(
+    "listing_ids",
+    [
+        ["unrelated"],
+        [TIMING["ANSS"]["listing_id"], historical_timing.ANSS_LISTING_ALTERNATE],
+    ],
+)
+def test_anss_rejects_unreviewed_or_ambiguous_listing(monkeypatch, listing_ids):
+    event, ids, bars, api = sample("ANSS", monkeypatch)
+    ids["ANSS"]["candidate_ids"] = listing_ids
+    issues, revalidated = [], []
+    assert apply_timing(
+        [event], ids, bars, api, lambda *v: issues.append(v), revalidated=revalidated
+    ) == [event]
+    assert len(issues) == 1 and not revalidated
+
+
+def test_anss_listing_repair_applies_on_download_and_incremental_update(
+    vendor,  # noqa: F811
+    monkeypatch,
+):
+    from aperture.dataset_updates import update
+    from aperture.historical_issuers import ISSUERS
+    from aperture.lifecycles import event_session
+    from aperture.research_data import download
+
+    store, api, state = vendor
+    event, _, _, _ = sample("ANSS", monkeypatch)
+    proof = TIMING["ANSS"]
+    raw = b"Primary completed-transaction and suspension fixture"
+    monkeypatch.setitem(ISSUERS["ANSS"], "sha256", proof["sha256"])
+    api.document = lambda url: raw
+    api.cfg = SimpleNamespace(sec_agent="fixture@example.com")
+    current_id = historical_timing.ANSS_LISTING_ALTERNATE
+
+    def listings(provider, url, params=None, ttl=300):
+        inactive = params and params.get("status") == "inactive"
+        return [
+            {
+                "symbol": symbol,
+                "id": current_id if symbol == "ANSS" else symbol,
+                "name": "ANSYS, Inc." if symbol == "ANSS" else symbol,
+                "exchange": "NASDAQ",
+                "class": "us_equity",
+            }
+            for symbol in (["ANSS"] if inactive else ["SNPS", "SPY"])
+        ]
+
+    prices = api.pages
+
+    def pages(path, query, key):
+        output = prices(path, query, key)
+        for page in output:
+            rows = page.get("bars", {})
+            if "ANSS" in rows:
+                rows["ANSS"] = [
+                    row
+                    for row in rows["ANSS"]
+                    if row["t"][:10] <= proof["last_trading"]
+                ]
+        return output
+
+    api.get, api.pages = listings, pages
+    state["events"] = {
+        event["kind"]: [
+            {
+                **event["source_record"],
+                "id": event["id"],
+                "acquiree_symbol": "ANSS",
+                "acquirer_symbol": "SNPS",
+                "acquirer_rate": "0.3399",
+                "cash_rate": "199.91",
+                "payable_date": "2025-07-18",
+            }
+        ]
+    }
+    start, end = date(2025, 7, 1), date(2025, 8, 1)
+    state["latest"] = end
+    history = {
+        "coverage_start": str(start),
+        "coverage_end": str(end),
+        "rosters": [
+            {"effective": str(start), "symbols": ["ANSS", "SNPS"]},
+            {"effective": "2025-07-18", "symbols": ["SNPS"]},
+        ],
+    }
+    audit = {
+        "kind": "combined",
+        "historical": history,
+        "current": {
+            "members": [{"symbol": "SNPS", "sector": "Information Technology"}]
+        },
+        "additional_symbols": [],
+    }
+    monkeypatch.setattr(
+        membership, "resolve", lambda *a: (["ANSS", "SNPS", "SPY"], audit, {})
+    )
+    monkeypatch.setattr(membership, "refresh_all", lambda store: None)
+    monkeypatch.setattr(
+        "aperture.fundamentals.attach",
+        lambda store, identifier, *a, **kw: next(
+            d for d in store.datasets() if d["id"] == identifier
+        ),
+    )
+    request = {
+        "name": "Research",
+        "universe": "sp500",
+        "start": str(start),
+        "end": str(end),
+    }
+    with monkeypatch.context() as prior:
+        prior.setattr(historical_timing, "ANSS_LISTING_ALTERNATE", "not-yet-reviewed")
+        original = store.dataset(download(store, request, lambda *a: None, api)["id"])
+    with pytest.raises(ResearchError, match="incomplete on 2025-07-17: ANSS"):
+        membership.validate_coverage(original, start, end, "ex_date")
+
+    api.calls.clear()
+    updated = store.dataset(update(store, original.id, lambda *a: None, api)["id"])
+    assert all(
+        q["start"] > "2025-07-17" for path, q in api.calls if path.endswith("/bars")
+    )
+    fresh = store.dataset(download(store, request, lambda *a: None, api)["id"])
+    assert updated.id != original.id
+    assert original.metadata == store.dataset(original.id).metadata
+    for corrected in (updated, fresh):
+        assert corrected.bars == original.bars
+        assert "ANSS" not in corrected.metadata["unavailable_symbols"]
+        assert not any(
+            i["symbol"] == "ANSS" for i in corrected.metadata["input_issues"]
+        )
+        merger = terminal_events(corrected)["ANSS"]
+        assert event_session(merger) == date(2025, 7, 17)
+        assert merger["source_effective"] == merger["pay_date"] == "2025-07-18"
+        assert merger["reviewed_market_timing"]["listing_id"] == current_id
+        membership.validate_coverage(corrected, start, end, "ex_date")

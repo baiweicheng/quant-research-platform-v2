@@ -1319,7 +1319,17 @@ def download(store, payload, progress, provider=None, base=None):
         )
         from .historical_timing import apply_timing
 
-        normalized_events = apply_timing(normalized_events, identity, bars, api, issue)
+        revalidated_timing_issues = []
+        normalized_events = apply_timing(
+            normalized_events,
+            identity,
+            bars,
+            api,
+            issue,
+            revalidated=revalidated_timing_issues,
+        )
+        if revalidated_timing_issues:
+            issues = [i for i in issues if i not in revalidated_timing_issues]
         normalized_events = apply_missing(normalized_events, supplements, bars, issue)
         # Carried vendor records later reviewed as another security's actions.
         normalized_events = [

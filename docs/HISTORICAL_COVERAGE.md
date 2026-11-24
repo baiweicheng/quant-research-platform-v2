@@ -178,11 +178,17 @@ Primary completed-merger filings establish the first converted market sessions
 for [ANSS, July 17, 2025](https://www.sec.gov/Archives/edgar/data/1013462/000114036125026141/ef20052066_8k.htm),
 [CTLT, December 18, 2024](https://www.sec.gov/Archives/edgar/data/1596783/000119312524280922/d902883d8k.htm)
 and [HES, July 18, 2025](https://www.sec.gov/Archives/edgar/data/4447/000095014225001950/eh250651090_8k.htm).
-Corrections require exact original listing/event IDs, CUSIPs, consideration,
+Corrections require exact reviewed listing and event IDs, CUSIPs, consideration,
 document fingerprints and source quote lifetimes. The vendor effective date,
 verified legal date and market session remain distinct in provenance. Native
 payment dates and consideration are unchanged; CTLT cash remains a receivable
 until December 19 rather than becoming spendable on conversion.
+
+The November 24, 2026 capture returned a second ANSS listing ID for the same
+verified merger. Fresh downloads recognize either reviewed ID when the other
+checks pass. Use **Data → Update dataset** to revalidate the merger in a saved
+snapshot and reuse its historical prices. Select the new snapshot in Research.
+The original remains available with its own input history.
 
 HES also contains an exact stale September 30, 2024 conversion instruction.
 That reviewed record remains visible as rejected source evidence and cannot

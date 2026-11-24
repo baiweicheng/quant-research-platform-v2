@@ -6,6 +6,12 @@ from .action_evidence import primary_matches
 from .domain import ResearchError, decimal
 
 VERSION = "reviewed-native-merger-timing-v1"
+# The November 24 Alpaca capture changed ANSS's listing ID while retaining
+# the same merger instruction, equity CUSIP, last trade and SEC evidence.
+ANSS_LISTING_ALTERNATE = "36d839da-17a7-47d4-b552-fe15f16dbeb5"
+NATIVE_TIMING_MISMATCH = (
+    "Reviewed merger timing no longer matches the captured listing or native terms."
+)
 TIMING = {
     "ANSS": {
         "event_id": "945b474d-5b29-4f86-a71b-8fc0bae5bae3",
@@ -145,7 +151,7 @@ TIMING = {
 }
 
 
-def apply_timing(events, identities, bars, api, issue):
+def apply_timing(events, identities, bars, api, issue, *, revalidated=None):
     result = []
     rejections = {}
     for event in events:
@@ -154,14 +160,18 @@ def apply_timing(events, identities, bars, api, issue):
         if not proof or event["id"] != proof["event_id"]:
             result.append(event)
             continue
+        symbol = event["source"]
+        listing_ids = identities.get(symbol, {}).get("candidate_ids")
+        verified_listing = listing_ids == [proof["listing_id"]] or (
+            symbol == "ANSS" and listing_ids == [ANSS_LISTING_ALTERNATE]
+        )
+        source_effective = proof.get("source_effective", proof["legal_effective"])
         # Native event/date/security/economics all have to match. A changed
         # instruction stays unresolved, rather than inheriting the old proof.
         if (
-            identities.get(event["source"], {}).get("candidate_ids")
-            != [proof["listing_id"]]
+            not verified_listing
             or native.get("acquiree_cusip") != proof["cusip"]
-            or native.get("effective_date")
-            != proof.get("source_effective", proof["legal_effective"])
+            or native.get("effective_date") != source_effective
             or (
                 proof.get("target_cusip")
                 and native.get("acquirer_cusip") != proof["target_cusip"]
@@ -174,7 +184,7 @@ def apply_timing(events, identities, bars, api, issue):
             issue(
                 event["source"],
                 event["effective"],
-                "Reviewed merger timing no longer matches the captured listing or native terms.",
+                NATIVE_TIMING_MISMATCH,
             )
             result.append(event)
             continue
@@ -182,8 +192,7 @@ def apply_timing(events, identities, bars, api, issue):
             e
             for e in events
             if e["source"] == event["source"]
-            and (e.get("source_record") or {}).get("effective_date")
-            == proof.get("source_effective", proof["legal_effective"])
+            and (e.get("source_record") or {}).get("effective_date") == source_effective
             and (
                 e["kind"],
                 e.get("target"),
@@ -293,9 +302,25 @@ def apply_timing(events, identities, bars, api, issue):
                     if "source_effective" in proof
                     else {}
                 ),
-                "reviewed_market_timing": {"version": VERSION, **proof},
+                "reviewed_market_timing": {
+                    "version": VERSION,
+                    **proof,
+                    "listing_id": listing_ids[0],
+                },
             }
         )
+        if revalidated is not None and symbol == "ANSS":
+            # An incremental update can carry the original warning from before
+            # this listing ID was corroborated. Clear only that dated finding.
+            revalidated.append(
+                {
+                    "symbol": symbol,
+                    "start": source_effective,
+                    "end": source_effective,
+                    "kind": "action",
+                    "reason": NATIVE_TIMING_MISMATCH,
+                }
+            )
         rejections.update(rejected)
     return [
         {
