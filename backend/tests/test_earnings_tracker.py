@@ -1,10 +1,11 @@
+import json
 from dataclasses import replace
 from datetime import date, timedelta
 from decimal import Decimal
 
 import numpy as np
 import pytest
-from aperture import calendar, periodic_income
+from aperture import calendar, periodic_income, reviewed_periodic_income
 from aperture.domain import (
     Bar,
     Dataset,
@@ -14,6 +15,7 @@ from aperture.domain import (
 from aperture.earnings_tracker import EarningsTracker, _select, _weights
 from aperture.market_capture import EarningsMarketCapture, market_capture
 from aperture.pullback_rotation import EarningsPullbackRotation
+from aperture.store import Store
 
 
 def test_periodic_pairs_use_one_original_accession_and_override_stale_income():
@@ -219,6 +221,66 @@ def test_original_statement_requires_matching_pinned_issuer_and_filing_metadata(
     )
     assert periodic_income.normalize({"cik": 1}, sub)[0].income is None
     assert periodic_income.normalize(company) == []
+
+
+def test_reviewed_periodic_statement_only_applies_to_the_new_snapshot_policy(tmp_path):
+    cik, accession = "0001000228", "0001000228-17-000058"
+    company = {"cik": int(cik)}
+    recent = {
+        "form": ["10-Q", "10-Q"],
+        "accessionNumber": [accession, "0001000228-17-000059"],
+        "filingDate": ["2017-11-06", "2017-11-07"],
+        "reportDate": ["2017-11-06", "2017-11-07"],
+    }
+    submissions = {"cik": cik, "filings": {"recent": recent}}
+    store = Store(tmp_path / "reviewed.sqlite3")
+    observations = [
+        store.observe(
+            "sec",
+            f"https://data.sec.gov/{resource}/CIK{cik}.json?{{}}",
+            json.dumps(data).encode(),
+        )
+        for resource, data in (
+            ("api/xbrl/companyfacts", company),
+            ("submissions", submissions),
+        )
+    ]
+    fundamentals = {"observation_ids": observations}
+    legacy = Dataset(
+        "frozen",
+        "Frozen",
+        "imported",
+        1,
+        {},
+        {},
+        "fixture",
+        "digest",
+        {"fundamentals": fundamentals},
+        annual_income={"HSIC": [{"cik": cik}]},
+    )
+    old, _ = periodic_income.load_reports(store, legacy)[cik]
+    assert old.income is None and old.end == old.filed
+    current = replace(
+        legacy,
+        metadata={
+            "fundamentals": {
+                **fundamentals,
+                "periodic_income_policy": reviewed_periodic_income.VERSION,
+            }
+        },
+    )
+    restored, next_filing = periodic_income.load_reports(store, current)[cik]
+    assert restored.filed == old.filed and restored.end == date(2017, 9, 30)
+    assert (restored.income, restored.previous) == (414_834_000, 367_562_000)
+    assert restored.source_url.endswith("000100022817000058/the10q_3q17.htm")
+    assert next_filing.income is None
+    assert (
+        periodic_income.normalize({"cik": 1}, submissions, reviewed_statements=True)[
+            0
+        ].income
+        is None
+    )
+    assert not periodic_income.normalize(company, reviewed_statements=True)
 
 
 def test_common_shareholder_income_fallback_matches_both_periods_on_one_basis():

@@ -10,6 +10,7 @@ import json
 from math import isfinite
 import re
 
+from . import reviewed_periodic_income
 from .annual_income import ACCESSION, NET_INCOME_TAGS
 from .domain import ResearchError
 
@@ -86,7 +87,7 @@ def _original_statement(cik, report):
     )
 
 
-def normalize(company, submissions=None):
+def normalize(company, submissions=None, *, reviewed_statements=False):
     # Recent submissions supply a fiscal-end anchor even when an original
     # filing has no comparable fact. Older filings use same-accession anchors.
     filings = {}
@@ -167,7 +168,10 @@ def normalize(company, submissions=None):
                 )
                 break
         if report.income is None and (str(filed), acc) in filings:
-            report = _original_statement(str(company.get("cik", "")).zfill(10), report)
+            cik = str(company.get("cik", "")).zfill(10)
+            report = _original_statement(cik, report)
+            if report.income is None and reviewed_statements:
+                report = reviewed_periodic_income.recover(cik, report)
         reports.append(report)
     return reports
 
@@ -198,7 +202,9 @@ def succession_histories(dataset):
 
 
 def load_reports(store, dataset):
-    pinned = set(dataset.metadata.get("fundamentals", {}).get("observation_ids", ()))
+    fundamentals = dataset.metadata.get("fundamentals", {})
+    pinned = set(fundamentals.get("observation_ids", ()))
+    policy = fundamentals.get("periodic_income_policy")
     if not pinned or not dataset.annual_income:
         raise ResearchError(MISSING)
     with store.connect() as db:
@@ -246,7 +252,11 @@ def load_reports(store, dataset):
                 raise ResearchError(
                     "The saved SEC captures disagree on issuer identity."
                 )
-            result[cik] = normalize(company, submissions)
+            result[cik] = normalize(
+                company,
+                submissions,
+                reviewed_statements=policy == reviewed_periodic_income.VERSION,
+            )
     issuers = {r["cik"] for rows in dataset.annual_income.values() for r in rows}
     if not result or issuers - result.keys():
         raise ResearchError(MISSING)

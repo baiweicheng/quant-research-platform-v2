@@ -11,6 +11,8 @@ A weekly, long-only strategy available in Aperture under **Research → Earnings
 
 Income change divides current minus comparable prior income by the greater of their absolute values and 1. A flat SPY return window uses beta zero. Saved decisions expose the active selection rule, price signals and filing evidence.
 
+New SEC snapshots use reviewed original-statement evidence for select missing filing pairs. The historical comparison below is for its named frozen snapshot. [Shared financial inputs](WEEKLY_EARNINGS_TRACKER.md#financial-inputs)
+
 ## Historical Standard-cost comparison
 
 To reproduce the comparison, choose snapshot `2c83efcbf8707d4a48b0a260`, $100,000 starting capital, Strict coverage, ex-date total-return accounting and Standard costs. Enter January 1, 2017 through November 18, 2026. The first valuation is on January 3, the first exchange session. Standard uses 5 bp of base slippage per side, a 1 bp fee, and a size-dependent slippage adjustment. All 15 prior strategies kept their registered cadence, including the six archived or hidden recipes.

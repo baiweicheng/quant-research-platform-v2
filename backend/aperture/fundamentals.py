@@ -13,7 +13,7 @@ from dataclasses import replace
 from datetime import date, timedelta
 from decimal import Decimal
 
-from . import annual_income, calendar, profitability
+from . import annual_income, calendar, profitability, reviewed_periodic_income
 from .annual_refresh import companyfacts as read_companyfacts
 from .domain import ONE, ZERO, AnnualStatement, Dataset, ResearchError, decimal
 from .eps_policy import (
@@ -754,6 +754,7 @@ def attach(
             "share_basis": EPS_WARNING,
             "refresh_policy": "Original and amended 10-Q and 10-K filing changes trigger financial-history refresh; otherwise captured histories can be reused for up to 30 days. Manual SEC refresh forces a new capture.",
             "annual_income_policy": annual_income.VERSION,
+            "periodic_income_policy": reviewed_periodic_income.VERSION,
         }
         raw = json.dumps(
             {"price_digest": base.digest, "policy": policy, "sources": source_hashes},
