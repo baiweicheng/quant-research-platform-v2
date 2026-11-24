@@ -167,7 +167,7 @@ export function TaskDialog({
               <div className="inline">
                 <button
                   type="button"
-                  className="text-button"
+                  className="text-link"
                   onClick={() => {
                     setStrategyIds((ids) => [
                       ...new Set([
@@ -182,7 +182,7 @@ export function TaskDialog({
                 </button>
                 <button
                   type="button"
-                  className="text-button"
+                  className="text-link"
                   disabled={!strategyIds.length}
                   onClick={() => {
                     setStrategyIds([]);

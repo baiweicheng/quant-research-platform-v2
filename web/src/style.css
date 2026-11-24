@@ -855,6 +855,9 @@ input[type="checkbox"] {
 .result-card {
   margin-top: 24px;
 }
+.result-card + .card {
+  margin-top: 16px;
+}
 .synthetic-ribbon {
   padding: 8px 25px;
   background: #faf6eb;
@@ -1268,6 +1271,9 @@ select {
   min-width: 0;
   width: 100%;
   min-height: 44px;
+}
+select {
+  text-overflow: ellipsis;
 }
 input::placeholder {
   color: #adb7a7;
@@ -2019,13 +2025,36 @@ textarea:focus-visible {
   gap: 1rem;
   margin: 1rem 0;
 }
+.paper-cash-grid > .card {
+  padding: clamp(16px, 2vw, 24px);
+}
+.paper-cash-grid h3 {
+  font-size: var(--font-body);
+}
+.paper-cash-grid strong {
+  display: block;
+  margin: 8px 0 6px;
+  font-size: 1.5rem;
+  font-variant-numeric: tabular-nums;
+  line-height: 1.25;
+}
+.paper-cash-grid p {
+  font-size: var(--font-small);
+}
+@media (min-width: 769px) {
+  .paper-cash-grid {
+    row-gap: 0;
+  }
+  .paper-cash-grid > .card {
+    display: grid;
+    grid-row: span 3;
+    grid-template-rows: subgrid;
+  }
+}
 .paper-workspace .notice .button {
   max-width: 100%;
   white-space: normal;
   margin-top: 0.75rem;
-}
-.paper-cash-grid strong {
-  font-size: 1.45rem;
 }
 .paper-performance-notes {
   margin: 1.5rem;

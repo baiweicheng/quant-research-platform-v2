@@ -238,7 +238,7 @@ export function PaperPerformance() {
         <Badge>Broker valuations</Badge>
       </div>
       <MetricStrip account metrics={window?.metrics} />
-      <p className="chart-notice">
+      <p className="range-note">
         Alpaca paper does not credit dividends. SPY includes them; the gap
         includes this simulator difference.
       </p>
@@ -249,7 +249,7 @@ export function PaperPerformance() {
             <PeriodPicker value={period} onChange={setPeriod} />
           </div>
           {window.limited && (
-            <p className="chart-notice">
+            <p className="range-note">
               Showing available history: {window.start} – {window.end}.
             </p>
           )}
@@ -511,10 +511,12 @@ export default function PaperWorkspace({ state }: { state: State }) {
           {data.fill_check.checked_at
             ? `Checked ${new Date(data.fill_check.checked_at).toLocaleString()}. `
             : "Checking is required before another rebalance. "}
-          {Object.entries(data.fill_check.counts)
-            .map(([status, count]) => `${count} ${status}`)
-            .join(" · ")}
-          {data.fill_check.issues.join(" ")}
+          {[
+            ...Object.entries(data.fill_check.counts).map(
+              ([status, count]) => `${count} ${status}`,
+            ),
+            ...data.fill_check.issues,
+          ].join(" · ")}
         </Notice>
       )}
       {data?.membership_update && (
@@ -599,7 +601,7 @@ export default function PaperWorkspace({ state }: { state: State }) {
             </div>
           </div>
           <div className="paper-cash-grid">
-            <div className="card education">
+            <div className="card">
               <h3>Account cash</h3>
               <strong>{money(snap.cash)}</strong>
               <p>
@@ -608,7 +610,7 @@ export default function PaperWorkspace({ state }: { state: State }) {
                   : "Margin buying power is ignored by this saved cash-funded policy."}
               </p>
             </div>
-            <div className="card education">
+            <div className="card">
               <h3>
                 {cfg?.funding_policy === "paper_margin"
                   ? "Paper buying power"
@@ -627,7 +629,7 @@ export default function PaperWorkspace({ state }: { state: State }) {
                   : "Before the policy cash reserve and order-level checks."}
               </p>
             </div>
-            <div className="card education">
+            <div className="card">
               <h3>Unsettled sale proceeds</h3>
               <strong>{money(snap.unsettled_sales)}</strong>
               <p>
