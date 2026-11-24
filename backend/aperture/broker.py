@@ -1,6 +1,13 @@
 """Paper-only Alpaca adapter. Reads may retry; order writes never retry blindly."""
 
+import fcntl
+import hashlib
+import os
+import tempfile
+import time
 from datetime import UTC, date, datetime, timedelta
+from email.utils import parsedate_to_datetime
+from pathlib import Path
 from urllib.parse import quote
 from zoneinfo import ZoneInfo
 
@@ -11,11 +18,82 @@ from .config import DATA_URL, PAPER_URL, settings
 from .domain import ZERO, ResearchError, decimal
 
 NY = ZoneInfo("America/New_York")
-TERMINAL = {"filled", "canceled", "expired", "rejected", "replaced"}
+TERMINAL = {
+    "filled",
+    "canceled",
+    "expired",
+    "rejected",
+    "replaced",
+    "not_sent",
+    "closed_unconfirmed",
+}
 
 
 class ReconciliationPending(ResearchError):
     """A moving account must be read again before any new order."""
+
+
+class SubmissionNotSent(ResearchError):
+    """A local guard prevented the POST from being attempted."""
+
+
+class TradingPace:
+    """Share the request budget across the API, worker and cancellation lane."""
+
+    def __init__(self, key):
+        digest = hashlib.sha256(key.encode()).hexdigest()
+        self.path = (
+            Path(tempfile.gettempdir()) / f"aperture-paper-{os.getuid()}-{digest}.pace"
+        )
+
+    def _slot(self, now, delay, *, defer=False):
+        fd = os.open(self.path, os.O_RDWR | os.O_CREAT | os.O_NOFOLLOW, 0o600)
+        with os.fdopen(fd, "r+") as slot:
+            fcntl.flock(slot, fcntl.LOCK_EX)
+            previous = float(slot.read() or 0)
+            if defer or previous <= now:
+                slot.seek(0)
+                slot.write(str(max(previous, now + delay)))
+                slot.truncate()
+                slot.flush()
+            return max(0, previous - now)
+
+    def acquire(self):
+        limit = time.time() + 4
+        while True:
+            now = time.time()
+            delay = self._slot(now, 0.36)
+            if not delay:
+                return
+            if now + delay > limit:
+                raise ReconciliationPending(
+                    "Alpaca's request budget is temporarily unavailable. Wait for it to reset and refresh."
+                )
+            time.sleep(delay)
+
+    def defer(self, delay):
+        self._slot(time.time(), min(delay, 900), defer=True)
+
+
+def retry_delay(response, attempt):
+    retry_after = response.headers.get("Retry-After")
+    if retry_after:
+        try:
+            return max(0.25, float(retry_after))
+        except ValueError:
+            try:
+                return max(
+                    0.25, parsedate_to_datetime(retry_after).timestamp() - time.time()
+                )
+            except (TypeError, ValueError, OverflowError):
+                pass
+    reset = response.headers.get("X-RateLimit-Reset")
+    if response.status_code == 429 and reset:
+        try:
+            return max(0.25, float(reset) - time.time())
+        except ValueError:
+            pass
+    return 0.5 * (2**attempt)
 
 
 class Broker:
@@ -23,6 +101,7 @@ class Broker:
         self.client = client or httpx.Client(timeout=20, follow_redirects=False)
         self.owned = client is None
         self.cfg = cfg or settings()
+        self.pace = TradingPace(self.cfg.key)
 
     def close(self):
         if self.owned:
@@ -31,33 +110,47 @@ class Broker:
     def read(self, path, params=None, missing=False, data=False):
         if not path.startswith("/v2/"):
             raise ResearchError("Only supported paper/data resources are allowed.")
+        headers = self.cfg.headers()
         for attempt in range(3):
+            if not data:
+                self.pace.acquire()
             try:
                 r = self.client.get(
                     (DATA_URL if data else PAPER_URL) + path,
                     params=params,
-                    headers=self.cfg.headers(),
+                    headers=headers,
                 )
             except httpx.RequestError:
                 if attempt < 2:
+                    time.sleep(0.5 * (2**attempt))
                     continue
                 raise ResearchError(
                     "Paper broker could not be reached. No order was retried."
                 ) from None
             if r.status_code == 404 and missing:
                 return None
-            if r.status_code in (429, 500, 502, 503, 504) and attempt < 2:
-                continue
+            if r.status_code in (429, 500, 502, 503, 504):
+                delay = retry_delay(r, attempt)
+                if r.status_code == 429 and not data:
+                    self.pace.defer(delay)
+                if attempt < 2 and delay <= 4:
+                    time.sleep(delay)
+                    continue
             if not r.is_success:
                 raise ResearchError(
                     f"Paper broker returned HTTP {r.status_code}. Check access and retry reconciliation."
                 )
             try:
-                return r.json()
+                body = r.json()
             except ValueError:
                 raise ResearchError(
                     "Paper broker returned an unreadable response."
                 ) from None
+            if missing and (not isinstance(body, dict) or not body):
+                raise ResearchError(
+                    "The broker returned an incomplete client-order lookup."
+                )
+            return body
         raise ResearchError("Paper read retries exhausted.")
 
     def activities(self, after):
@@ -82,37 +175,70 @@ class Broker:
             "Account activity history exceeded its safety limit. No partial reconciliation was used."
         )
 
-    def snapshot(self, at=None):
+    def order_list(self, status, *, after=None):
+        params = {"status": status, "limit": 500, "nested": "false"}
+        if after:
+            params["after"] = after
+        output = []
+        for _ in range(5):
+            rows = self.read("/v2/orders", params)
+            if not isinstance(rows, list) or any(not isinstance(r, dict) for r in rows):
+                break
+            output.extend(rows)
+            if len(rows) < 500:
+                return output
+            cursor = rows[-1].get("id")
+            if not cursor or cursor == params.get("before_order_id"):
+                break
+            params.pop("after", None)  # Alpaca's ID cursor supersedes the time filter.
+            params["before_order_id"] = cursor
+        raise ResearchError("The complete paper order list could not be reconciled.")
+
+    @staticmethod
+    def account_key(account):
+        if not account.get("id"):
+            raise ResearchError("Paper account identity is missing.")
+        return hashlib.sha256(str(account["id"]).encode()).hexdigest()
+
+    def clock(self):
+        return self.read("/v2/clock")
+
+    def staging_snapshot(self):
+        # Between full checks, use the current broker cash, positions, buying
+        # power and open orders. The frozen plan still caps usable cash.
+        return self.snapshot(staging=True)
+
+    def snapshot(self, at=None, *, staging=False):
         at = at or datetime.now(UTC)
         account = self.read("/v2/account")
         positions = self.read("/v2/positions")
-        orders = self.read(
-            "/v2/orders", {"status": "open", "limit": 500, "nested": "false"}
+        orders = self.order_list("open")
+        clock = None if staging else self.clock()
+        activities = (
+            []
+            if staging
+            else self.activities((at - timedelta(days=10)).date().isoformat())
         )
-        clock = self.read("/v2/clock")
-        activities = self.activities((at - timedelta(days=10)).date().isoformat())
-        if (
-            not isinstance(positions, list)
-            or not isinstance(orders, list)
-            or len(orders) >= 500
-        ):
+        if not isinstance(positions, list):
             raise ResearchError(
                 "The complete position/open-order list could not be reconciled."
             )
         # Read again around the collection to detect a concurrent fill or transfer.
-        after = self.read("/v2/account")
-        for key in ("cash",):
-            if decimal(account.get(key, "NaN")) != decimal(after.get(key, "NaN")):
+        if not staging:
+            after = self.read("/v2/account")
+            if self.account_key(account) != self.account_key(after) or decimal(
+                account.get("cash", "NaN")
+            ) != decimal(after.get("cash", "NaN")):
                 raise ReconciliationPending(
                     "The account changed during reconciliation. Refresh after pending activity settles."
                 )
-        after_positions = self.read("/v2/positions")
-        if sorted((p.get("symbol"), p.get("qty")) for p in positions) != sorted(
-            (p.get("symbol"), p.get("qty")) for p in after_positions
-        ):
-            raise ReconciliationPending(
-                "Positions changed during reconciliation; waiting for a stable account read."
-            )
+            after_positions = self.read("/v2/positions")
+            if sorted((p.get("symbol"), p.get("qty")) for p in positions) != sorted(
+                (p.get("symbol"), p.get("qty")) for p in after_positions
+            ):
+                raise ReconciliationPending(
+                    "Positions changed during reconciliation; waiting for a stable account read."
+                )
         cash = decimal(account.get("cash", "NaN"))
         equity = decimal(account.get("equity", "NaN"))
         issues = []
@@ -195,13 +321,8 @@ class Broker:
             issues.append(
                 "Recent journal/asset-transfer activity needs manual broker review before new paper orders."
             )
-        import hashlib
-
-        binding = hashlib.sha256(str(account.get("id", "")).encode()).hexdigest()
-        if not account.get("id"):
-            raise ResearchError("Paper account identity is missing.")
         return {
-            "account_key": binding,
+            "account_key": self.account_key(account),
             "source": "Alpaca paper broker",
             "checked_at": at.isoformat(),
             "cash": str(cash),
@@ -272,7 +393,7 @@ class Broker:
 
     def market_open(self):
         # Recheck at submission time; a slow reconciliation can cross the close.
-        clock = self.read("/v2/clock")
+        clock = self.clock()
         at = datetime.now(UTC)
         day = at.astimezone(NY).date()
         return (
@@ -288,14 +409,28 @@ class Broker:
             missing=True,
         )
 
-    def submit(self, payload):
+    def cancellation_view(self):
+        return self.account_key(self.read("/v2/account")), self.order_list("open")
+
+    def submit(self, payload, *, before_send=None):
         """Exactly one HTTP attempt; timeout/server errors are ambiguous, never absent."""
+        headers = self.cfg.headers()
+        try:
+            self.pace.acquire()
+        except ReconciliationPending as error:
+            raise SubmissionNotSent(str(error)) from error
+        options = {}
+        if before_send is not None:
+            options["timeout"] = 5
+            before_send()
         try:
             r = self.client.post(
-                PAPER_URL + "/v2/orders", json=payload, headers=self.cfg.headers()
+                PAPER_URL + "/v2/orders", json=payload, headers=headers, **options
             )
         except httpx.RequestError:
             return None, "unknown"
+        if r.status_code == 429:
+            self.pace.defer(retry_delay(r, 0))
         if r.status_code >= 500 or r.status_code in (408, 409, 429):
             return None, "unknown"
         if not r.is_success:
@@ -310,15 +445,20 @@ class Broker:
         return body, "received"
 
     def cancel(self, broker_id):
+        headers = self.cfg.headers()
+        self.pace.acquire()
         try:
             r = self.client.delete(
                 PAPER_URL + "/v2/orders/" + quote(broker_id, safe=""),
-                headers=self.cfg.headers(),
+                headers=headers,
+                timeout=5,
             )
         except httpx.RequestError:
             raise ResearchError(
                 "Cancellation outcome is uncertain. Reconcile; do not assume the order stopped."
             ) from None
+        if r.status_code == 429:
+            self.pace.defer(retry_delay(r, 0))
         if r.status_code not in (200, 204, 404, 422):
             raise ResearchError(
                 f"Cancellation returned HTTP {r.status_code}. Reconcile the actual order state."

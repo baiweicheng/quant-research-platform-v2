@@ -1,16 +1,18 @@
 """Broker-held paper MARKET DAY orders with explicit funding and durable receipts."""
 
-import json
 import fcntl
-from datetime import date
+import json
+import time
+from datetime import date, datetime, timedelta
 from pathlib import Path
 
 from . import calendar
-from .broker import TERMINAL, ReconciliationPending
+from .broker import TERMINAL, ReconciliationPending, SubmissionNotSent
 from .domain import CENT, ONE, ZERO, ResearchError, decimal, paper_strategy
 from .store import now
 
 VERSION = "paper-broker-market-day-v1"
+DELIVERY_MARGIN = timedelta(seconds=10)
 ACCEPTED = {
     "accepted",
     "new",
@@ -111,11 +113,18 @@ def instructions(identifier, cfg, snapshot, changes, targets):
 
 
 def fill_check(store, broker, *, performance=True):
-    from .paper import orders, plans, reconcile, set_state, expected_positions
+    from .paper import account_orders, plans, reconcile
 
     snapshot = reconcile(store, broker, performance=performance)
-    saved = orders(store)
     batches = plans(store)
+    saved = account_orders(store, snapshot["account_key"], batches=batches)
+    update_fill_check(store, snapshot, saved, batches)
+    return snapshot
+
+
+def update_fill_check(store, snapshot, saved, batches):
+    from .paper import UNCERTAIN, expected_cash, expected_positions, set_state
+
     latest_batch = next(
         (p["id"] for p in batches if any(o["plan_id"] == p["id"] for o in saved)), None
     )
@@ -132,14 +141,17 @@ def fill_check(store, broker, *, performance=True):
         if p.get("config", {}).get("execution_version") != VERSION:
             continue
         own = [o for o in saved if o["plan_id"] == p["id"]]
-        if p["state"] in ("complete", "prepared"):
+        if p["state"] in ("complete", "prepared") or not own:
             continue
         if any(o["state"] in TERMINAL - {"filled"} for o in own):
+            if p["state"] in ("stopped", "expired", "superseded"):
+                continue
             set_state(
                 store,
                 p["id"],
                 "blocked",
-                "Broker reports a rejected, canceled, expired or replaced order. Actual fills are retained; no remainder is resubmitted. Reconcile before a fresh review.",
+                "A staged instruction ended without a full fill. Actual fills are retained. Reconcile before preparing a fresh review.",
+                expected_state=p["state"],
             )
         elif len(own) == len(p.get("staged_orders", [])) and all(
             o["state"] == "filled" for o in own
@@ -153,29 +165,35 @@ def fill_check(store, broker, *, performance=True):
                 issues.append(
                     "A filled order lacks a positive confirmed quantity/price. Reconcile broker details before continuing."
                 )
-                set_state(store, p["id"], "waiting_reconciliation", issues[-1])
+                if p["state"] not in ("blocked", "stopped", "expired", "superseded"):
+                    set_state(
+                        store,
+                        p["id"],
+                        "waiting_reconciliation",
+                        issues[-1],
+                        expected_state=p["state"],
+                    )
                 continue
             actual = {
                 r["symbol"]: decimal(r["qty"])
                 for r in snapshot["positions"]
                 if decimal(r["qty"]) != ZERO
             }
-            expected_cash = decimal(p["account"]["cash"])
-            for o in own:
-                b = o.get("broker") or {}
-                expected_cash += (
-                    decimal(b.get("filled_qty", "0"))
-                    * decimal(b.get("filled_avg_price") or "0")
-                    * (ONE if o["side"] == "sell" else -ONE)
-                )
             if (
                 actual != expected_positions(p, own)
-                or abs(decimal(snapshot["cash"]) - expected_cash) > ONE
+                or abs(decimal(snapshot["cash"]) - expected_cash(p, own)) > ONE
             ):
                 issues.append(
                     "Filled orders do not yet reconcile to actual cash/positions. Refresh before another rebalance."
                 )
-                set_state(store, p["id"], "waiting_reconciliation", issues[-1])
+                if p["state"] not in ("blocked", "stopped", "expired", "superseded"):
+                    set_state(
+                        store,
+                        p["id"],
+                        "waiting_reconciliation",
+                        issues[-1],
+                        expected_state=p["state"],
+                    )
                 continue
             set_state(
                 store,
@@ -192,25 +210,27 @@ def fill_check(store, broker, *, performance=True):
                     if p.get("deferred_buys")
                     else ""
                 ),
+                expected_state=p["state"],
             )
+    if any(o["state"] in UNCERTAIN for o in saved):
+        issues.append(
+            "A submission is still uncertain. Refresh and review its client reference in the paper order lifecycle."
+        )
     result = {
         "checked_at": now(),
         "counts": counts,
         "issues": issues,
         "status": "attention"
-        if issues
-        or any(o["state"] in TERMINAL - {"filled"} for o in latest_orders)
-        or any(o["state"] in {"unknown", "submitting"} for o in saved)
+        if issues or any(o["state"] in TERMINAL - {"filled"} for o in latest_orders)
         else "checked",
     }
     store.set_preference("paper_fill_check", result)
-    return snapshot
 
 
 def execute(store, p, broker, at):
     # API approval and an automatic worker can overlap. Serialize the complete
     # read/check/one-attempt write across processes, then reload current state.
-    from .paper import plan, FINAL
+    from .paper import FINAL, plan
 
     with Path(store.path).with_suffix(".orders.lock").open("w") as lock:
         fcntl.flock(lock, fcntl.LOCK_EX)
@@ -222,7 +242,7 @@ def execute(store, p, broker, at):
 
 def approve_and_stage(store, identifier, broker=None):
     """A successful manual approval response means broker acceptance, not a queue."""
-    from .paper import schedule, plan, set_state, Broker, datetime, UTC
+    from .paper import UTC, Broker, datetime, plan, schedule, set_state
 
     p = schedule(store, identifier)
     if p["config"]["execution_version"] != VERSION:
@@ -241,7 +261,15 @@ def approve_and_stage(store, identifier, broker=None):
             "Staging is incomplete. Reconcile the saved client references before continuing."
         )
     except ResearchError as error:
-        set_state(store, identifier, "blocked", str(error))
+        current = plan(store, identifier)
+        if current["state"] not in ("blocked", "expired", "stopped"):
+            set_state(
+                store,
+                identifier,
+                "blocked",
+                str(error),
+                expected_state=current["state"],
+            )
         raise
     except Exception:
         message = "Broker acceptance could not be confirmed. Reconcile saved client references; no assumed remainder or duplicate will be sent."
@@ -254,16 +282,25 @@ def approve_and_stage(store, identifier, broker=None):
 
 def _execute(store, p, broker, at):
     from .paper import (
-        configuration,
         approval,
-        orders,
+        configuration,
+        expected_cash,
         expected_positions,
+        order_write_lock,
+        orders,
+        reconcile,
         require_runnable_plan,
         set_state,
     )
 
     require_runnable_plan(p)
-    snap = fill_check(store, broker, performance=False)
+    intended = p["staged_orders"]
+    count = len(orders(store, p["id"]))
+    snap = (
+        reconcile(store, broker, staging=True)
+        if 0 < count < len(intended)
+        else fill_check(store, broker, performance=False)
+    )
     cfg = configuration(store)
     allowed = approval(store, cfg, snap)
     if not cfg or cfg["hash"] != p["config_hash"] or cfg["paused"] or not allowed:
@@ -307,25 +344,10 @@ def _execute(store, p, broker, at):
         raise ReconciliationPending(
             "Positions differ from confirmed fills; waiting for a consistent broker snapshot before any further submission."
         )
-    expected_cash = decimal(p["account"]["cash"])
-    for o in own:
-        b = o.get("broker") or {}
-        qty = decimal(b.get("filled_qty", "0"))
-        if qty:
-            if b.get("filled_avg_price") is None:
-                raise ReconciliationPending(
-                    "Filled quantity lacks an average price; reconcile before continuing."
-                )
-            expected_cash += (
-                qty
-                * decimal(b["filled_avg_price"])
-                * (ONE if o["side"] == "sell" else -ONE)
-            )
-    if abs(decimal(snap["cash"]) - expected_cash) > ONE:
+    if abs(decimal(snap["cash"]) - expected_cash(p, own)) > ONE:
         raise ResearchError(
             "Account cash changed beyond confirmed fills. Reconcile and prepare a fresh review."
         )
-    intended = p["staged_orders"]
     remaining = [r for r in intended if r["client_order_id"] not in known]
     if not remaining:
         if all(o["state"] == "filled" for o in own):
@@ -342,18 +364,28 @@ def _execute(store, p, broker, at):
                     if p.get("deferred_buys")
                     else ""
                 ),
+                expected_state=p["state"],
             )
         else:
             raise ReconciliationPending(
                 "Waiting for explicit broker acceptance before reporting the batch staged."
             )
         return
-    if at >= calendar.open_time(date.fromisoformat(p["execute_session"])):
+    deadline = calendar.open_time(date.fromisoformat(p["execute_session"]))
+    from .paper import UTC
+    from .paper import datetime as wall_clock
+
+    expired = (
+        "The staging deadline has passed. Existing accepted orders remain at Alpaca. "
+        "Reconcile and prepare a fresh review for remaining instructions."
+    )
+    if max(at, wall_clock.now(UTC)) + DELIVERY_MARGIN >= deadline:
         set_state(
             store,
             p["id"],
             "expired",
-            "The staging deadline has passed. Existing accepted orders remain at Alpaca; remaining instructions were not sent. Reconcile and prepare a fresh review.",
+            expired,
+            expected_state=p["state"],
         )
         return
     request = remaining[0]
@@ -419,33 +451,77 @@ def _execute(store, p, broker, at):
                 if margin
                 else "Available cash no longer covers the frozen batch and reserves; no borrowing or anticipated sells fund these buys."
             )
-    if configuration(store) != cfg or not approval(store, cfg, snap):
-        raise ResearchError("Paper settings or approval changed before submission.")
-    # Request is frozen into the plan. Persist before exactly one network attempt.
-    with store.connect() as db:
-        db.execute(
-            "INSERT INTO paper_orders VALUES (?,?,?,?,?,?,?)",
-            (
-                request["client_order_id"],
-                p["id"],
-                request["symbol"],
-                request["side"],
-                "submitting",
-                json.dumps({"request": request, "broker": None}),
-                now(),
-            ),
-        )
-    response, status = broker.submit(request)
-    with store.connect() as db:
-        db.execute(
-            "UPDATE paper_orders SET state=?,body=?,updated_at=? WHERE client_id=?",
-            (
-                (response or {}).get("status", "unknown"),
-                json.dumps({"request": request, "broker": response}),
-                now(),
-                request["client_order_id"],
-            ),
-        )
+
+    def check_permission():
+        if configuration(store) != cfg or not approval(store, cfg, snap):
+            raise SubmissionNotSent(
+                "Paper settings or approval changed before submission."
+            )
+
+    def save_receipt(state, response):
+        with store.connect() as db:
+            db.execute(
+                """UPDATE paper_orders SET state=?,body=?,updated_at=?
+                   WHERE client_id=? AND state='submitting'""",
+                (
+                    state,
+                    json.dumps({"request": request, "broker": response}),
+                    now(),
+                    request["client_order_id"],
+                ),
+            )
+
+    with order_write_lock(store):
+        check_permission()
+        # Request is frozen into the plan. Persist before exactly one network attempt.
+        with store.connect() as db:
+            db.execute(
+                "INSERT INTO paper_orders VALUES (?,?,?,?,?,?,?)",
+                (
+                    request["client_order_id"],
+                    p["id"],
+                    request["symbol"],
+                    request["side"],
+                    "submitting",
+                    json.dumps({"request": request, "broker": None}),
+                    now(),
+                ),
+            )
+        try:
+            clock_start = time.monotonic()
+            try:
+                clock = broker.clock()
+                stamp = datetime.fromisoformat(clock["timestamp"])
+                opening = datetime.fromisoformat(clock["next_open"])
+                if (
+                    stamp.tzinfo is None
+                    or opening.tzinfo is None
+                    or type(clock["is_open"]) is not bool
+                ):
+                    raise ValueError
+            except (ResearchError, KeyError, ValueError, TypeError) as error:
+                raise SubmissionNotSent(
+                    "The broker session clock could not be verified. This order was not sent."
+                ) from error
+
+            def before_send():
+                check_permission()
+                broker_now = stamp + timedelta(seconds=time.monotonic() - clock_start)
+                if max(wall_clock.now(UTC), broker_now) + DELIVERY_MARGIN >= deadline:
+                    raise SubmissionNotSent(expired)
+                if clock["is_open"] or opening != deadline or stamp >= opening:
+                    raise SubmissionNotSent(
+                        "Alpaca does not confirm the intended upcoming regular open. This order was not sent."
+                    )
+
+            response, status = broker.submit(request, before_send=before_send)
+        except SubmissionNotSent as error:
+            save_receipt("not_sent", {"reason": str(error)})
+            if str(error) == expired:
+                set_state(store, p["id"], "expired", expired, expected_state=p["state"])
+                return
+            raise
+        save_receipt((response or {}).get("status", "unknown"), response)
     if status == "unknown":
         raise ResearchError(
             "Submission outcome is uncertain. Reconcile the saved client ID before doing anything else; no duplicate retry will be sent."
@@ -459,4 +535,5 @@ def _execute(store, p, broker, at):
         p["id"],
         "staging",
         f"Broker accepted {len(own) + 1} of {len(intended)} instructions. Keep Aperture open until all orders are confirmed staged.",
+        expected_state=p["state"],
     )

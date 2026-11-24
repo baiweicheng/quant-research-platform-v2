@@ -392,9 +392,12 @@ def create_app(
                 payload["decision_session"] = str(window.decision)
                 if window.original_execution:
                     payload["reference_session"] = str(window.reference)
-        settings().headers()
         if kind == "cancel":
             stop(store)
+            snapshot = store.preference("paper_snapshot") or {}
+            payload = {"account_key": snapshot.get("account_key")}
+        else:
+            settings().headers()
         return store.enqueue(
             "paper_prepare" if kind == "catch-up" else "paper_" + kind, payload
         )
@@ -408,6 +411,20 @@ def create_app(
                 "Acknowledge the specific paper orders and execution bounds before approving this rebalance."
             )
         return approve_and_stage(store, identifier)
+
+    @app.post("/api/paper/orders/{client_id}/close-uncertain")
+    def review_uncertain_order(client_id: str, payload: RebalanceApprovalRequest):
+        from .paper import Broker, close_uncertain_order
+
+        if not payload.acknowledge:
+            raise ResearchError(
+                "Confirm that you reviewed this client reference and the account directly at Alpaca."
+            )
+        broker = Broker()
+        try:
+            return close_uncertain_order(store, broker, client_id)
+        finally:
+            broker.close()
 
     @app.get("/api/providers")
     def providers():

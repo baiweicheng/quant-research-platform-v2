@@ -6,6 +6,7 @@ import logging
 import time
 from datetime import date, datetime, timezone
 from pathlib import Path
+from threading import Thread
 
 from . import __version__, calendar
 from .backtest import run, weekly_model
@@ -83,9 +84,10 @@ def execute(store: Store, job: dict):
                     "completion_message": "Paper account, orders and daily performance refreshed. No orders submitted."
                 }
             elif job["kind"] == "paper_cancel":
-                cancel_pending(store, broker)
                 body = {
-                    "completion_message": "Cancellation requests reconciled. Inspect remaining broker orders in Portfolio."
+                    "completion_message": cancel_pending(
+                        store, broker, expected_account=payload.get("account_key")
+                    )
                 }
             elif job["kind"] == "paper_prepare":
                 body = prepare(store, job, update, broker)
@@ -341,8 +343,8 @@ def execute(store: Store, job: dict):
     store.finish(job, body)
 
 
-def process_one(store: Store) -> bool:
-    job = store.claim()
+def process_one(store: Store, *, cancellation=False) -> bool:
+    job = store.claim(cancellation=cancellation)
     if job is None:
         return False
     try:
@@ -397,6 +399,16 @@ def reconcile_on_startup(store, broker=None):
             broker.close()
 
 
+def service_cancellations(store):
+    while True:
+        try:
+            if process_one(store, cancellation=True):
+                continue
+        except Exception:
+            LOG.exception("Cancellation worker could not claim a task")
+        time.sleep(0.5)
+
+
 def main():
     parser = argparse.ArgumentParser()
     parser.add_argument("--db", default="var/aperture.sqlite3")
@@ -411,6 +423,12 @@ def main():
             raise SystemExit("A worker is already running for this database.")
         store = Store(args.db)
         store.recover()
+        Thread(
+            target=service_cancellations,
+            args=(store,),
+            name="paper-cancellation",
+            daemon=True,
+        ).start()
         reconcile_on_startup(store)
         last_tick = 0.0
         while True:

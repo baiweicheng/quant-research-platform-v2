@@ -1,29 +1,34 @@
 """Broker-held order contracts. Uses a deterministic broker, never Alpaca writes."""
 
+from concurrent.futures import ThreadPoolExecutor
 from dataclasses import replace
-from datetime import UTC, date, datetime
+from datetime import UTC, date, datetime, timedelta
 from decimal import Decimal as D
+from threading import Event
 
+import httpx
 import pytest
-
+from aperture import calendar
+from aperture.api import create_app
+from aperture.broker import NY, Broker
+from aperture.config import Settings
 from aperture.domain import RankedStock, ResearchError
 from aperture.paper import (
-    save_configuration,
     configuration,
-    plan,
     orders,
-    schedule,
-    tick,
-    stop,
+    plan,
+    public_state,
     revoke,
+    save_configuration,
+    schedule,
+    stop,
+    tick,
 )
 from aperture.staged import VERSION, execute, fill_check
-from aperture.store import Store
-from aperture.worker import reconcile_on_startup
-from aperture.api import create_app
-from aperture.config import Settings
+from aperture.store import Store, encode
+from aperture.worker import process_one, reconcile_on_startup
 from fastapi.testclient import TestClient
-from test_paper import FakeBroker, paper, allow, prepared  # noqa: F401
+from test_paper import FakeBroker, allow, paper, prepared  # noqa: F401
 
 
 class QueuedBroker(FakeBroker):
@@ -39,7 +44,22 @@ class QueuedBroker(FakeBroker):
     def market_open(self):
         raise AssertionError("Off-hours orders must be sent before the regular open")
 
-    def submit(self, request):
+    def clock(self):
+        day = self.at.astimezone(NY).date()
+        opening = next(
+            opening
+            for session in calendar.sessions(day, day + timedelta(days=7))
+            if (opening := calendar.open_time(session)) > self.at
+        )
+        return {
+            "next_open": opening.isoformat(),
+            "timestamp": self.at.isoformat(),
+            "is_open": False,
+        }
+
+    def submit(self, request, *, before_send=None):
+        if before_send:
+            before_send()
         assert request["type"] == "market" and request["time_in_force"] == "day"
         assert request["extended_hours"] is False
         assert ("notional" in request) != ("qty" in request)
@@ -185,6 +205,7 @@ def test_manual_approval_returns_only_after_broker_acceptance_without_worker(
 
 def test_overlapping_api_and_worker_attempts_preserve_one_post_per_instruction(staged):
     from concurrent.futures import ThreadPoolExecutor
+
     from aperture.staged import execute
 
     store, broker, _ = staged
@@ -210,8 +231,8 @@ def test_overlapping_api_and_worker_attempts_preserve_one_post_per_instruction(s
 def test_incomplete_manual_approval_stops_and_preserves_uncertain_client_id(
     staged, monkeypatch
 ):
-    from aperture.staged import approve_and_stage
     from aperture.domain import ResearchError
+    from aperture.staged import approve_and_stage
 
     store, broker, _ = staged
     p = prepared(staged)
@@ -282,8 +303,8 @@ def test_sales_do_not_fund_simultaneous_buys_or_assumed_sector_capacity(
 def test_paper_margin_stages_sales_and_buys_without_waiting_and_reconciles_debit(
     staged, monkeypatch
 ):
-    from aperture.staged import approve_and_stage as stage_now
     from aperture.paper import public_state
+    from aperture.staged import approve_and_stage as stage_now
 
     store, broker, cfg = staged
     broker.cash, broker.held, broker.buying_power = D(1000), {"AAPL": D(990)}, D(200000)
@@ -459,3 +480,354 @@ def test_failed_startup_fill_check_stays_visible_and_never_sends_an_order(
     assert not reconcile_on_startup(Store(store.path), broker)
     assert store.preference("paper_fill_check")["status"] == "attention"
     assert len(broker.submissions) == 2
+
+
+@pytest.mark.parametrize("cross_at", ["lock", "reconciliation", "intent", "send"])
+def test_no_post_after_boundary_and_prior_acceptance_survives(
+    staged, monkeypatch, cross_at
+):
+    store, broker, _ = staged
+    p = prepared(staged)
+    allow(store)
+    schedule(store, p["id"])
+    execute(store, p, broker, broker.at)
+    opening = calendar.open_time(date.fromisoformat(p["execute_session"]))
+    stale = opening - timedelta(minutes=1)
+    broker.at = stale
+    after = opening + timedelta(seconds=1)
+    if cross_at == "lock":
+        old_plan = plan
+
+        def after_lock(*args):
+            broker.at = after
+            return old_plan(*args)
+
+        monkeypatch.setattr("aperture.paper.plan", after_lock)
+    elif cross_at == "reconciliation":
+        old_snapshot = broker.staging_snapshot
+
+        def slow_reconciliation():
+            result = old_snapshot()
+            broker.at = after
+            return result
+
+        monkeypatch.setattr(broker, "staging_snapshot", slow_reconciliation)
+    elif cross_at == "intent":
+        old_clock = broker.clock
+
+        def clock_after_commit():
+            assert any(o["state"] == "submitting" for o in orders(store))
+            return {**old_clock(), "timestamp": after.isoformat(), "is_open": True}
+
+        monkeypatch.setattr(broker, "clock", clock_after_commit)
+    else:
+        old_submit = broker.submit
+
+        def paced_submit(*args, **kwargs):
+            broker.at = after
+            return old_submit(*args, **kwargs)
+
+        monkeypatch.setattr(broker, "submit", paced_submit)
+    execute(store, p, broker, stale)
+    assert plan(store, p["id"])["state"] == "expired"
+    assert len(broker.submissions) == 1
+    assert orders(store)[0]["state"] == "accepted"
+    assert {o["state"] for o in orders(store)} == (
+        {"accepted", "not_sent"} if cross_at in {"intent", "send"} else {"accepted"}
+    )
+
+
+@pytest.mark.parametrize("mode", ["timeout_before", "timeout_after"])
+def test_uncertain_order_review_is_account_bound_and_survives_restart(staged, mode):
+    from aperture.paper import close_uncertain_order
+
+    store, broker, _ = staged
+    p = prepared(staged)
+    allow(store)
+    schedule(store, p["id"])
+    broker.mode = mode
+    tick(store, broker.at, broker)
+    reference = orders(store)[0]["client_id"]
+    assert orders(store)[0]["state"] == "unknown"
+    store = Store(store.path)
+    account_key = broker.account_key
+    broker.account_key = "different-account"
+    with pytest.raises(ResearchError, match="same paper account"):
+        close_uncertain_order(store, broker, reference)
+    assert orders(store)[0]["state"] == "unknown"
+    broker.account_key = account_key
+    if mode == "timeout_after":
+        broker.at = datetime(2026, 11, 2, 16, tzinfo=UTC)
+        broker.fill_all(D(100))
+        assert close_uncertain_order(store, broker, reference)["state"] == "filled"
+    else:
+        with pytest.raises(ResearchError, match="DAY execution window closes"):
+            close_uncertain_order(store, broker, reference)
+        broker.at = datetime(2026, 11, 2, 21, 6, tzinfo=UTC)
+        broker.cash += D(10)
+        with pytest.raises(ResearchError, match="differ from confirmed fills"):
+            close_uncertain_order(store, broker, reference)
+        broker.cash -= D(10)
+        result = close_uncertain_order(store, broker, reference)
+        assert (
+            result["state"] == "closed_unconfirmed"
+            and result["resolution"]["first_absent_at"]
+        )
+        broker.at = datetime(2026, 11, 1, 23, tzinfo=UTC)
+        fresh = prepared((store, broker, configuration(store)))
+        assert reference not in {o["client_order_id"] for o in fresh["staged_orders"]}
+    assert len(broker.submissions) == 1
+
+
+@pytest.mark.parametrize("broker_outcome", ["cancel", "fill_race", "outage"])
+def test_cancellation_serviced_while_research_is_running(
+    staged, monkeypatch, broker_outcome
+):
+    store, broker, _ = staged
+    approve_and_stage(staged)
+    monkeypatch.setattr("aperture.paper.Broker", lambda: broker)
+    from aperture import worker
+
+    real_execute = worker.execute
+    research_started, research_release = Event(), Event()
+
+    def run_job(store, job):
+        if job["kind"] == "download":
+            research_started.set()
+            assert research_release.wait(5)
+            store.finish(job, {})
+        else:
+            real_execute(store, job)
+
+    monkeypatch.setattr(worker, "execute", run_job)
+    if broker_outcome == "fill_race":
+        old_cancel = broker.cancel
+
+        def fill_during_cancel(identifier):
+            broker.fill_all(D(100))
+            # A DELETE completing after fill does not reverse the fill.
+            if any(
+                o["id"] == identifier and o["status"] != "filled"
+                for o in broker.book.values()
+            ):
+                old_cancel(identifier)
+
+        monkeypatch.setattr(broker, "cancel", fill_during_cancel)
+    if broker_outcome == "outage":
+
+        def offline():
+            raise ResearchError("Broker unavailable")
+
+        monkeypatch.setattr(broker, "cancellation_view", offline)
+
+    store.enqueue("download", {})
+    with ThreadPoolExecutor() as pool, TestClient(create_app(store.path)) as client:
+        research = pool.submit(process_one, store)
+        try:
+            assert research_started.wait(2)
+            response = client.post(
+                "/api/paper/actions/cancel", headers={"X-Aperture-Client": "1"}
+            )
+            assert response.status_code == 202
+            assert public_state(store)["cancellation"]["status"] == "pending"
+            assert pool.submit(
+                process_one, Store(store.path), cancellation=True
+            ).result(timeout=3)
+            assert not research.done() and configuration(store)["paused"]
+            result = public_state(store)["cancellation"]["status"]
+            if broker_outcome == "outage":
+                assert result == "attention" and not broker.cancellations
+            else:
+                assert result == "confirmed"
+                expected = "filled" if broker_outcome == "fill_race" else "canceled"
+                assert {o["state"] for o in orders(store)} == {expected}
+        finally:
+            research_release.set()
+
+
+def test_first_25_and_multileg_with_history_use_a_bounded_number_of_http_requests(
+    staged, monkeypatch
+):
+    from aperture.staged import approve_and_stage
+
+    store, fixture, _ = staged
+    fixture.mode = "queue"
+    requests = []
+
+    def transport(request):
+        method, path = request.method, request.url.path.removeprefix("/v2")
+        requests.append((method, path))
+        snap = fixture.snapshot()
+        if method == "POST":
+            import json
+
+            receipt, _ = fixture.submit(json.loads(request.content))
+            return httpx.Response(200, json=receipt)
+        if path == "/account":
+            return httpx.Response(
+                200,
+                json={
+                    "id": "bound-account",
+                    "status": "ACTIVE",
+                    "currency": "USD",
+                    "cash": snap["cash"],
+                    "equity": snap["equity"],
+                    "buying_power": snap["buying_power"],
+                },
+            )
+        if path == "/positions":
+            return httpx.Response(200, json=snap["positions"])
+        if path == "/orders":
+            rows = (
+                snap["open_orders"]
+                if request.url.params["status"] == "open"
+                else list(fixture.book.values())
+            )
+            return httpx.Response(200, json=rows)
+        if path == "/clock":
+            return httpx.Response(200, json=fixture.clock())
+        if path == "/account/activities":
+            return httpx.Response(200, json=[])
+        if path.startswith("/assets/"):
+            return httpx.Response(
+                200,
+                json={
+                    "class": "us_equity",
+                    "status": "active",
+                    "tradable": True,
+                    "fractionable": True,
+                },
+            )
+        raise AssertionError((method, path))
+
+    fixture.account_key = Broker.account_key({"id": "bound-account"})
+    with httpx.Client(transport=httpx.MockTransport(transport)) as client:
+        broker = Broker(client, Settings("fixture", "fixture"))
+        monkeypatch.setattr(broker.pace, "acquire", lambda: None)
+        symbols = [f"T{i:02d}" for i in range(25)]
+        original = store.dataset("staged-prices")
+        extended = replace(
+            original,
+            id="basket-prices",
+            digest="basket-prices",
+            bars={
+                **original.bars,
+                **{
+                    s: tuple(replace(bar, symbol=s) for bar in original.bars["AAPL"])
+                    for s in symbols
+                },
+            },
+        )
+        saved = store.save_dataset(extended, b"Basket fixture", [])
+        monkeypatch.setattr("aperture.bundles.download", lambda *_a, **_kw: saved)
+        cfg = configuration(store)
+        save_configuration(
+            store,
+            {
+                **cfg["policy"],
+                "strategy_id": cfg["strategy_id"],
+                "mode": "manual",
+                "execution": "broker_market",
+                "universe": "custom",
+                "funding_policy": "cash_only",
+                "symbols": [*symbols, "AAPL", "MSFT"],
+                "data_start": cfg["data_start"],
+                "max_drift": cfg["max_drift"],
+            },
+        )
+
+        def replace_batch(sells, buys):
+            p = prepared((store, fixture, configuration(store)))
+            p["staged_orders"] = [
+                {
+                    "client_order_id": f"{p['id']}-{i}",
+                    "type": "market",
+                    "time_in_force": "day",
+                    "side": side,
+                    "symbol": symbol,
+                    "extended_hours": False,
+                    **amount,
+                }
+                for i, (side, symbol, amount) in enumerate(
+                    [("sell", s, {"qty": str(fixture.held[s])}) for s in sells]
+                    + [("buy", s, {"notional": "10"}) for s in buys]
+                )
+            ]
+            with store.connect() as db:
+                db.execute(
+                    "UPDATE paper_plans SET body=? WHERE id=?", (encode(p), p["id"])
+                )
+            return p["id"]
+
+        first = replace_batch([], symbols)
+        allow(store)
+        requests.clear()
+        assert approve_and_stage(store, first, broker)["state"] == "broker_staged"
+        assert len(requests) == 161 and requests.count(("POST", "/orders")) == 25
+        fixture.fill_all(D(100))
+        requests.clear()
+        fill_check(Store(store.path), broker, performance=False)
+        assert plan(store, first)["state"] == "complete"
+        assert len(requests) == 8  # Seven snapshot requests and one batch receipt read.
+        # Retain terminal history but use the original two names for preparation
+        # of the next plan, then freeze a buy/sell rebalance to test broker I/O.
+        second = replace_batch(symbols[:15], ["AAPL", "MSFT"])
+        requests.clear()
+        assert approve_and_stage(store, second, broker)["state"] == "broker_staged"
+        assert requests.count(("POST", "/orders")) == 17
+        assert len(requests) == 113 and not any(
+            "by_client" in path for _, path in requests
+        )
+
+
+def test_rate_limit_backoff_is_bounded_and_a_throttled_write_is_never_retried(
+    monkeypatch,
+):
+    from aperture import broker as adapter
+
+    attempts, delays, throttles = [], [], []
+
+    def transport(request):
+        attempts.append(request.method)
+        if request.method == "POST":
+            return httpx.Response(429, headers={"Retry-After": "55"})
+        if len(attempts) == 1:
+            return httpx.Response(429, headers={"Retry-After": "2"})
+        if len(attempts) == 2:
+            return httpx.Response(503)
+        if request.url.path == "/v2/positions":
+            return httpx.Response(429, headers={"Retry-After": "55"})
+        return httpx.Response(200, json={"id": "test"})
+
+    monkeypatch.setattr(adapter.time, "sleep", delays.append)
+    with httpx.Client(transport=httpx.MockTransport(transport)) as client:
+        broker = Broker(client, Settings("fixture", "fixture"))
+        monkeypatch.setattr(broker.pace, "acquire", lambda: None)
+        monkeypatch.setattr(broker.pace, "defer", throttles.append)
+        assert broker.read("/v2/account") == {"id": "test"}
+        assert delays == [2, 1]
+        with pytest.raises(ResearchError, match="HTTP 429"):
+            broker.read("/v2/positions")
+        assert broker.submit({"symbol": "AAPL"}) == (None, "unknown")
+        assert attempts == ["GET", "GET", "GET", "GET", "POST"]
+        assert throttles == [2, 55, 55]
+
+
+def test_broker_order_listing_uses_a_bounded_id_cursor(monkeypatch):
+    pages = []
+
+    def transport(request):
+        pages.append(dict(request.url.params))
+        rows = (
+            [{"id": str(n)} for n in range(500)]
+            if len(pages) == 1
+            else [{"id": "older"}]
+        )
+        return httpx.Response(200, json=rows)
+
+    with httpx.Client(transport=httpx.MockTransport(transport)) as client:
+        broker = Broker(client, Settings("fixture", "fixture"))
+        monkeypatch.setattr(broker.pace, "acquire", lambda: None)
+        assert len(broker.order_list("all", after="2026-11-01")) == 501
+    assert pages[0]["after"] == "2026-11-01"
+    assert pages[1]["before_order_id"] == "499" and "after" not in pages[1]

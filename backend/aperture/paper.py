@@ -1,15 +1,18 @@
 """Version-approved, durable PAPER execution on the strategy's cadence."""
 
+import fcntl
 import hashlib
 import json
+from contextlib import contextmanager
 from dataclasses import dataclass, replace
 from datetime import UTC, date, datetime, timedelta
 from decimal import ROUND_DOWN
+from pathlib import Path
 from uuid import uuid4
 
 from . import __version__, calendar
 from .backtest import weekly_model
-from .broker import NY, TERMINAL, Broker, ReconciliationPending
+from .broker import NY, TERMINAL, Broker, ReconciliationPending, SubmissionNotSent
 from .domain import (
     ARCHIVED_STRATEGIES,
     CENT,
@@ -29,6 +32,7 @@ from .signals import rank
 from .store import decode, encode, now
 
 FINAL = {"complete", "blocked", "stopped", "expired", "superseded"}
+UNCERTAIN = {"unknown", "submitting"}
 CATCH_UP_DAYS = 7
 
 
@@ -441,10 +445,19 @@ def set_state(store, identifier, state, message, *, expected_state=None):
     return bool(changed.rowcount)
 
 
-def orders(store, identifier=None):
+def orders(store, identifier=None, *, outstanding=False):
     with store.connect() as db:
         rows = db.execute(
-            "SELECT * FROM paper_orders ORDER BY updated_at,client_id"
+            """SELECT * FROM paper_orders
+               WHERE (? IS NULL OR plan_id=?)
+                 AND (NOT ? OR state NOT IN (SELECT value FROM json_each(?)))
+               ORDER BY updated_at,client_id""",
+            (
+                identifier,
+                identifier,
+                outstanding,
+                json.dumps(sorted(TERMINAL | {"planned"})),
+            ),
         ).fetchall()
     return [
         {
@@ -462,7 +475,14 @@ def orders(store, identifier=None):
             },
         }
         for r in rows
-        if identifier is None or r["plan_id"] == identifier
+    ]
+
+
+def account_orders(store, account_key, *, outstanding=False, batches=None):
+    batches = plans(store) if batches is None else batches
+    identifiers = {p["id"] for p in batches if p.get("account_key") == account_key}
+    return [
+        o for o in orders(store, outstanding=outstanding) if o["plan_id"] in identifiers
     ]
 
 
@@ -575,6 +595,21 @@ def public_state(store):
             )
         ),
         "fill_check": store.preference("paper_fill_check"),
+        "cancellation": {
+            "status": "pending",
+            "message": "Cancellation queued for the broker worker. Check for confirmed outcomes before closing Aperture.",
+        }
+        if store.pending_cancellation()
+        else store.preference("paper_cancellation"),
+        "uncertain_order_ids": [
+            o["client_id"]
+            for o in account_orders(
+                store, snap["account_key"], outstanding=True, batches=saved_plans
+            )
+            if o["state"] in UNCERTAIN
+        ]
+        if snap
+        else [],
         "membership_update": store.preference("paper_membership_update"),
     }
 
@@ -591,8 +626,65 @@ def signature(snap):
     )
 
 
-def reconcile(store, broker, performance=False, dataset=None):
-    snap = broker.snapshot()
+def record_order_observation(store, order, receipt, *, absent_at=None):
+    body = {"request": order["request"], "broker": receipt or order.get("broker")}
+    if receipt is not None:
+        if (
+            receipt.get("client_order_id", order["client_id"]) != order["client_id"]
+            or receipt.get("symbol") != order["symbol"]
+            or receipt.get("side") != order["side"]
+            or not receipt.get("id")
+        ):
+            raise ResearchError(
+                "Broker order identity does not match the saved plan. Submission stopped."
+            )
+        state = receipt.get("status", "unknown")
+    else:
+        state = "unknown" if order["state"] != "submitting" else "submitting"
+        if absent_at:
+            body["missing_since"] = order.get("missing_since", absent_at.isoformat())
+    if state == order["state"] and all(order.get(k) == v for k, v in body.items()):
+        return
+    with store.connect() as db:
+        db.execute(
+            """UPDATE paper_orders SET state=?,body=?,updated_at=?
+               WHERE client_id=? AND state=? AND updated_at=?""",
+            (
+                state,
+                json.dumps(body),
+                now(),
+                order["client_id"],
+                order["state"],
+                order["updated_at"],
+            ),
+        )
+
+
+def reconcile_orders(store, broker, account_key, open_orders, *, observed_at=None):
+    outstanding = account_orders(store, account_key, outstanding=True)
+    receipts = {b.get("client_order_id"): b for b in open_orders}
+    missing = [o for o in outstanding if o["client_id"] not in receipts]
+    # Known orders leaving the open list are commonly fills or cancellations.
+    # Read them together, reserving individual lookups for IDs missing from both
+    # lists and IDs whose submission receipt was lost.
+    known = [o for o in missing if (o.get("broker") or {}).get("id")]
+    if known:
+        earliest = min(
+            (o.get("broker") or {}).get("submitted_at") or o["updated_at"]
+            for o in known
+        )
+        after = datetime.fromisoformat(earliest) - timedelta(days=1)
+        for receipt in broker.order_list("all", after=after.isoformat()):
+            receipts.setdefault(receipt.get("client_order_id"), receipt)
+    for order in outstanding:
+        receipt = receipts.get(order["client_id"])
+        if receipt is None:
+            receipt = broker.find_order(order["client_id"])
+        record_order_observation(store, order, receipt, absent_at=observed_at)
+
+
+def reconcile(store, broker, performance=False, dataset=None, *, staging=False):
+    snap = broker.staging_snapshot() if staging else broker.snapshot()
     if (
         decimal(snap["cash"]) < ZERO
         and (configuration(store) or {}).get("funding_policy") != "paper_margin"
@@ -600,34 +692,17 @@ def reconcile(store, broker, performance=False, dataset=None):
         snap["issues"].append(
             "This cash-funded policy does not permit a margin debit. Resolve negative cash at the broker first."
         )
-    store.set_preference("paper_snapshot", snap)
-    store.set_preference("paper_error", None)
-    # Track every known broker order by immutable client identifier, including after restart.
-    for o in orders(store):
-        if o["state"] == "planned":
-            continue
-        b = broker.find_order(o["client_id"])
-        if b:
-            if b.get("symbol") != o["symbol"] or b.get("side") != o["side"]:
-                raise ResearchError(
-                    "Broker order identity does not match the saved plan. Submission stopped."
-                )
-            with store.connect() as db:
-                db.execute(
-                    "UPDATE paper_orders SET state=?,body=?,updated_at=? WHERE client_id=?",
-                    (
-                        b.get("status", "unknown"),
-                        json.dumps({**o, "broker": b}),
-                        now(),
-                        o["client_id"],
-                    ),
-                )
-        elif o["state"] not in TERMINAL:
-            with store.connect() as db:
-                db.execute(
-                    "UPDATE paper_orders SET state='unknown',updated_at=? WHERE client_id=?",
-                    (now(), o["client_id"]),
-                )
+    reconcile_orders(
+        store,
+        broker,
+        snap["account_key"],
+        snap["open_orders"],
+        observed_at=None if staging else datetime.now(UTC),
+    )
+    if not staging:
+        store.set_preference("paper_snapshot", snap)
+        store.set_preference("paper_error", None)
+        update_cancellation(store, snap["account_key"])
     if performance:
         from .account_performance import refresh
 
@@ -694,10 +769,10 @@ def prepare(store, job, progress, broker):
             "Review or stop the current paper plan before preparing another."
         )
     snap = reconcile(store, broker)
-    saved_orders = orders(store)
-    if any(o["state"] not in TERMINAL for o in saved_orders):
+    saved_orders = account_orders(store, snap["account_key"])
+    if any(o["state"] not in TERMINAL | {"planned"} for o in saved_orders):
         raise ResearchError(
-            "Unresolved Aperture orders remain. Reconcile their client IDs or cancel pending orders before preparing another plan."
+            "Unresolved Aperture orders remain. Refresh or cancel pending orders, or review an uncertain client reference in the order lifecycle."
         )
     ensure_account(snap, cfg)
     incumbents = {p["symbol"] for p in snap["positions"]}
@@ -1215,38 +1290,261 @@ def resume(store):
     cfg = configuration(store)
     if not cfg:
         raise ResearchError("Save paper settings first.")
+    if store.pending_cancellation():
+        raise ResearchError(
+            "Wait for the pending broker cancellation check before resuming."
+        )
     paper_strategy(cfg["strategy_id"])
     store.set_preference("paper_config", {**cfg, "paused": False})
     return configuration(store)
 
 
-def cancel_pending(store, broker):
-    snap = reconcile(store, broker)
-    own = {o["client_id"] for o in orders(store)}
-    for b in snap["open_orders"]:
-        if b.get("client_order_id") in own:
-            broker.cancel(b["id"])
-    reconcile(store, broker)
-    event(
-        store,
-        "Cancellation requested for Aperture-owned paper orders only. Reconcile until terminal; cancellation is not a fill reversal.",
-    )
+@contextmanager
+def order_write_lock(store):
+    with Path(store.path).with_suffix(".order-write.lock").open("w") as lock:
+        fcntl.flock(lock, fcntl.LOCK_EX)
+        yield
+
+
+def update_cancellation(store, account_key):
+    status = store.preference("paper_cancellation") or {}
+    if status.get("account_key") != account_key or status.get("status") not in {
+        "requested",
+        "attention",
+    }:
+        return
+    outstanding = {
+        o["client_id"] for o in account_orders(store, account_key, outstanding=True)
+    }
+    if not outstanding.intersection(status["client_ids"]):
+        message = "The broker order check is complete. Inspect terminal outcomes and any fills below."
+        store.set_preference(
+            "paper_cancellation", {**status, "status": "confirmed", "message": message}
+        )
+        event(store, message)
+
+
+def cancel_pending(store, broker, *, expected_account=None):
+    account_key, client_ids, attempted = expected_account, set(), set()
+    errors = []
+
+    def cancel_visible(*, check_unlisted=False):
+        nonlocal account_key, open_orders
+        connected, open_orders = broker.cancellation_view()
+        if account_key and connected != account_key:
+            raise ResearchError(
+                "The connected paper account changed. Reconnect the account with the affected orders."
+            )
+        account_key = connected
+        own = {
+            o["client_id"]: o
+            for o in account_orders(store, account_key, outstanding=True)
+        }
+        client_ids.update(own)
+        visible = {receipt.get("client_order_id"): receipt for receipt in open_orders}
+        for client_id, order in own.items():
+            if client_id in attempted:
+                continue
+            try:
+                receipt = visible.get(client_id)
+                if receipt is None and check_unlisted and order["state"] in UNCERTAIN:
+                    receipt = broker.find_order(client_id)
+                if receipt is None:
+                    continue
+                record_order_observation(store, order, receipt)
+                if receipt.get("status") in TERMINAL:
+                    continue
+                attempted.add(client_id)
+                broker.cancel(receipt["id"])
+            except ResearchError as error:
+                errors.append(str(error))
+
+    open_orders = []
+    message = "Cancellation requested for Aperture-owned paper orders. Fills may still occur while the broker processes the requests."
+    event(store, message)
+    try:
+        # Act on visible orders immediately. Then wait for any concurrent POST
+        # and check again for orders accepted after the first list was read.
+        cancel_visible()
+        with order_write_lock(store):
+            cancel_visible(check_unlisted=True)
+        store.set_preference(
+            "paper_cancellation",
+            {
+                "status": "requested",
+                "account_key": account_key,
+                "client_ids": sorted(client_ids),
+                "message": message,
+            },
+        )
+        # Refresh again after the last DELETE, preserving a fill that won the race.
+        connected, open_orders = broker.cancellation_view()
+        if connected != account_key:
+            raise ResearchError(
+                "The connected paper account changed during cancellation."
+            )
+        reconcile_orders(store, broker, account_key, open_orders)
+        update_cancellation(store, account_key)
+        if errors and store.preference("paper_cancellation")["status"] != "confirmed":
+            raise ResearchError(errors[0])
+    except ResearchError as error:
+        if account_key:
+            client_ids.update(
+                o["client_id"]
+                for o in account_orders(store, account_key, outstanding=True)
+            )
+        store.set_preference(
+            "paper_cancellation",
+            {
+                "status": "attention",
+                "account_key": account_key,
+                "client_ids": sorted(client_ids),
+                "message": f"Cancellation needs attention. {error} Check open orders at Alpaca or try cancellation again.",
+            },
+        )
+        raise
+    return store.preference("paper_cancellation")["message"]
+
+
+def close_uncertain_order(store, broker, client_id):
+    """Retire a never-observed DAY instruction after broker and user review."""
+    from .staged import fill_check
+
+    with order_write_lock(store):
+        prior = next(
+            (o for o in orders(store, outstanding=True) if o["client_id"] == client_id),
+            None,
+        )
+        if not prior or prior["state"] not in UNCERTAIN:
+            raise ResearchError(
+                "This client reference no longer needs uncertain-order review."
+            )
+        p = plan(store, prior["plan_id"])
+        snap = fill_check(store, broker, performance=False)
+        if snap["account_key"] != p["account_key"]:
+            raise ResearchError(
+                "Reconnect the same paper account to review this client reference."
+            )
+        own = orders(store, p["id"])
+        order = next(o for o in own if o["client_id"] == client_id)
+        if order["state"] not in UNCERTAIN:
+            return order  # A broker receipt resolved the uncertainty during refresh.
+        cutoff = calendar.close_time(
+            date.fromisoformat(p.get("last_execution_session") or p["execute_session"])
+        ) + timedelta(minutes=5)
+        at = datetime.now(UTC)
+        try:
+            broker_at = datetime.fromisoformat(snap["clock"]["timestamp"])
+        except (TypeError, ValueError, KeyError):
+            raise ResearchError(
+                "A valid broker clock is required to review this order."
+            ) from None
+        if not broker_at.tzinfo or min(at, broker_at) < cutoff:
+            raise ResearchError(
+                "Wait until five minutes after the planned DAY execution window closes, then refresh and review this reference."
+            )
+        missing_since = prior.get("missing_since")
+        if (
+            order.get("broker")
+            or snap["open_orders"]
+            or snap["issues"]
+            or not missing_since
+            or at - datetime.fromisoformat(missing_since) < timedelta(seconds=30)
+        ):
+            raise ResearchError(
+                "Absence is still ambiguous. Refresh again after 30 seconds. If an order or account issue persists, verify the client reference with Alpaca."
+            )
+        other = [o for o in own if o["client_id"] != client_id]
+        if any(o["state"] not in TERMINAL for o in other):
+            raise ResearchError(
+                "Resolve other broker orders in this plan before closing the uncertain reference."
+            )
+        actual = {
+            r["symbol"]: decimal(r["qty"])
+            for r in snap["positions"]
+            if decimal(r["qty"])
+        }
+        cash = expected_cash(p, other)
+        if (
+            actual != expected_positions(p, other)
+            or abs(decimal(snap["cash"]) - cash) > ONE
+        ):
+            raise ResearchError(
+                "Broker cash or positions differ from confirmed fills. Verify the uncertain order with Alpaca before proceeding."
+            )
+        resolution = {
+            "reviewed_at": at.isoformat(),
+            "first_absent_at": missing_since,
+            "broker_clock": broker_at.isoformat(),
+            "reason": "No matching broker order after the DAY window and repeated client-ID checks. Cash and positions match confirmed fills. User reviewed the broker account.",
+        }
+        with store.connect() as db:
+            updated = db.execute(
+                """UPDATE paper_orders SET state='closed_unconfirmed',body=?,updated_at=?
+                   WHERE client_id=? AND state=? AND updated_at=?""",
+                (
+                    json.dumps(
+                        {
+                            "request": order["request"],
+                            "broker": None,
+                            "resolution": resolution,
+                        }
+                    ),
+                    now(),
+                    client_id,
+                    order["state"],
+                    order["updated_at"],
+                ),
+            )
+            if not updated.rowcount:
+                raise ReconciliationPending(
+                    "The broker order check changed. Refresh and review the latest status."
+                )
+        event(
+            store,
+            f"Closed uncertain paper client reference {client_id}. {resolution['reason']}",
+        )
+        set_state(
+            store,
+            p["id"],
+            "blocked",
+            "The uncertain order was closed after review. Prepare a new plan for any remaining trades.",
+            expected_state=p["state"],
+        )
+        update_cancellation(store, snap["account_key"])
+        return next(o for o in orders(store, p["id"]) if o["client_id"] == client_id)
 
 
 def expected_positions(p, local_orders):
     qty = {r["symbol"]: decimal(r["qty"]) for r in p["account"]["positions"]}
     for o in local_orders:
-        filled = decimal(o.get("broker", {}).get("filled_qty", "0"))
+        filled = decimal((o.get("broker") or {}).get("filled_qty") or "0")
         qty[o["symbol"]] = qty.get(o["symbol"], ZERO) + filled * (
             ONE if o["side"] == "buy" else -ONE
         )
     return {s: q for s, q in qty.items() if q != ZERO}
 
 
+def expected_cash(p, local_orders):
+    cash = decimal(p["account"]["cash"])
+    for order in local_orders:
+        receipt = order.get("broker") or {}
+        quantity = decimal(receipt.get("filled_qty") or "0")
+        if quantity:
+            price = decimal(receipt.get("filled_avg_price") or "0")
+            if price <= ZERO:
+                raise ReconciliationPending(
+                    "Filled quantity lacks a confirmed average price. Refresh the broker order."
+                )
+            cash += quantity * price * (ONE if order["side"] == "sell" else -ONE)
+    return cash
+
+
 def execute_plan(store, p, broker, at=None):
     at = at or datetime.now(UTC)
     require_runnable_plan(p)
-    from .staged import VERSION, execute as stage_orders
+    from .staged import VERSION
+    from .staged import execute as stage_orders
 
     if p.get("config", {}).get("execution_version") == VERSION:
         return stage_orders(store, p, broker, at)
@@ -1437,16 +1735,6 @@ def execute_plan(store, p, broker, at=None):
             f"{symbol}: less than $1 remains after cash/target/sector checks. Prepare a new review; limits were not relaxed."
         )
     # Recheck immediate stop/revocation immediately before committing one side effect.
-    current = configuration(store)
-    if (
-        not current
-        or current["paused"]
-        or current["hash"] != cfg["hash"]
-        or not approval(store)
-    ):
-        raise ResearchError(
-            "Submission stopped because paper approval or settings changed."
-        )
     if not broker.market_open():
         raise ReconciliationPending(
             "The regular session closed while the order was priced. No order was submitted; the worker will recheck or expire the plan."
@@ -1462,30 +1750,47 @@ def execute_plan(store, p, broker, at=None):
         "extended_hours": False,
         "client_order_id": client_id,
     }
-    with store.connect() as db:
-        db.execute(
-            "INSERT INTO paper_orders VALUES (?,?,?,?,?,?,?)",
-            (
-                client_id,
-                p["id"],
-                symbol,
-                side,
-                "submitting",
-                json.dumps({"request": payload, "broker": None}),
-                now(),
-            ),
-        )
-    response, status = broker.submit(payload)
-    with store.connect() as db:
-        db.execute(
-            "UPDATE paper_orders SET state=?,body=?,updated_at=? WHERE client_id=?",
-            (
-                (response or {}).get("status", "unknown"),
-                json.dumps({"request": payload, "broker": response}),
-                now(),
-                client_id,
-            ),
-        )
+    with order_write_lock(store):
+        current = configuration(store)
+        if (
+            not current
+            or current["paused"]
+            or current["hash"] != cfg["hash"]
+            or not approval(store)
+        ):
+            raise ResearchError(
+                "Submission stopped because paper approval or settings changed."
+            )
+        with store.connect() as db:
+            db.execute(
+                "INSERT INTO paper_orders VALUES (?,?,?,?,?,?,?)",
+                (
+                    client_id,
+                    p["id"],
+                    symbol,
+                    side,
+                    "submitting",
+                    json.dumps({"request": payload, "broker": None}),
+                    now(),
+                ),
+            )
+        try:
+            response, status = broker.submit(payload)
+        except SubmissionNotSent as error:
+            response, status = {"status": "not_sent", "reason": str(error)}, "not_sent"
+        with store.connect() as db:
+            db.execute(
+                """UPDATE paper_orders SET state=?,body=?,updated_at=?
+                   WHERE client_id=? AND state='submitting'""",
+                (
+                    (response or {}).get("status", "unknown"),
+                    json.dumps({"request": payload, "broker": response}),
+                    now(),
+                    client_id,
+                ),
+            )
+    if status == "not_sent":
+        raise ResearchError(response["reason"])
     if status == "unknown":
         raise ResearchError(
             "Broker submission outcome is uncertain. Reconcile the saved client ID; no automatic retry will place a duplicate."
@@ -1495,6 +1800,7 @@ def execute_plan(store, p, broker, at=None):
         p["id"],
         "waiting_fills",
         f"{symbol} {side} submitted to PAPER. Awaiting broker fill and reconciliation.",
+        expected_state=p["state"],
     )
 
 
@@ -1513,18 +1819,42 @@ def tick(store, at=None, broker=None):
             b = b or Broker()
             execute_plan(store, active, b, at)
         except ReconciliationPending as e:
-            set_state(store, active["id"], "waiting_reconciliation", str(e))
+            set_state(
+                store,
+                active["id"],
+                "waiting_reconciliation",
+                str(e),
+                expected_state=active["state"],
+            )
         except ResearchError as e:
             store.set_preference("paper_error", str(e))
-            set_state(store, active["id"], "blocked", str(e))
+            current = plan(store, active["id"])
+            if current["state"] not in FINAL:
+                set_state(
+                    store,
+                    active["id"],
+                    "blocked",
+                    str(e),
+                    expected_state=current["state"],
+                )
         finally:
             if broker is None and b is not None:
                 b.close()
         return
-    if any(o["state"] not in TERMINAL for o in orders(store)):
+    if orders(store, outstanding=True):
+        if (
+            broker is None
+            and (checked := store.preference("paper_last_order_poll"))
+            and datetime.now(UTC) - datetime.fromisoformat(checked)
+            < timedelta(seconds=30)
+        ):
+            return
+        from .staged import fill_check
+
+        store.set_preference("paper_last_order_poll", datetime.now(UTC).isoformat())
         b = broker or Broker()
         try:
-            reconcile(store, b)
+            fill_check(store, b, performance=False)
         except ResearchError as e:
             store.set_preference("paper_error", str(e))
         finally:

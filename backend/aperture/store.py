@@ -642,11 +642,22 @@ class Store:
                 jobs.append(job)
             return jobs
 
-    def claim(self) -> dict | None:
+    def pending_cancellation(self) -> bool:
+        with self.connect() as db:
+            return (
+                db.execute(
+                    "SELECT 1 FROM jobs WHERE kind='paper_cancel' AND state IN ('queued','running') LIMIT 1"
+                ).fetchone()
+                is not None
+            )
+
+    def claim(self, *, cancellation=False) -> dict | None:
         with self.connect() as db:
             db.execute("BEGIN IMMEDIATE")
             row = db.execute(
-                "SELECT * FROM jobs WHERE state='queued' ORDER BY created_at LIMIT 1"
+                """SELECT * FROM jobs WHERE state='queued' AND (kind='paper_cancel')=?
+                   ORDER BY created_at LIMIT 1""",
+                (cancellation,),
             ).fetchone()
             if row:
                 db.execute(
@@ -674,6 +685,12 @@ class Store:
         # Called only while holding the worker's exclusive OS lock.
         with self.connect() as db:
             db.execute("UPDATE trials SET state='interrupted' WHERE state='running'")
+            db.execute(
+                """UPDATE jobs SET state='queued', updated_at=?, progress=0,
+                   message='Checking outstanding broker cancellations after restart'
+                   WHERE kind='paper_cancel' AND state='running'""",
+                (now(),),
+            )
             db.execute(
                 """UPDATE jobs SET state='failed',message=CASE
                     WHEN kind IN ('download','fundamentals','dataset_update') THEN

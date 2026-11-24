@@ -100,6 +100,16 @@ class FakeBroker:
     def market_open(self):
         return self.is_open
 
+    def staging_snapshot(self):
+        return self.snapshot()
+
+    def order_list(self, status, *, after=None):
+        assert status == "all"
+        return deepcopy(list(self.book.values()))
+
+    def cancellation_view(self):
+        return self.account_key, self.snapshot()["open_orders"]
+
     def asset(self, symbol):
         return {"fractionable": True}
 

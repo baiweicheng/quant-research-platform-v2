@@ -122,7 +122,17 @@ type Order = {
     filled_avg_price?: string;
     reason?: string;
   } | null;
+  resolution?: { reason: string };
 };
+const terminalOrderStates = [
+  "filled",
+  "canceled",
+  "expired",
+  "rejected",
+  "replaced",
+  "not_sent",
+  "closed_unconfirmed",
+];
 type Performance = {
   available: boolean;
   curve: Run["curve"];
@@ -159,6 +169,8 @@ type PaperState = {
     counts: Record<string, number>;
     issues: string[];
   } | null;
+  cancellation?: { status: string; message: string } | null;
+  uncertain_order_ids?: string[];
   membership_update?: {
     added: string[];
     removed: string[];
@@ -404,17 +416,14 @@ export default function PaperWorkspace({ state }: { state: State }) {
   const unfinished = data?.orders.filter(
     (o) =>
       o.plan_id === latest?.id &&
-      ["canceled", "expired", "rejected", "replaced"].includes(o.state),
+      o.state !== "filled" &&
+      terminalOrderStates.includes(o.state),
   );
   const canReviewRemaining =
     !!unfinished?.length &&
     !!latest &&
     ["blocked", "stopped", "expired", "complete"].includes(latest.state) &&
-    data?.orders.every((o) =>
-      ["filled", "canceled", "expired", "rejected", "replaced"].includes(
-        o.state,
-      ),
-    );
+    data?.orders.every((o) => terminalOrderStates.includes(o.state));
   const references = new Map(
     data?.plans.flatMap((plan) =>
       plan.changes.map(
@@ -491,6 +500,11 @@ export default function PaperWorkspace({ state }: { state: State }) {
         </Notice>
       )}
       {data?.last_error && <Notice error>{data.last_error}</Notice>}
+      {data?.cancellation && (
+        <Notice error={data.cancellation.status === "attention"}>
+          {data.cancellation.message}
+        </Notice>
+      )}
       {data?.fill_check && (
         <Notice error={data.fill_check.status === "attention"}>
           <strong>Broker fill check: {data.fill_check.status}</strong>{" "}
@@ -880,6 +894,7 @@ export default function PaperWorkspace({ state }: { state: State }) {
             <div className="paper-controls">
               <button
                 className="button secondary"
+                disabled={canResume && data?.cancellation?.status === "pending"}
                 onClick={() =>
                   action.mutate({
                     path: canResume ? "/actions/resume" : "/actions/stop",
@@ -892,6 +907,7 @@ export default function PaperWorkspace({ state }: { state: State }) {
               </button>
               <button
                 className="button secondary"
+                disabled={data?.cancellation?.status === "pending"}
                 onClick={() => action.mutate({ path: "/actions/cancel" })}
               >
                 Stop & cancel Aperture orders
@@ -1301,14 +1317,7 @@ export default function PaperWorkspace({ state }: { state: State }) {
             data.orders.length + " recorded · Fills, prices & broker status"
           }
           open={data.orders.some(
-            (order) =>
-              ![
-                "filled",
-                "canceled",
-                "expired",
-                "rejected",
-                "replaced",
-              ].includes(order.state),
+            (order) => !terminalOrderStates.includes(order.state),
           )}
         >
           <p className="card-body">
@@ -1337,8 +1346,12 @@ export default function PaperWorkspace({ state }: { state: State }) {
                     <td>{o.symbol}</td>
                     <td>{o.side}</td>
                     <td>
-                      {o.state}
-                      <small>{o.broker?.reason}</small>
+                      {o.state === "closed_unconfirmed"
+                        ? "Closed after review"
+                        : o.state === "not_sent"
+                          ? "Unsent"
+                          : o.state}
+                      <small>{o.resolution?.reason ?? o.broker?.reason}</small>
                     </td>
                     <td>
                       {o.request.type === "market" ? "Market DAY" : "Limit DAY"}
@@ -1378,6 +1391,26 @@ export default function PaperWorkspace({ state }: { state: State }) {
                     </td>
                     <td>
                       <code>{o.client_id}</code>
+                      {data.uncertain_order_ids?.includes(o.client_id) && (
+                        <button
+                          className="text-link"
+                          disabled={action.isPending}
+                          onClick={() => {
+                            if (
+                              window.confirm(
+                                `Check ${o.client_id}, cash and positions directly at Alpaca first. Close this reference if Aperture confirms it is still absent after the DAY window?`,
+                              )
+                            ) {
+                              action.mutate({
+                                path: `/orders/${o.client_id}/close-uncertain`,
+                                body: { acknowledge: true },
+                              });
+                            }
+                          }}
+                        >
+                          Review uncertain order
+                        </button>
+                      )}
                     </td>
                   </tr>
                 ))}
