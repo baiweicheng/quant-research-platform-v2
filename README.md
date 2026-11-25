@@ -66,7 +66,7 @@ Downloads and updates include the required source checks automatically. There is
 
 **Earnings and Pullback Rotation** is a weekly hybrid that combines filed earnings and beta-adjusted relative strength, with a pullback rule after broad market declines. [Strategy rules and full-period Standard-cost comparison](docs/EARNINGS_PULLBACK_ROTATION.md)
 
-**Liquidity and Volatility Rotation** is a weekly research strategy that uses filed profitability as an eligibility screen, with volatility-adjusted liquidity, risk-adjusted trends and a rebound rule after broad market declines. [Strategy rules and annual results](docs/LIQUIDITY_VOLATILITY_ROTATION.md)
+**Liquidity and Volatility Rotation** is available in Research and Paper Settings. It uses filed profitability as an eligibility screen, with volatility-adjusted liquidity, risk-adjusted trends and a rebound rule after broad market declines. [Strategy rules and annual results](docs/LIQUIDITY_VOLATILITY_ROTATION.md)
 
 To start fresh, open **Data → Workspace maintenance → Reset workspace**. Review the preview, type **RESET WORKSPACE**, then choose **Reset permanently**. The reset clears saved research and downloads and preserves paper trading history and configuration. See the [workspace reset details](docs/RESEARCH_LIBRARY.md#reset-the-research-workspace).
 

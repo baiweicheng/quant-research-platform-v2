@@ -382,7 +382,6 @@ STRATEGIES = [
         "inputs": "Comparable original SEC 10-Q or 10-K income, dated issuer evidence, and 253 complete daily stock and SPY bars with share volume and corporate actions.",
         "risk": "Selected on the default historical window. The rebound rule can deepen losses if a decline persists. Forward performance is untested.",
         "implemented": True,
-        "research_only": True,
         "requires_periodic_income": True,
         "frequency": "weekly",
         "calendar_year_comparison": True,

@@ -1,6 +1,8 @@
 # Liquidity and Volatility Rotation
 
-Liquidity and Volatility Rotation v1.0.0 is available for backtests and research allocations. It makes a decision after each exchange week's final close and executes at the next regular open. A backtest also makes an initial decision after its first session closes.
+Liquidity and Volatility Rotation v1.0.0 is available for backtests, research allocations and paper selection. It makes a decision after each exchange week's final close and executes at the next regular open. A backtest also makes an initial decision after its first session closes.
+
+In Paper Settings, select the strategy and save the universe and policy. Paper preparation uses reconciled holdings for the incumbent preference. Staging requires the matching strategy approval and, in manual mode, approval of the specific rebalance. [Paper approvals and preparation](PAPER_TRADING.md#approvals-and-rebalance-timing)
 
 ## Signals and allocation
 

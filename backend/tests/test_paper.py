@@ -543,6 +543,7 @@ def test_new_paper_recipes_preserve_strategy_weights_and_approval(
         "earnings_market_capture",
         "liquidity_breadth",
         "earnings_pullback_rotation",
+        "liquidity_volatility_rotation",
     ],
 )
 def test_weekly_paper_review_uses_model_weights_and_pinned_filings(
