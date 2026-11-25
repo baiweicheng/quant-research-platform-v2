@@ -71,6 +71,8 @@ export type Signal = {
     strong_market_relative_return?: number;
     beta_126?: number;
     pullback_score?: number;
+    volatility_adjusted_liquidity?: number;
+    risk_adjusted_trend?: number;
     residual_63?: number;
     residual_126?: number;
     stock_return?: number;
@@ -108,7 +110,8 @@ export type Decision = {
     members: number;
     assessed: number;
     market_log_return_126?: number;
-    sleeve?: "relative" | "pullback";
+    market_trend_gap_252?: number;
+    sleeve?: "relative" | "pullback" | "liquidity" | "rebound";
     market_regime?: {
       state: "weak" | "mixed" | "strong";
       average_gap: number;

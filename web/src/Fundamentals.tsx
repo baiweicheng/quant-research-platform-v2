@@ -297,10 +297,12 @@ export function SignalAudit({
   const marketCapture = strategyId === "earnings_market_capture";
   const liquidityBreadth = strategyId === "liquidity_breadth";
   const pullbackRotation = strategyId === "earnings_pullback_rotation";
+  const liquidityVolatility = strategyId === "liquidity_volatility_rotation";
   const available =
     fundamental ||
     marketCapture ||
     pullbackRotation ||
+    liquidityVolatility ||
     liquidityBreadth ||
     strategyId === "earnings_reaction_tracker" ||
     decisions.some(
@@ -325,6 +327,7 @@ export function SignalAudit({
   const trackerAudit =
     marketCapture ||
     pullbackRotation ||
+    liquidityVolatility ||
     strategyId === "earnings_reaction_tracker" ||
     !!decision.factor_coverage?.factors.periodic_net_income;
   const incomeAudit =
@@ -334,6 +337,12 @@ export function SignalAudit({
   const regime = decision.factor_coverage?.market_regime;
   const rotationMode = decision.factor_coverage?.sleeve;
   const marketLogReturn = decision.factor_coverage?.market_log_return_126;
+  const marketTrendGap = decision.factor_coverage?.market_trend_gap_252;
+  const rebound = rotationMode === "rebound";
+  const rotationExplanation =
+    marketTrendGap === undefined
+      ? "The strategy screens for positive filed income and ranks liquid stocks."
+      : `${rebound ? "Rebound" : "Liquidity and trend"} selection. SPY is ${percent(marketTrendGap, true)} versus its 252-session total-return average. The rebound rule applies below −6.5%.`;
   const incomeSignalLabel = sessionStrength
     ? "Session strength and follow-through"
     : regime?.state === "weak"
@@ -362,21 +371,23 @@ export function SignalAudit({
           {shortDate(decision.execute_session)}.{" "}
           {liquidityBreadth
             ? "Sector breadth is the share of qualifying stocks above their 200-session averages. Lower market breadth favors smaller SPY betas when sizing positions."
-            : marketCapture
-              ? "The strategy combines filed earnings with average daily returns relative to SPY on its weakest and strongest days. It screens by income and liquidity and limits tracking risk when selecting stocks."
-              : pullbackRotation
-                ? rotationMode && marketLogReturn !== undefined
-                  ? `${rotationMode === "pullback" ? "Pullback" : "Relative strength"} selection. SPY's 126-session total return was ${percent(Math.expm1(marketLogReturn), true)}. The strategy switches to pullback selection below −5%.`
-                  : "The strategy ranks liquid stocks with positive filed income."
-                : trackerAudit
-                  ? "The tracker selects from the largest profitable filers using earnings growth, the three-session log return relative to SPY around filing, and portfolio tracking risk."
-                  : sessionStrength
-                    ? "The ranking combines liquidity and both session signals for liquid stocks with positive filed income."
-                    : regime
-                      ? `Market state is ${regime.state}. SPY is ${percent(regime.average_gap, true)} versus its 100-session average, with a ${percent(regime.short_return, true)} 21-session return.`
-                      : incomeAudit
-                        ? "Positive annual net income and a positive trend qualify a stock for the liquidity ranking."
-                        : "Positive factors are required. Blends use average percentile ranks within the jointly eligible stocks. Ties share a rank."}
+            : liquidityVolatility
+              ? rotationExplanation
+              : marketCapture
+                ? "The strategy combines filed earnings with average daily returns relative to SPY on its weakest and strongest days. It screens by income and liquidity and limits tracking risk when selecting stocks."
+                : pullbackRotation
+                  ? rotationMode && marketLogReturn !== undefined
+                    ? `${rotationMode === "pullback" ? "Pullback" : "Relative strength"} selection. SPY's 126-session total return was ${percent(Math.expm1(marketLogReturn), true)}. The strategy switches to pullback selection below −5%.`
+                    : "The strategy ranks liquid stocks with positive filed income."
+                  : trackerAudit
+                    ? "The tracker selects from the largest profitable filers using earnings growth, the three-session log return relative to SPY around filing, and portfolio tracking risk."
+                    : sessionStrength
+                      ? "The ranking combines liquidity and both session signals for liquid stocks with positive filed income."
+                      : regime
+                        ? `Market state is ${regime.state}. SPY is ${percent(regime.average_gap, true)} versus its 100-session average, with a ${percent(regime.short_return, true)} 21-session return.`
+                        : incomeAudit
+                          ? "Positive annual net income and a positive trend qualify a stock for the liquidity ranking."
+                          : "Positive factors are required. Blends use average percentile ranks within the jointly eligible stocks. Ties share a rank."}
         </p>
       </div>
       {decision.factor_coverage && (
@@ -427,18 +438,20 @@ export function SignalAudit({
               <th>
                 {liquidityBreadth
                   ? "Intermediate return (log)"
-                  : trackerAudit
-                    ? "Scaled income change"
-                    : incomeAudit
-                      ? incomeSignalLabel
-                      : "Annual earnings yield"}
+                  : liquidityVolatility
+                    ? "20-session median dollar volume"
+                    : trackerAudit
+                      ? "Scaled income change"
+                      : incomeAudit
+                        ? incomeSignalLabel
+                        : "Annual earnings yield"}
               </th>
               <th>
                 {liquidityBreadth
                   ? "Volatility ratio"
                   : marketCapture
                     ? "Average daily return vs SPY (log)"
-                    : pullbackRotation
+                    : pullbackRotation || liquidityVolatility
                       ? "Price signals"
                       : trackerAudit
                         ? "Filing return vs SPY (log)"
@@ -483,7 +496,11 @@ export function SignalAudit({
                       <strong>{stock.symbol}</strong>
                     </td>
                     <td>{money(Number(c.income))}</td>
-                    <td>{percent(c.earnings_growth, true)}</td>
+                    <td>
+                      {liquidityVolatility
+                        ? money(Number(c.median_dollar_volume))
+                        : percent(c.earnings_growth, true)}
+                    </td>
                     <td>
                       {marketCapture ? (
                         <>
@@ -492,6 +509,26 @@ export function SignalAudit({
                           <br />
                           {percent(c.strong_market_relative_return, true)} on
                           strong days
+                        </>
+                      ) : liquidityVolatility ? (
+                        <>
+                          {rebound ? (
+                            <>
+                              Five-session pullback score{" "}
+                              {c.pullback_score?.toFixed(2) ?? "—"}
+                            </>
+                          ) : (
+                            <>
+                              Volatility-adjusted liquidity{" "}
+                              {c.volatility_adjusted_liquidity?.toFixed(2) ??
+                                "—"}
+                              <br />
+                              Risk-adjusted trend{" "}
+                              {c.risk_adjusted_trend?.toFixed(2) ?? "—"}
+                            </>
+                          )}
+                          <br />
+                          Beta to SPY {c.beta_126?.toFixed(2) ?? "—"}
                         </>
                       ) : pullbackRotation ? (
                         <>

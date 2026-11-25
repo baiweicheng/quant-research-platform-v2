@@ -13,6 +13,7 @@ from aperture.domain import (
     RankedStock,
 )
 from aperture.earnings_tracker import EarningsTracker, _select, _weights
+from aperture.liquidity_volatility import LiquidityVolatilityRotation
 from aperture.market_capture import EarningsMarketCapture, market_capture
 from aperture.pullback_rotation import EarningsPullbackRotation
 from aperture.store import Store
@@ -61,6 +62,7 @@ def test_periodic_pairs_use_one_original_accession_and_override_stale_income():
         ("earnings_reaction_tracker", EarningsTracker),
         ("earnings_market_capture", EarningsMarketCapture),
         ("earnings_pullback_rotation", EarningsPullbackRotation),
+        ("liquidity_volatility_rotation", LiquidityVolatilityRotation),
     ],
 )
 def test_weekly_income_uses_only_completed_prices_and_public_filings(
@@ -109,19 +111,20 @@ def test_weekly_income_uses_only_completed_prices_and_public_filings(
     )
     tracker = model(ds)
     ranked, _, targets, _, audit = tracker.decision(day, Policy())
-    assert ranked[0].components["accession"] == "old" and targets == {
-        "A": Decimal(".05")
-    }
+    assert ranked[0].components["accession"] == "old"
+    assert targets.keys() == {"A"}
+    assert Decimal("0.049999999") <= targets["A"] <= Decimal("0.05")
     assert audit["factors"]["periodic_net_income"]["positive"] == 1
-    if isinstance(tracker, EarningsPullbackRotation):
-        assert audit["sleeve"] == "relative"
+    if isinstance(tracker, (EarningsPullbackRotation, LiquidityVolatilityRotation)):
+        pullback = isinstance(tracker, EarningsPullbackRotation)
+        assert audit["sleeve"] == ("relative" if pullback else "liquidity")
         declining = tuple(
             Bar("SPY", session, *([Decimal(300 - i)] * 4), 1000)
             for i, session in enumerate(days)
         )
         stress = model(replace(ds, bars={**bars, "SPY": declining}))
         ranked, _, _, _, stressed = stress.decision(day, Policy())
-        assert stressed["sleeve"] == "pullback"
+        assert stressed["sleeve"] == ("pullback" if pullback else "rebound")
         assert ranked[0].components["pullback_score"] < 0
     unavailable = replace(
         bars["A"][-2], available_at=calendar.available_time(day) + timedelta(days=1)

@@ -372,6 +372,21 @@ STRATEGIES = [
         "frequency": "weekly",
         "calendar_year_comparison": True,
     },
+    {
+        "id": "liquidity_volatility_rotation",
+        "name": "Liquidity and Volatility Rotation",
+        "version": "1.0.0",
+        "category": "Technical + fundamental",
+        "description": "Favor profitable stocks with high trading liquidity and steadier trends. Shift toward liquid pullbacks when SPY is more than 6.5% below its 252-session average.",
+        "definition": "Rank profitable filers by volatility-adjusted dollar volume and risk-adjusted trend. In a market drawdown, favor higher SPY beta, recent pullbacks and dollar volume. Select one listing per issuer and at most six stocks per sector, with a preference for existing targets. Size by liquidity, volatility and beta in the normal market and by square-root dollar volume in the drawdown. Rebalance at the next open after each exchange week.",
+        "inputs": "Comparable original SEC 10-Q or 10-K income, dated issuer evidence, and 253 complete daily stock and SPY bars with share volume and corporate actions.",
+        "risk": "Selected on the default historical window. The rebound rule can deepen losses if a decline persists. Forward performance is untested.",
+        "implemented": True,
+        "research_only": True,
+        "requires_periodic_income": True,
+        "frequency": "weekly",
+        "calendar_year_comparison": True,
+    },
 ]
 
 STRATEGIES.extend(

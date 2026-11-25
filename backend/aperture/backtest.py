@@ -19,6 +19,10 @@ from .domain import (
 from .ledger import apply_actions, buy, rebalance, reinvest_research_income
 from .lifecycles import recipients
 from .liquidity_breadth import STRATEGY_ID as LIQUIDITY_BREADTH, LiquidityBreadth
+from .liquidity_volatility import (
+    STRATEGY_ID as LIQUIDITY_VOLATILITY,
+    LiquidityVolatilityRotation,
+)
 from .market_capture import weekly_income_model
 from .membership import HISTORY_NOTE, eligible, validate_coverage
 from .metrics import calendar_year_returns, windows
@@ -32,6 +36,8 @@ from .signals import median_dollar_volume, rank
 def weekly_model(dataset, recipe):
     if recipe["id"] == LIQUIDITY_BREADTH:
         return LiquidityBreadth(dataset)
+    if recipe["id"] == LIQUIDITY_VOLATILITY:
+        return LiquidityVolatilityRotation(dataset)
     if recipe.get("requires_periodic_income"):
         return weekly_income_model(dataset, recipe["id"])
     return None
