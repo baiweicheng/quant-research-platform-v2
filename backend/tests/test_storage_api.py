@@ -1,7 +1,10 @@
+from datetime import date
+from decimal import Decimal
+
 import pytest
 from fastapi.testclient import TestClient
 
-from aperture import __version__
+from aperture import __version__, calendar
 from aperture.api import create_app
 from aperture.domain import ResearchError
 from aperture.ingest import parse_csv
@@ -306,6 +309,82 @@ def test_result_view_attributes_saved_fills_before_truncation(tmp_path, legacy):
     else:
         assert all_time["benchmark_gross_return"] == pytest.approx(65 / 1000)
     assert client.get(path + "?download=true").json()["windows"] == body["windows"]
+
+
+def dividend_fixture():
+    rows = [
+        "symbol,date,open,high,low,close,volume,sector,dividend,pay_date",
+    ]
+    for day in calendar.sessions(date(2023, 1, 3), date(2025, 1, 17)):
+        amount, pay_date = {
+            "2025-01-10": ("2", "2025-01-13"),
+            "2025-01-15": ("3", "2025-01-22"),
+        }.get(str(day), ("0", ""))
+        close = 95 if str(day) < "2024-11-01" else 100
+        close -= 2 if str(day) >= "2025-01-10" else 0
+        close -= 3 if str(day) >= "2025-01-15" else 0
+        rows.append(
+            f"ABC,{day},{close},{close},{close},{close},1000000,Industrials,{amount},{pay_date}"
+        )
+    return parse_csv("\n".join(rows), "Dividend fixture", "Independent fixture")
+
+
+@pytest.mark.parametrize("model", ["ex_date", "pay_date"])
+def test_backtest_attributes_dividends_by_ex_date_in_saved_windows(tmp_path, model):
+    client = TestClient(create_app(tmp_path / "test.sqlite"))
+    store = client.app.state.store
+    dataset, raw, warnings = dividend_fixture()
+    store.save_dataset(dataset, raw, warnings)
+    payload = {
+        "dataset_id": dataset.id,
+        "strategy_ids": ["momentum"],
+        "start": "2025-01-06",
+        "end": "2025-01-17",
+        "capital": "100000",
+        "dividend_model": model,
+    }
+    response = client.post("/api/tasks/backtests", json=payload, headers=HEADER)
+    assert response.status_code == 202, response.text
+    assert process_one(store)
+    job = store.jobs()[0]
+    assert job["state"] == "complete", job["message"]
+    path = f"/api/results/{job['result_id']}"
+    full = client.get(path + "?download=true").json()
+    cash_dividends = full["dividend_income_by_session"]
+    assert set(cash_dividends) == {"2025-01-10", "2025-01-15"}
+    assert Decimal(cash_dividends["2025-01-10"]) == 2 * Decimal(
+        full["trades"][0]["quantity"]
+    )
+    if model == "pay_date":
+        assert Decimal(full["curve"][-1]["receivable"]) == Decimal(
+            cash_dividends["2025-01-15"]
+        )
+    view = client.get(path + "?view=true").json()
+    assert view["windows"]["1W"]["start"] == "2025-01-10"
+    for period in ("All", "1W"):
+        window = view["windows"][period]
+        attribution = window["return_attribution"]
+        breakdown = attribution["dividend_breakdown"]
+        dividends = sum(
+            Decimal(amount)
+            for day, amount in cash_dividends.items()
+            if window["start"] < day <= window["end"]
+        )
+        assert Decimal(breakdown["dividend_income"]) == dividends
+        assert (
+            Decimal(breakdown["stock_value_change"])
+            + dividends
+            + Decimal(attribution["trading_cost_impact"])
+        ) == Decimal(attribution["net_change"])
+        initial = Decimal(full["curve"][window["start_index"]]["equity"])
+        assert breakdown["dividend_contribution"] == pytest.approx(
+            float(dividends / initial)
+        )
+        assert (
+            breakdown["stock_value_contribution"]
+            + breakdown["dividend_contribution"]
+            + attribution["trading_cost_contribution"]
+        ) == pytest.approx(window["metrics"]["return"])
 
 
 def test_queuing_sec_refresh_uses_summary_without_loading_full_price_history(

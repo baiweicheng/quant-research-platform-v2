@@ -22,19 +22,19 @@ def test_exdate_income_belongs_to_overnight_holder_and_waits_until_close():
     day = date(2024, 5, 6)
     b = bar(day, 90, research_dividend=D(10))
     p = Portfolio(D(0), {"ABC": D(10)})
-    apply_actions(p, day, {"ABC": b}, "ex_date")
+    assert apply_actions(p, day, {"ABC": b}, "ex_date") == 100
     assert p.cash == 0 and p.positions["ABC"] == 10
     assert p.research_income == [("ABC", D(100))]
     reinvest_research_income(p, day, {"ABC": b})
     assert p.positions["ABC"] == D("11.111111")
     assert p.value({"ABC": D(90)}) == 1000
     fresh = Portfolio(D(0))
-    apply_actions(fresh, day, {"ABC": b}, "ex_date")
+    assert apply_actions(fresh, day, {"ABC": b}, "ex_date") == 0
     fresh.positions["ABC"] = D(10)
     reinvest_research_income(fresh, day, {"ABC": b})
     assert fresh.positions["ABC"] == 10 and fresh.cash == 0
     sold = Portfolio(D(0), {"ABC": D(10)})
-    apply_actions(sold, day, {"ABC": b}, "ex_date")
+    assert apply_actions(sold, day, {"ABC": b}, "ex_date") == 100
     sold.positions.clear()
     assert sold.cash == 0
     reinvest_research_income(sold, day, {"ABC": b})
@@ -473,7 +473,7 @@ def test_future_spinoff_close_cannot_change_same_day_opening_trades():
     for closing_distribution in [10, 20]:
         b = bar(day, 90, research_distribution=D(closing_distribution))
         p = Portfolio(D(100), {"ABC": D(10)})
-        apply_actions(p, day, {"ABC": b}, "ex_date", {"ABC": D(5)})
+        assert apply_actions(p, day, {"ABC": b}, "ex_date", {"ABC": D(5)}) == 0
         assert p.value({"ABC": D(90)}) == 1050 and p.cash == 100
         records.append(rebalance(p, {"ABC": D(".5")}, {"ABC": b}, Policy(), day))
         reinvest_research_income(p, day, {"ABC": b})

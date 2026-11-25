@@ -170,6 +170,7 @@ def run(
     decisions = calendar.decision_sessions(days, frequency)
     pending: tuple[date, dict[str, Decimal]] | None = None
     curve, trades, decision_log, benchmark_trades = [], [], [], []
+    dividend_income_by_session = {}
     liquidity_costs = policy.cost_model == "liquidity-v1"
     cash_targets = []
     notes = {
@@ -297,9 +298,11 @@ def run(
             .get(str(day), {})
             .items()
         }
-        apply_actions(
+        dividends = apply_actions(
             portfolio, day, today, dividend_model, opening_income, fresh=fresh
         )
+        if dividends:
+            dividend_income_by_session[str(day)] = str(dividends)
         if pending and pending[0] == day:
             targets = {s: w for s, w in pending[1].items() if s not in ceased}
             if ceased & pending[1].keys():
@@ -502,6 +505,7 @@ def run(
         else None,
         **({"historical_sector_revisions": GICS_SCHEDULE} if sector_history else {}),
         "curve": curve,
+        "dividend_income_by_session": dividend_income_by_session,
         "windows": windows(curve),
         "trades": trades,
         "trade_count": len(trades),

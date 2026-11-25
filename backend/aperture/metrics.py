@@ -49,6 +49,7 @@ def windows_with_attribution(result: dict) -> dict:
         if "benchmark_trades" in result
         else None
     )
+    dividends_by_session = result.get("dividend_income_by_session")
     curve = result["curve"]
     last = curve[-1]
     output = {}
@@ -74,6 +75,22 @@ def windows_with_attribution(result: dict) -> dict:
             "trading_cost_contribution": float(-cost / initial),
             "net_return": float(net / initial),
         }
+        if dividends_by_session is not None:
+            dividends = sum(
+                (
+                    Decimal(amount)
+                    for day, amount in dividends_by_session.items()
+                    if start < day <= end
+                ),
+                Decimal(0),
+            )
+            price_change = gross - dividends
+            attribution["dividend_breakdown"] = {
+                "dividend_income": str(dividends),
+                "dividend_contribution": float(dividends / initial),
+                "stock_value_change": str(price_change),
+                "stock_value_contribution": float(price_change / initial),
+            }
         if (
             benchmark_costs is not None
             and window["metrics"]["benchmark_return"] is not None

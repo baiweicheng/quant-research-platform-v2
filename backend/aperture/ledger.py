@@ -13,13 +13,14 @@ def apply_actions(
     dividend_model="pay_date",
     opening_income=None,
     fresh=None,
-) -> None:
-    """Apply splits and accrue only overnight holders' dividend entitlements.
+) -> Decimal:
+    """Apply actions and return the value of cash dividends earned this session.
 
     Shares issued as merger consideration at today's effective time were not
     held at the prior close. They neither split again nor receive the
     recipient's same-day ex-date dividends or spin-off distributions.
     """
+    dividends = ZERO
     for symbol, held in list(portfolio.positions.items()):
         if held <= ZERO:
             continue
@@ -32,17 +33,20 @@ def apply_actions(
         quantity = (held - issued) * bar.split
         portfolio.positions[symbol] = quantity + issued
         if dividend_model == "ex_date":
-            amount = (bar.research_dividend or bar.dividend) + bar.research_distribution
+            cash_dividend = bar.research_dividend or bar.dividend
+            dividends += quantity * cash_dividend
+            amount = cash_dividend + bar.research_distribution
             if amount:
                 portfolio.research_income.append((symbol, quantity * amount))
                 # Value entitlements at the execution-time opening mark, never
                 # the child's future closing price; income is not spendable.
                 portfolio.research_income_value += quantity * (
-                    (bar.research_dividend or bar.dividend)
-                    + (opening_income or {}).get(symbol, ZERO)
+                    cash_dividend + (opening_income or {}).get(symbol, ZERO)
                 )
         elif bar.dividend:
-            portfolio.receivables.append((bar.pay_date, quantity * bar.dividend))
+            entitlement = quantity * bar.dividend
+            dividends += entitlement
+            portfolio.receivables.append((bar.pay_date, entitlement))
     paid = sum(
         (amount for pay_day, amount in portfolio.receivables if pay_day <= day), ZERO
     )
@@ -50,6 +54,7 @@ def apply_actions(
     portfolio.receivables = [
         (pay_day, amount) for pay_day, amount in portfolio.receivables if pay_day > day
     ]
+    return dividends
 
 
 def reinvest_research_income(portfolio, day, bars):

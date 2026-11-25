@@ -314,6 +314,12 @@ export type Run = Omit<RunSummary, "metrics"> & {
         trading_cost_contribution: number;
         net_return: number;
         benchmark_gross_return?: number;
+        dividend_breakdown?: {
+          dividend_income: string;
+          dividend_contribution: number;
+          stock_value_change: string;
+          stock_value_contribution: number;
+        };
       };
     }
   >;

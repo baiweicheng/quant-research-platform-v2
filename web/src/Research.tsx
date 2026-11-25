@@ -460,6 +460,7 @@ export function RunDetail({
 }) {
   const window = run.windows[period];
   const attribution = window.return_attribution;
+  const dividendBreakdown = attribution?.dividend_breakdown;
   const exposure = displayedExposure(run, period);
   const coverage = run.coverage;
   const decisionExclusions = coverage?.decision_exclusions ?? [];
@@ -581,13 +582,32 @@ export function RunDetail({
           </div>
           <div className="card-body">
             <dl className="facts">
-              <div>
-                <dt>Stock gain/loss before costs</dt>
-                <dd>
-                  {money(attribution.stock_gain)} ·{" "}
-                  {percent(attribution.stock_return, true)}
-                </dd>
-              </div>
+              {dividendBreakdown ? (
+                <>
+                  <div>
+                    <dt>Stock value change</dt>
+                    <dd>
+                      {money(dividendBreakdown.stock_value_change)} ·{" "}
+                      {points(dividendBreakdown.stock_value_contribution)}
+                    </dd>
+                  </div>
+                  <div>
+                    <dt>Dividend income</dt>
+                    <dd>
+                      {money(dividendBreakdown.dividend_income)} ·{" "}
+                      {points(dividendBreakdown.dividend_contribution)}
+                    </dd>
+                  </div>
+                </>
+              ) : (
+                <div>
+                  <dt>Stock gain/loss before costs</dt>
+                  <dd>
+                    {money(attribution.stock_gain)} ·{" "}
+                    {percent(attribution.stock_return, true)}
+                  </dd>
+                </div>
+              )}
               <div>
                 <dt>Trading costs · fees and slippage</dt>
                 <dd>
@@ -614,9 +634,11 @@ export function RunDetail({
               )}
             </dl>
             <p className="field-hint">
-              Stock gain/loss includes dividends and uses the holdings from this
-              backtest. Position sizes and cash exposure still reflect the
-              original cost assumptions.
+              {dividendBreakdown
+                ? "Dividends count on the ex-date. Stock value change includes price moves on all held shares and other corporate actions, such as mergers and spin-offs."
+                : "This saved run combines stock gains and dividends. Run a new backtest to see the split."}{" "}
+              Position sizes and cash exposure reflect the original cost
+              assumptions.
             </p>
           </div>
         </section>
