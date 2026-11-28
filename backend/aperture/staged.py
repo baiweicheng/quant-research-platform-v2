@@ -112,6 +112,15 @@ def instructions(identifier, cfg, snapshot, changes, targets):
     return orders, deferred
 
 
+def empty_batch_state(deferred):
+    if deferred:
+        return (
+            "blocked",
+            "No orders to stage under the approved funding and allocation limits. Review the deferred buys.",
+        )
+    return "complete", "No trades needed. No orders were sent to Alpaca."
+
+
 def fill_check(store, broker, *, performance=True):
     from .paper import account_orders, plans, reconcile
 
@@ -123,7 +132,8 @@ def fill_check(store, broker, *, performance=True):
 
 
 def update_fill_check(store, snapshot, saved, batches):
-    from .paper import UNCERTAIN, expected_cash, expected_positions, set_state
+    from .paper import UNCERTAIN, set_state
+    from .paper_adjustments import differences, proposed_review
 
     latest_batch = next(
         (p["id"] for p in batches if any(o["plan_id"] == p["id"] for o in saved)), None
@@ -174,15 +184,8 @@ def update_fill_check(store, snapshot, saved, batches):
                         expected_state=p["state"],
                     )
                 continue
-            actual = {
-                r["symbol"]: decimal(r["qty"])
-                for r in snapshot["positions"]
-                if decimal(r["qty"]) != ZERO
-            }
-            if (
-                actual != expected_positions(p, own)
-                or abs(decimal(snapshot["cash"]) - expected_cash(p, own)) > ONE
-            ):
+            cash, positions = differences(store, p, own, snapshot)
+            if positions or abs(cash) > ONE:
                 issues.append(
                     "Filled orders do not yet reconcile to actual cash/positions. Refresh before another rebalance."
                 )
@@ -217,6 +220,7 @@ def update_fill_check(store, snapshot, saved, batches):
             "A submission is still uncertain. Refresh and review its client reference in the paper order lifecycle."
         )
     result = {
+        "account_key": snapshot["account_key"],
         "checked_at": now(),
         "counts": counts,
         "issues": issues,
@@ -224,28 +228,44 @@ def update_fill_check(store, snapshot, saved, batches):
         if issues or any(o["state"] in TERMINAL - {"filled"} for o in latest_orders)
         else "checked",
     }
+    if review := proposed_review(store, snapshot, saved, batches):
+        result["adjustment_review"] = review
     store.set_preference("paper_fill_check", result)
 
 
 def execute(store, p, broker, at):
     # API approval and an automatic worker can overlap. Serialize the complete
     # read/check/one-attempt write across processes, then reload current state.
-    from .paper import FINAL, plan
+    from .paper import FINAL, plan, set_state
 
     with Path(store.path).with_suffix(".orders.lock").open("w") as lock:
         fcntl.flock(lock, fcntl.LOCK_EX)
         p = plan(store, p["id"])
-        if p["state"] in FINAL:
+        if p["state"] in FINAL or p["state"] == "prepared":
             return
-        return _execute(store, p, broker, at)
+        try:
+            _execute(store, p, broker, at)
+        except ReconciliationPending as error:
+            current = plan(store, p["id"])
+            if current["state"] not in FINAL:
+                set_state(
+                    store,
+                    p["id"],
+                    "waiting_reconciliation",
+                    str(error),
+                    expected_state=current["state"],
+                )
 
 
 def approve_and_stage(store, identifier, broker=None):
-    """A successful manual approval response means broker acceptance, not a queue."""
+    """Stage the approved batch or report that broker reconciliation is pending."""
     from .paper import UTC, Broker, datetime, plan, schedule, set_state
 
     p = schedule(store, identifier)
-    if p["config"]["execution_version"] != VERSION:
+    if p["config"]["execution_version"] != VERSION or p["state"] in (
+        "complete",
+        "blocked",
+    ):
         return p
     owned = broker is None
     try:
@@ -253,7 +273,7 @@ def approve_and_stage(store, identifier, broker=None):
         for _ in range(len(p["staged_orders"]) + 2):
             execute(store, p, broker, datetime.now(UTC))
             p = plan(store, identifier)
-            if p["state"] in ("broker_staged", "complete"):
+            if p["state"] in ("broker_staged", "complete", "waiting_reconciliation"):
                 return p
             if p["state"] in ("blocked", "expired", "stopped"):
                 raise ResearchError(p["message"])
@@ -295,7 +315,25 @@ def _execute(store, p, broker, at):
 
     require_runnable_plan(p)
     intended = p["staged_orders"]
+    if not intended:
+        state, message = empty_batch_state(p.get("deferred_buys"))
+        set_state(store, p["id"], state, message, expected_state=p["state"])
+        return
     count = len(orders(store, p["id"]))
+    deadline = calendar.open_time(date.fromisoformat(p["execute_session"]))
+    from .paper import UTC
+    from .paper import datetime as wall_clock
+
+    expired = (
+        "The staging deadline has passed. Existing accepted orders remain at Alpaca. "
+        "Reconcile and prepare a fresh review for remaining instructions."
+    )
+    if (
+        count < len(intended)
+        and max(at, wall_clock.now(UTC)) + DELIVERY_MARGIN >= deadline
+    ):
+        set_state(store, p["id"], "expired", expired, expected_state=p["state"])
+        return
     snap = (
         reconcile(store, broker, staging=True)
         if 0 < count < len(intended)
@@ -371,14 +409,6 @@ def _execute(store, p, broker, at):
                 "Waiting for explicit broker acceptance before reporting the batch staged."
             )
         return
-    deadline = calendar.open_time(date.fromisoformat(p["execute_session"]))
-    from .paper import UTC
-    from .paper import datetime as wall_clock
-
-    expired = (
-        "The staging deadline has passed. Existing accepted orders remain at Alpaca. "
-        "Reconcile and prepare a fresh review for remaining instructions."
-    )
     if max(at, wall_clock.now(UTC)) + DELIVERY_MARGIN >= deadline:
         set_state(
             store,
@@ -499,6 +529,8 @@ def _execute(store, p, broker, at):
                     or type(clock["is_open"]) is not bool
                 ):
                     raise ValueError
+            except ReconciliationPending as error:
+                raise SubmissionNotSent(str(error)) from error
             except (ResearchError, KeyError, ValueError, TypeError) as error:
                 raise SubmissionNotSent(
                     "The broker session clock could not be verified. This order was not sent."
@@ -516,11 +548,21 @@ def _execute(store, p, broker, at):
 
             response, status = broker.submit(request, before_send=before_send)
         except SubmissionNotSent as error:
-            save_receipt("not_sent", {"reason": str(error)})
-            if str(error) == expired:
-                set_state(store, p["id"], "expired", expired, expected_state=p["state"])
-                return
-            raise
+            if not isinstance(error.__cause__, ReconciliationPending):
+                save_receipt("not_sent", {"reason": str(error)})
+                if str(error) == expired:
+                    set_state(
+                        store, p["id"], "expired", expired, expected_state=p["state"]
+                    )
+                    return
+                raise
+            # The adapter raised before the POST. Release only this unsent intent.
+            with store.connect() as db:
+                db.execute(
+                    "DELETE FROM paper_orders WHERE client_id=? AND state='submitting'",
+                    (request["client_order_id"],),
+                )
+            raise error.__cause__
         save_receipt((response or {}).get("status", "unknown"), response)
     if status == "unknown":
         raise ResearchError(

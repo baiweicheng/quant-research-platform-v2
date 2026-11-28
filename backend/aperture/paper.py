@@ -12,7 +12,14 @@ from uuid import uuid4
 
 from . import __version__, calendar
 from .backtest import weekly_model
-from .broker import NY, TERMINAL, Broker, ReconciliationPending, SubmissionNotSent
+from .broker import (
+    NY,
+    TERMINAL,
+    AssetIneligible,
+    Broker,
+    ReconciliationPending,
+    SubmissionNotSent,
+)
 from .domain import (
     ARCHIVED_STRATEGIES,
     CENT,
@@ -486,6 +493,64 @@ def account_orders(store, account_key, *, outstanding=False, batches=None):
     ]
 
 
+def remaining_instructions(p, saved_orders):
+    own = [o for o in saved_orders if o["plan_id"] == p["id"]]
+    if not own or any(o["state"] not in TERMINAL for o in own):
+        return []
+    filled = {o["client_id"] for o in own if o["state"] == "filled"}
+    return [r for r in p.get("staged_orders", ()) if r["client_order_id"] not in filled]
+
+
+def weekly_recovery(store, cfg, snap, saved_plans, saved_orders, at):
+    from .paper_adjustments import differences
+    from .staged import VERSION
+
+    if (
+        not cfg
+        or not snap
+        or cfg["mode"] != "manual"
+        or cfg["paused"]
+        or not approval(store, cfg, snap)
+        or snap["issues"]
+        or snap["open_orders"]
+    ):
+        return None
+    account_plans = [p for p in saved_plans if p["account_key"] == snap["account_key"]]
+    if not account_plans or any(p["state"] not in FINAL for p in account_plans):
+        return None
+    p = account_plans[0]
+    if (
+        p["config_hash"] != cfg["hash"]
+        or p["config"]["execution_version"] != VERSION
+        or p["strategy"].get("frequency") != "weekly"
+        or p["state"] not in ("blocked", "stopped", "expired")
+        or account_orders(
+            store, snap["account_key"], outstanding=True, batches=account_plans
+        )
+        or not remaining_instructions(p, saved_orders)
+    ):
+        return None
+    own = [o for o in saved_orders if o["plan_id"] == p["id"]]
+    try:
+        cash, positions = differences(store, p, own, snap)
+    except ResearchError:
+        return None
+    if positions or abs(cash) > ONE:
+        return None
+    decision = date.fromisoformat(p["decision_session"])
+    reference = calendar.latest_complete(at)
+    execution = calendar.next_session(reference)
+    original = calendar.next_session(decision)
+    if (
+        execution < date.fromisoformat(p["execute_session"])
+        or calendar.rebalance_period(execution, "weekly")
+        != calendar.rebalance_period(original, "weekly")
+        or at >= calendar.open_time(execution)
+    ):
+        return None
+    return p, ReviewWindow(decision, reference, execution)
+
+
 def month_end_used(saved_plans, saved_orders, account_key, decision):
     batch = {
         p["id"]
@@ -536,6 +601,12 @@ def public_state(store):
     cfg = configuration(store)
     snap = store.preference("paper_snapshot")
     performance = store.preference("paper_performance")
+    fill_status = store.preference("paper_fill_check")
+    if fill_status and fill_status.get("account_key") not in (
+        None,
+        (snap or {}).get("account_key"),
+    ):
+        fill_status = None
     if performance and performance.get("account_key") not in (
         None,
         (snap or {}).get("account_key"),
@@ -552,6 +623,11 @@ def public_state(store):
     )
     frequency = recipe.get("frequency", "weekly") if recipe else "weekly"
     saved_plans, saved_orders = plans(store), orders(store)
+    recovery = (
+        weekly_recovery(store, cfg, snap, saved_plans, saved_orders, datetime.now(UTC))
+        if frequency == "weekly" and not hidden and not archived_strategy
+        else None
+    )
     catch_up = month_end_catch_up(datetime.now(UTC)) if frequency == "monthly" else None
     if (
         catch_up
@@ -569,6 +645,12 @@ def public_state(store):
     return {
         "config": cfg,
         "frequency": frequency,
+        "weekly_recovery": {
+            "plan_id": recovery[0]["id"],
+            "execute_session": str(recovery[1].execution),
+        }
+        if recovery
+        else None,
         "catch_up": {
             "decision_session": str(catch_up.decision),
             "execute_session": str(catch_up.execution),
@@ -600,7 +682,7 @@ def public_state(store):
                 "paper_auto_status", "Waiting for the next rebalance window."
             )
         ),
-        "fill_check": store.preference("paper_fill_check"),
+        "fill_check": fill_status,
         "cancellation": {
             "status": "pending",
             "message": "Cancellation queued for the broker worker. Check for confirmed outcomes before closing Aperture.",
@@ -690,7 +772,11 @@ def reconcile_orders(store, broker, account_key, open_orders, *, observed_at=Non
 
 
 def reconcile(store, broker, performance=False, dataset=None, *, staging=False):
+    from .paper_adjustments import guard
+
     snap = broker.staging_snapshot() if staging else broker.snapshot()
+    if not staging:
+        snap = guard(store, snap)
     if (
         decimal(snap["cash"]) < ZERO
         and (configuration(store) or {}).get("funding_policy") != "paper_margin"
@@ -786,9 +872,8 @@ def prepare(store, job, progress, broker):
     payload = job["payload"]
     if cfg["hash"] != payload.get("config_hash"):
         raise ResearchError("Paper settings changed after this preparation was queued.")
-    window = preparation_window(recipe, payload)
-    decision, latest = window.decision, window.reference
-    catch_up = window.original_execution is not None
+    recover_from = payload.get("recover_from")
+    window = None if recover_from else preparation_window(recipe, payload)
     saved_plans = plans(store)
     if pending_plans(store, saved_plans, datetime.now(UTC)):
         raise ResearchError(
@@ -803,6 +888,26 @@ def prepare(store, job, progress, broker):
     ensure_account(snap, cfg)
     incumbents = {p["symbol"] for p in snap["positions"]}
     previous = None
+    recovery_orders = None
+    if recover_from:
+        recovery = weekly_recovery(
+            store, cfg, snap, saved_plans, saved_orders, datetime.now(UTC)
+        )
+        if (
+            not recovery
+            or recovery[0]["id"] != recover_from
+            or str(recovery[1].reference) != payload.get("reference_session")
+        ):
+            raise ResearchError(
+                "The weekly recovery review is no longer available for this account and open. Refresh broker orders and check the next preparation window."
+            )
+        previous, window = recovery
+        recovery_orders = {
+            r["symbol"]: r["side"]
+            for r in remaining_instructions(previous, saved_orders)
+        }
+    decision, latest = window.decision, window.reference
+    catch_up = window.original_execution is not None
     if catch_up:
         if month_end_used(saved_plans, saved_orders, snap["account_key"], decision):
             raise ResearchError(
@@ -842,8 +947,7 @@ def prepare(store, job, progress, broker):
         from . import membership
 
         progress(12, "Refreshing S&P membership and checking additions/removals")
-        captures = membership.refresh_all(store)
-        current = captures["current"]
+        current = membership.fresh(store, "current")
         eligible_names = (
             {m["symbol"] for m in current["members"]}
             | set(cfg.get("supplements", []))
@@ -901,7 +1005,7 @@ def prepare(store, job, progress, broker):
             }
         store.set_preference("paper_membership_update", None)
         if catch_up and not previous:
-            membership.historical_names(captures["historical"], decision)
+            membership.historical_names(membership.fresh(store, "historical"), decision)
     saved = download_market(
         store,
         {
@@ -909,6 +1013,7 @@ def prepare(store, job, progress, broker):
             "symbols": cfg["symbols"],
             "start": str(current_start),
             "end": str(latest),
+            "capture_available": recipe.get("frequency") == "weekly",
             **(
                 {
                     "universe": "sp500"
@@ -934,7 +1039,7 @@ def prepare(store, job, progress, broker):
         raise ResearchError("Paper preparation requires captured actual Alpaca prices.")
     if max(b.session for rows in ds.bars.values() for b in rows) != latest:
         raise ResearchError("Data is not current through the latest completed session.")
-    if catch_up and index:
+    if index and (catch_up or recipe.get("frequency") == "weekly"):
         audit = ds.metadata.get("membership") or {}
         captured_current = audit.get("current", audit)
         current_symbols = (
@@ -944,16 +1049,46 @@ def prepare(store, job, progress, broker):
         )
         if current_symbols != old_eligible:
             raise ResearchError(
-                "S&P membership changed during catch-up preparation. Prepare a new membership review before placing paper orders."
+                "S&P membership changed during paper preparation. Prepare a new membership review before placing paper orders."
             )
     factor_audit = {}
     model = None
+    weekly = recipe.get("frequency") == "weekly"
+    coverage_exclusions = {}
+    if weekly:
+        from .research_data import blocked_inputs
+
+        lookback = calendar.sessions(latest - timedelta(days=740), latest)[-253:]
+        candidates = set(cfg["symbols"]) - set(cfg.get("exit_symbols", []))
+        missing = (candidates | incumbents | {"SPY"}) - {
+            s for s, bars in ds.bars.items() if bars
+        }
+        affected = missing | blocked_inputs(
+            ds, candidates | incumbents | {"SPY"}, lookback[0], latest, "signals"
+        )
+        if required := affected & (incumbents | {"SPY"}):
+            raise ResearchError(
+                "Refresh or resolve unverified market data for the benchmark or held stocks before preparing: "
+                + ", ".join(sorted(required))
+                + "."
+            )
+        coverage_exclusions = {
+            s: ds.metadata.get("unavailable_symbols", {}).get(s)
+            or "Unverified price or corporate-action inputs during the signal window."
+            for s in affected
+        }
     if previous:
         targets = {t["symbol"]: decimal(t["weight"]) for t in previous["targets"]}
         signals = previous["signals"]
         excluded = list(previous["excluded"])
         factor_audit = previous.get("factor_coverage", {})
-        notes = []
+        notes = (
+            [
+                f"Weekly recovery uses targets from {decision} and {latest} closing prices. Only unfinished instructions are considered."
+            ]
+            if recover_from
+            else []
+        )
     else:
         signal_data = ds
         if catch_up and index:
@@ -972,13 +1107,14 @@ def prepare(store, job, progress, broker):
             signal_data = replace(
                 signal_data, periodic_income=load_reports(store, signal_data)
             )
-        if recipe.get("frequency") == "weekly":
+        if weekly:
             # Include prices for reductions, but keep exit-only and unapproved
             # names out of the model's ranks and universe-level signals.
             excluded_names = (
                 set(signal_data.metadata.get("research_exclusions", ()))
                 | exit_only
                 | (set(signal_data.bars) - set(cfg["symbols"]))
+                | coverage_exclusions.keys()
             )
             signal_data = replace(
                 signal_data,
@@ -1033,6 +1169,14 @@ def prepare(store, job, progress, broker):
         raise ResearchError(
             "The paper account changed. Prepare a fresh catch-up review."
         )
+    if recover_from:
+        recovery = weekly_recovery(
+            store, cfg, snap, plans(store), orders(store), datetime.now(UTC)
+        )
+        if not recovery or recovery[0]["id"] != recover_from or recovery[1] != window:
+            raise ResearchError(
+                "The recovery plan or next opening changed during preparation. Refresh before requesting another review."
+            )
     equity = decimal(snap["equity"])
     held = {p["symbol"]: decimal(p["qty"]) for p in snap["positions"]}
     if catch_up:
@@ -1063,14 +1207,54 @@ def prepare(store, job, progress, broker):
         notes.append(
             f"Manual catch-up uses {decision} signals and {latest} reference prices. Prefer to prepare at month-end for the originally scheduled open."
         )
+    preparation_exclusions = []
+    if coverage_exclusions:
+        if (
+            recovery_orders is not None
+            and recovery_orders.keys() & coverage_exclusions.keys()
+        ):
+            raise ResearchError(
+                "Resolve market data for unfinished weekly instructions before preparing recovery: "
+                + ", ".join(sorted(recovery_orders.keys() & coverage_exclusions.keys()))
+                + "."
+            )
+        preparation_exclusions.extend(
+            {
+                "symbol": s,
+                "reason": f"Paper preparation skipped this unheld stock. {reason}",
+            }
+            for s, reason in sorted(coverage_exclusions.items())
+        )
+        for symbol in coverage_exclusions:
+            targets.pop(symbol, None)
     for symbol in sorted(targets.keys() | held.keys()):
-        broker.asset(symbol)
+        try:
+            broker.asset(symbol)
+        except AssetIneligible as error:
+            if not weekly or symbol in held or recovery_orders is not None:
+                raise ResearchError(
+                    f"{error} Verify the broker listing and resolve any held position before preparing again."
+                ) from error
+            del targets[symbol]
+            preparation_exclusions.append(
+                {
+                    "symbol": symbol,
+                    "reason": f"{error} Its target allocation remains in cash.",
+                }
+            )
+    if weekly and not previous and not targets and (coverage_exclusions or ranked):
+        raise ResearchError(
+            "The remaining verified, tradable targets are empty. Resolve the excluded symbols before preparing a rebalance."
+        )
+    excluded.extend(preparation_exclusions)
     prices = {
         s: next((b.close for b in reversed(rows) if b.session == latest), None)
         for s, rows in ds.bars.items()
     }
     changes = []
     for symbol in sorted(set(held) | set(targets)):
+        if recovery_orders is not None and symbol not in recovery_orders:
+            continue
         price = prices.get(symbol)
         if price is None:
             raise ResearchError(f"{symbol}: the latest closing price is unavailable.")
@@ -1084,6 +1268,8 @@ def prepare(store, job, progress, broker):
         if abs(delta) * price < ONE:
             continue
         side = "buy" if delta > ZERO else "sell"
+        if recovery_orders is not None and recovery_orders[symbol] != side:
+            continue
         changes.append(
             {
                 "symbol": symbol,
@@ -1111,6 +1297,11 @@ def prepare(store, job, progress, broker):
         "source_digest": ds.digest,
         "strategy": recipe,
         "decision_session": str(decision),
+        **(
+            {"recovery_of": recover_from, "reference_session": str(latest)}
+            if recover_from
+            else {}
+        ),
         "execute_session": str(window.execution),
         "last_execution_session": str(
             window.execution if catch_up else calendar.next_session(window.execution)
@@ -1135,6 +1326,11 @@ def prepare(store, job, progress, broker):
         **({"factor_coverage": factor_audit} if factor_audit else {}),
         "signals": signals,
         "excluded": excluded,
+        **(
+            {"preparation_exclusions": preparation_exclusions}
+            if preparation_exclusions
+            else {}
+        ),
         "notes": notes
         + [
             "Regular-hours DAY limit orders only; IEX quotes are one venue, not a consolidated NBBO.",
@@ -1142,13 +1338,19 @@ def prepare(store, job, progress, broker):
             "Prices, positions, cash, approval and caps are rechecked before every submission; a changed plan requires a fresh review.",
         ],
     }
-    from .staged import VERSION, instructions
+    from .staged import VERSION, empty_batch_state, instructions
 
+    state = "prepared"
+    message = "Read-only review prepared. Approval does not follow from research."
+    completion = "Paper review prepared. Inspect targets, cash and exclusions in Portfolio; no orders submitted."
     if cfg["execution_version"] == VERSION:
         body["last_execution_session"] = body["execute_session"]
         body["staged_orders"], body["deferred_buys"] = instructions(
             identifier, cfg, snap, changes, body["targets"]
         )
+        if not body["staged_orders"]:
+            state, message = empty_batch_state(body["deferred_buys"])
+            completion = message
         buy_budget = sum(
             (
                 decimal(o["notional"])
@@ -1182,7 +1384,7 @@ def prepare(store, job, progress, broker):
         raise ResearchError(
             "Paper settings changed during preparation. No plan was published."
         )
-    if recipe.get("frequency") or payload.get("automatic"):
+    if not recover_from and (recipe.get("frequency") or payload.get("automatic")):
         preparation_window(
             recipe,
             {
@@ -1199,15 +1401,15 @@ def prepare(store, job, progress, broker):
                 identifier,
                 stamp,
                 stamp,
-                "prepared",
-                "Read-only review prepared. Approval does not follow from research.",
+                state,
+                message,
                 encode(body),
             ),
         )
     progress(98, "Immutable paper review saved; no orders submitted")
     return {
         "plan_id": identifier,
-        "completion_message": "Paper review prepared. Inspect targets, cash and exclusions in Portfolio; no orders submitted.",
+        "completion_message": completion,
     }
 
 
@@ -1232,7 +1434,12 @@ def schedule(store, identifier):
         plans(store), orders(store), p["account_key"], p["decision_session"]
     ):
         raise ResearchError("This account has already rebalanced for that month-end.")
-    from .staged import VERSION
+    from .staged import VERSION, empty_batch_state
+
+    if cfg["execution_version"] == VERSION and p.get("staged_orders") == []:
+        state, message = empty_batch_state(p.get("deferred_buys"))
+        set_state(store, identifier, state, message, expected_state="prepared")
+        return plan(store, identifier)
 
     deadline = execution_deadline(cfg, date.fromisoformat(p["execute_session"]))
     if datetime.now(UTC) >= deadline:

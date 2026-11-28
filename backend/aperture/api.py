@@ -118,6 +118,10 @@ class RebalanceApprovalRequest(BaseModel):
     acknowledge: bool = False
 
 
+class PaperAdjustmentRequest(RebalanceApprovalRequest):
+    reference: str = Field(min_length=64, max_length=64)
+
+
 def create_app(
     db_path: str | Path = "var/aperture.sqlite3",
     web_path: str | Path | None = "web/dist",
@@ -412,6 +416,33 @@ def create_app(
             )
         return approve_and_stage(store, identifier)
 
+    @app.post("/api/paper/plans/{identifier}/recover", status_code=202)
+    def recover_paper_plan(identifier: str, payload: RebalanceApprovalRequest):
+        from .paper import UTC, configuration, datetime, orders, plans, weekly_recovery
+
+        cfg = configuration(store)
+        recovery = weekly_recovery(
+            store,
+            cfg,
+            store.preference("paper_snapshot"),
+            plans(store),
+            orders(store),
+            datetime.now(UTC),
+        )
+        if not payload.acknowledge or not recovery or recovery[0]["id"] != identifier:
+            raise ResearchError(
+                "A weekly recovery review is unavailable. Refresh broker orders and check the next preparation window."
+            )
+        settings().headers()
+        return store.enqueue(
+            "paper_prepare",
+            {
+                "config_hash": cfg["hash"],
+                "recover_from": identifier,
+                "reference_session": str(recovery[1].reference),
+            },
+        )
+
     @app.post("/api/paper/orders/{client_id}/close-uncertain")
     def review_uncertain_order(client_id: str, payload: RebalanceApprovalRequest):
         from .paper import Broker, close_uncertain_order
@@ -423,6 +454,21 @@ def create_app(
         broker = Broker()
         try:
             return close_uncertain_order(store, broker, client_id)
+        finally:
+            broker.close()
+
+    @app.post("/api/paper/adjustments/confirm")
+    def confirm_paper_adjustment(payload: PaperAdjustmentRequest):
+        from .broker import Broker
+        from .paper_adjustments import confirm_adjustment
+
+        if not payload.acknowledge:
+            raise ResearchError(
+                "Confirm the broker activity and account changes first."
+            )
+        broker = Broker()
+        try:
+            return confirm_adjustment(store, broker, payload.reference)
         finally:
             broker.close()
 

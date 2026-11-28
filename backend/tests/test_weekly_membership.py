@@ -14,7 +14,7 @@ from aperture.paper import (
 from aperture.domain import ResearchError
 from aperture.signals import rank
 from test_paper import paper, allow  # noqa: F401
-from test_membership import refresh_fixture, html, history_csv
+from test_membership import refresh_fixture, html
 
 
 @pytest.fixture
@@ -45,14 +45,14 @@ def test_weekly_preparation_refreshes_and_backfills_then_requires_new_approval(
     allow(store)
     new_names = names[1:] + ["NEW"]
     current = refresh_fixture(store, "current", html(new_names))
-    historical = refresh_fixture(store, "historical", history_csv())
     refresh_calls = []
 
-    def refresh_all(s):
+    def fresh(s, kind, **_):
+        assert kind == "current"
         refresh_calls.append(s.path)
-        return {"current": current, "historical": historical}
+        return current
 
-    monkeypatch.setattr(membership, "refresh_all", refresh_all)
+    monkeypatch.setattr(membership, "fresh", fresh)
     calls = []
     saved = store.datasets()[0]
 
@@ -86,9 +86,7 @@ def test_unchanged_roster_automatically_updates_approved_prices_without_separate
 ):
     store, broker, cfg, _ = indexed
     current = store.membership("current")
-    monkeypatch.setattr(
-        membership, "refresh_all", lambda s: {"current": current, "historical": {}}
-    )
+    monkeypatch.setattr(membership, "fresh", lambda *_a, **_kw: current)
     calls = []
     saved = store.datasets()[0]
     monkeypatch.setattr(
@@ -111,9 +109,7 @@ def test_backfill_failure_leaves_approved_universe_and_pending_change_visible(
 ):
     store, broker, cfg, names = indexed
     current = refresh_fixture(store, "current", html(names[1:] + ["NEW"]))
-    monkeypatch.setattr(
-        membership, "refresh_all", lambda s: {"current": current, "historical": {}}
-    )
+    monkeypatch.setattr(membership, "fresh", lambda *_a, **_kw: current)
 
     def fail(*args):
         raise ResearchError("new member data unavailable")

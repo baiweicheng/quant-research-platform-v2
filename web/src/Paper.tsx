@@ -67,6 +67,8 @@ type Plan = {
   source_digest: string;
   decision_session: string;
   execute_session: string;
+  recovery_of?: string;
+  reference_session?: string;
   catch_up?: { original_execution_session: string; reference_session: string };
   last_execution_session: string;
   strategy: Pick<Strategy, "id" | "name" | "version" | "variant_of">;
@@ -88,6 +90,7 @@ type Plan = {
   notes: string[];
   signals: Decision["signals"];
   excluded: { symbol: string; reason: string }[];
+  preparation_exclusions?: Plan["excluded"];
   factor_coverage?: Decision["factor_coverage"];
   config?: Config;
   staged_orders?: {
@@ -148,6 +151,7 @@ type PaperState = {
   config?: Config | null;
   frequency?: "monthly" | "weekly";
   catch_up?: { decision_session: string; execute_session: string } | null;
+  weekly_recovery?: { plan_id: string; execute_session: string } | null;
   archived_strategy?: string | null;
   hidden_strategy?: boolean;
   snapshot?: PaperSnapshot | null;
@@ -169,6 +173,18 @@ type PaperState = {
     checked_at: string | null;
     counts: Record<string, number>;
     issues: string[];
+    adjustment_review?: {
+      reference: string;
+      cash: string;
+      positions: Record<string, string>;
+      activities: {
+        id: string;
+        activity_type: string;
+        date: string;
+        symbol?: string;
+        net_amount?: string;
+      }[];
+    };
   } | null;
   cancellation?: { status: string; message: string } | null;
   uncertain_order_ids?: string[];
@@ -304,12 +320,14 @@ export function PaperWeekly({ onPortfolio }: { onPortfolio: () => void }) {
   const monthly = data?.frequency === "monthly";
   const catchUp = data?.catch_up;
   const latest = data?.plans?.[0];
-  const reviewExisting = data?.plans.some(
-    (p) =>
-      !["complete", "blocked", "stopped", "expired", "superseded"].includes(
-        p.state,
-      ),
-  );
+  const reviewExisting =
+    data?.weekly_recovery ||
+    data?.plans.some(
+      (p) =>
+        !["complete", "blocked", "stopped", "expired", "superseded"].includes(
+          p.state,
+        ),
+    );
   return (
     <section className="weekly-card">
       <div className="weekly-overline">
@@ -348,17 +366,19 @@ export function PaperWeekly({ onPortfolio }: { onPortfolio: () => void }) {
               : onPortfolio()
           }
         >
-          {reviewExisting
-            ? "Review current paper plan"
-            : data?.archived_strategy
-              ? "Choose a paper strategy"
-              : cfg
-                ? catchUp
-                  ? "Prepare month-end catch-up"
-                  : monthly
-                    ? "Prepare month-end paper review"
-                    : "Prepare weekly paper review"
-                : "Set up paper trading"}
+          {data?.weekly_recovery
+            ? "Review remaining trades"
+            : reviewExisting
+              ? "Review current paper plan"
+              : data?.archived_strategy
+                ? "Choose a paper strategy"
+                : cfg
+                  ? catchUp
+                    ? "Prepare month-end catch-up"
+                    : monthly
+                      ? "Prepare month-end paper review"
+                      : "Prepare weekly paper review"
+                  : "Set up paper trading"}
           <ArrowRight size={16} />
         </button>
         <button className="text-link" onClick={onPortfolio}>
@@ -413,12 +433,18 @@ export default function PaperWorkspace({ state }: { state: State }) {
     );
   }, [cfg?.hash]);
   const [selected, setSelected] = useState("");
-  const [ack, setAck] = useState(false);
+  const [confirmedAdjustment, setConfirmedAdjustment] = useState<string | null>(
+    null,
+  );
+  const [acknowledgedPlan, setAcknowledgedPlan] = useState<string | null>(null);
   const p = data?.plans?.find((p) => p.id === selected) ?? data?.plans?.[0];
+  const ack = !!p && acknowledgedPlan === p.id;
   const planArchived =
     p && !state.strategies.some((s) => s.id === p.strategy.id);
   const canUsePlan = !archivedStrategy && !planArchived;
   const latest = data?.plans?.[0];
+  const weeklyRecovery = data?.weekly_recovery;
+  const adjustment = data?.fill_check?.adjustment_review;
   const unfinished = data?.orders.filter(
     (o) =>
       o.plan_id === latest?.id &&
@@ -442,7 +468,7 @@ export default function PaperWorkspace({ state }: { state: State }) {
     ),
   );
   useEffect(() => {
-    setAck(false);
+    setAcknowledgedPlan(null);
   }, [p?.id, p?.state]);
   const workerFresh =
     !!data?.worker_seen &&
@@ -549,23 +575,90 @@ export default function PaperWorkspace({ state }: { state: State }) {
           </button>
         </Notice>
       )}
-      {!archivedStrategy && !!unfinished?.length && (
+      {adjustment && (
         <Notice>
-          Some orders finished without filling completely. Confirmed fills are
-          retained. Reconcile any open or uncertain orders first, then prepare a
-          fresh next-session review using current prices and remaining holdings.
-          Nothing is resent automatically.
+          <strong>Review broker adjustments</strong>
+          <p>
+            Compare the activity references and account changes below with
+            Alpaca.
+          </p>
+          <ul>
+            {adjustment.activities.map((entry) => (
+              <li key={entry.id}>
+                {entry.date} · {entry.activity_type} {entry.symbol}{" "}
+                {entry.net_amount && money(entry.net_amount)} ·{" "}
+                <code>{entry.id}</code>
+              </li>
+            ))}
+          </ul>
+          <p>
+            Cash adjustment {money(adjustment.cash)}.
+            {Object.entries(adjustment.positions).map(([symbol, qty]) => (
+              <span key={symbol}>
+                {" "}
+                {symbol} {Number(qty) > 0 ? "+" : ""}
+                {Number(qty)} shares.
+              </span>
+            ))}
+          </p>
+          <label className="check-label">
+            <input
+              type="checkbox"
+              checked={confirmedAdjustment === adjustment.reference}
+              onChange={(e) =>
+                setConfirmedAdjustment(
+                  e.target.checked ? adjustment.reference : null,
+                )
+              }
+            />
+            I verified at Alpaca that these activities explain the account
+            changes.
+          </label>
           <button
             className="button secondary"
             disabled={
-              !canReviewRemaining ||
-              action.isPending ||
-              data?.fill_check?.status === "checking"
+              confirmedAdjustment !== adjustment.reference || action.isPending
             }
-            onClick={() => action.mutate({ path: "/actions/prepare" })}
+            onClick={() =>
+              action.mutate({
+                path: "/adjustments/confirm",
+                body: { acknowledge: true, reference: adjustment.reference },
+              })
+            }
           >
-            Review remaining trades
+            Confirm broker adjustments
           </button>
+        </Notice>
+      )}
+      {!archivedStrategy && (weeklyRecovery || !!unfinished?.length) && (
+        <Notice>
+          {weeklyRecovery
+            ? `Some weekly instructions remain unfinished. Prepare a new review for ${shortDate(weeklyRecovery.execute_session)} using current holdings and prices. The new review requires your approval.`
+            : data?.frequency === "weekly"
+              ? "Some weekly instructions remain unfinished. Refresh and resolve outstanding orders or account discrepancies before requesting recovery. If the recovery window has closed, prepare the next regular weekly review."
+              : "Some orders finished without filling completely. Reconcile open or uncertain orders before preparing a fresh review."}
+          {(weeklyRecovery || data?.frequency !== "weekly") && (
+            <button
+              className="button secondary"
+              disabled={
+                (!weeklyRecovery && !canReviewRemaining) ||
+                action.isPending ||
+                data?.fill_check?.status === "checking"
+              }
+              onClick={() =>
+                action.mutate(
+                  weeklyRecovery
+                    ? {
+                        path: `/plans/${weeklyRecovery.plan_id}/recover`,
+                        body: { acknowledge: true },
+                      }
+                    : { path: "/actions/prepare" },
+                )
+              }
+            >
+              Review remaining trades
+            </button>
+          )}
         </Notice>
       )}
       <div className="paper-status">
@@ -1020,7 +1113,7 @@ export default function PaperWorkspace({ state }: { state: State }) {
                     value={p.id}
                     onChange={(e) => {
                       setSelected(e.target.value);
-                      setAck(false);
+                      setAcknowledgedPlan(null);
                     }}
                   >
                     {data?.plans?.map((p) => (
@@ -1126,6 +1219,20 @@ export default function PaperWorkspace({ state }: { state: State }) {
                     no automatic liquidation is scheduled.
                   </Notice>
                 )}
+                {!!p.preparation_exclusions?.length && (
+                  <Notice>
+                    Unavailable for this review{" "}
+                    {p.preparation_exclusions
+                      .slice(0, 5)
+                      .map((entry) => entry.symbol)
+                      .join(", ")}
+                    {p.preparation_exclusions.length > 5 &&
+                      ` and ${p.preparation_exclusions.length - 5} more`}
+                    . See{" "}
+                    <strong>Signals, filings &amp; excluded stocks</strong> for
+                    details.
+                  </Notice>
+                )}
                 {p.notes.map((n) => (
                   <p className="field-hint" key={n}>
                     {n}
@@ -1144,11 +1251,15 @@ export default function PaperWorkspace({ state }: { state: State }) {
                       <input
                         type="checkbox"
                         checked={ack}
-                        onChange={(e) => setAck(e.target.checked)}
+                        onChange={(e) =>
+                          setAcknowledgedPlan(e.target.checked ? p.id : null)
+                        }
                       />
-                      {p.staged_orders
-                        ? `I reviewed this plan and approve its Market DAY PAPER orders. I accept price gaps, fixed dollar buys and ${p.config?.funding_policy === "paper_margin" ? "paper margin use, including a possible overnight debit" : "the deferred amounts shown"}.`
-                        : "I reviewed this plan and approve its following-session PAPER orders within the displayed policy and price bounds."}
+                      {p.staged_orders?.length === 0
+                        ? "I reviewed the plan and confirm there are no orders to stage."
+                        : p.staged_orders
+                          ? `I reviewed this plan and approve its Market DAY PAPER orders. I accept price gaps, fixed dollar buys and ${p.config?.funding_policy === "paper_margin" ? "paper margin use, including a possible overnight debit" : "the deferred amounts shown"}.`
+                          : "I reviewed this plan and approve its following-session PAPER orders within the displayed policy and price bounds."}
                     </label>
                     <button
                       className="button"
@@ -1165,11 +1276,13 @@ export default function PaperWorkspace({ state }: { state: State }) {
                         })
                       }
                     >
-                      {action.isPending && p.staged_orders
-                        ? "Confirming acceptance at Alpaca…"
-                        : p.staged_orders
-                          ? "Approve & stage at Alpaca"
-                          : "Approve paper rebalance"}
+                      {p.staged_orders?.length === 0
+                        ? "Close review without orders"
+                        : action.isPending && p.staged_orders
+                          ? "Confirming acceptance at Alpaca…"
+                          : p.staged_orders
+                            ? "Approve & stage at Alpaca"
+                            : "Approve paper rebalance"}
                     </button>
                   </div>
                 )}
@@ -1181,7 +1294,9 @@ export default function PaperWorkspace({ state }: { state: State }) {
                         <input
                           type="checkbox"
                           checked={ack}
-                          onChange={(e) => setAck(e.target.checked)}
+                          onChange={(e) =>
+                            setAcknowledgedPlan(e.target.checked ? p.id : null)
+                          }
                         />
                         I rechecked this frozen plan. Retry its quote validation
                         under the same bounds, retaining confirmed fills.

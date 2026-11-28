@@ -1001,11 +1001,10 @@ def test_catch_up_ranks_historical_sp500_and_rechecks_current_eligibility(
             {"effective": "2026-11-02", "symbols": ["AAPL"]},
         ],
     }
-    monkeypatch.setattr(membership, "fresh", lambda *a, **kw: current)
     monkeypatch.setattr(
         membership,
-        "refresh_all",
-        lambda *_: {"current": current, "historical": history},
+        "fresh",
+        lambda _store, kind, **_: {"current": current, "historical": history}[kind],
     )
     cfg = save_configuration(
         store,

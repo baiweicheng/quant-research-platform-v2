@@ -27,6 +27,25 @@ TERMINAL = {
     "not_sent",
     "closed_unconfirmed",
 }
+CORPORATE_ACTIVITY = {"MA", "NC", "REORG", "SC", "SSO", "SSP"}
+CASH_ADJUSTMENT_ACTIVITY = {
+    "CGD",
+    "CIL",
+    "DIV",
+    "DIVCGL",
+    "DIVCGS",
+    "DIVFEE",
+    "DIVFT",
+    "DIVNRA",
+    "DIVROC",
+    "DIVTXEX",
+    "FEE",
+    "INT",
+    "INTNRA",
+    "INTTW",
+    "PTC",
+    "PTR",
+}
 
 
 class ReconciliationPending(ResearchError):
@@ -35,6 +54,10 @@ class ReconciliationPending(ResearchError):
 
 class SubmissionNotSent(ResearchError):
     """A local guard prevented the POST from being attempted."""
+
+
+class AssetIneligible(ResearchError):
+    """The broker confirmed that a symbol cannot be traded fractionally."""
 
 
 class TradingPace:
@@ -124,7 +147,8 @@ class Broker:
                 if attempt < 2:
                     time.sleep(0.5 * (2**attempt))
                     continue
-                raise ResearchError(
+                failure = ResearchError if data else ReconciliationPending
+                raise failure(
                     "Paper broker could not be reached. No order was retried."
                 ) from None
             if r.status_code == 404 and missing:
@@ -136,6 +160,10 @@ class Broker:
                 if attempt < 2 and delay <= 4:
                     time.sleep(delay)
                     continue
+                if not data:
+                    raise ReconciliationPending(
+                        f"Paper broker temporarily returned HTTP {r.status_code}. Reconcile before continuing."
+                    )
             if not r.is_success:
                 raise ResearchError(
                     f"Paper broker returned HTTP {r.status_code}. Check access and retry reconciliation."
@@ -314,8 +342,7 @@ class Broker:
         nonmargin = decimal(account.get("non_marginable_buying_power", cash))
         spendable = max(ZERO, min(cash, nonmargin) - unsettled - funding_reserve)
         if any(
-            a.get("activity_type")
-            in ("JNLS", "JNLT", "ACATC", "ACATS", "MA", "REORG", "SSO")
+            a.get("activity_type") in ("JNLS", "JNLT", "ACATC", "ACATS")
             for a in activities
         ):
             issues.append(
@@ -348,19 +375,38 @@ class Broker:
             "open_orders": orders,
             "clock": clock,
             "issues": issues,
+            "broker_activities": [
+                {
+                    key: a[key]
+                    for key in (
+                        "activity_type",
+                        "id",
+                        "date",
+                        "net_amount",
+                        "symbol",
+                        "transaction_time",
+                        "order_id",
+                    )
+                    if key in a
+                }
+                for a in activities
+                if a.get("activity_type")
+                in CORPORATE_ACTIVITY | CASH_ADJUSTMENT_ACTIVITY | {"FILL"}
+            ],
             "account_type": "Paper account; funding follows the approved platform policy",
             "settlement_policy": "Conservative T+1 sale-proceeds exclusion; broker restrictions can be stricter.",
         }
 
     def asset(self, symbol):
-        a = self.read("/v2/assets/" + quote(symbol, safe=""))
+        a = self.read("/v2/assets/" + quote(symbol, safe=""), missing=True)
         if (
-            a.get("class") != "us_equity"
+            a is None
+            or a.get("class") != "us_equity"
             or a.get("status") != "active"
             or not a.get("tradable")
             or not a.get("fractionable")
         ):
-            raise ResearchError(
+            raise AssetIneligible(
                 f"{symbol}: an active, tradable, fractional US equity is required."
             )
         return a

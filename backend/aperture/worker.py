@@ -61,6 +61,7 @@ def execute(store: Store, job: dict):
             approval,
             cancel_pending,
             configuration,
+            plan,
             preparation_window,
             prepare,
             schedule,
@@ -68,7 +69,7 @@ def execute(store: Store, job: dict):
 
         if job["kind"] == "paper_prepare" and (cfg := configuration(store)):
             recipe = paper_strategy(cfg["strategy_id"])
-            if (
+            if not payload.get("recover_from") and (
                 "decision_session" in payload
                 or recipe.get("frequency")
                 or payload.get("catch_up")
@@ -106,6 +107,7 @@ def execute(store: Store, job: dict):
                         and not cfg["paused"]
                         and allowed
                         and allowed["allow_automatic"]
+                        and plan(store, body["plan_id"])["state"] == "prepared"
                     ):
                         schedule(store, body["plan_id"])
             else:
